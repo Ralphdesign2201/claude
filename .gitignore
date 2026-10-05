@@ -1,9 +1,9 @@
-node_modules
-dist
 .env
 *.db
+*.db-shm
+*.db-wal
 *.db-journal
 uploads/*
 !uploads/.gitkeep
-npm-debug.log*
+vendor
 .DS_Store
