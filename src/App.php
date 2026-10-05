@@ -8,11 +8,13 @@ use App\Controllers\AuthController;
 use App\Controllers\ClientsController;
 use App\Controllers\ContractsController;
 use App\Controllers\BackupController;
+use App\Controllers\CatalogController;
 use App\Controllers\CronController;
 use App\Controllers\DashboardController;
 use App\Controllers\DocumentsController;
 use App\Controllers\InvoicesController;
 use App\Controllers\NotesController;
+use App\Controllers\OrdersController;
 use App\Controllers\PortalController;
 use App\Controllers\ProjectsController;
 use App\Controllers\QuotesController;
@@ -161,6 +163,29 @@ final class App
         $r->add('GET', '/api/portal/quotes/:id/pdf', [PortalController::class, 'quotePdf'], $pub);
         $r->add('POST', '/api/portal/quotes/:id/accept', [PortalController::class, 'acceptQuote'], $pub);
         $r->add('POST', '/api/portal/quotes/:id/decline', [PortalController::class, 'declineQuote'], $pub);
+
+        $r->add('GET', '/api/portal/products', [PortalController::class, 'products'], $pub);
+        $r->add('GET', '/api/portal/orders', [PortalController::class, 'orderList'], $pub);
+        $r->add('POST', '/api/portal/orders', [PortalController::class, 'createOrder'], $pub);
+        $r->add('POST', '/api/portal/orders/:id/cancel', [PortalController::class, 'cancelOrder'], $pub);
+
+        $r->add('GET', '/api/categories', [CatalogController::class, 'categories']);
+        $r->add('POST', '/api/categories', [CatalogController::class, 'createCategory']);
+        $r->add('PATCH', '/api/categories/:id', [CatalogController::class, 'updateCategory']);
+        $r->add('DELETE', '/api/categories/:id', [CatalogController::class, 'deleteCategory']);
+        $r->add('GET', '/api/products', [CatalogController::class, 'products']);
+        $r->add('POST', '/api/products', [CatalogController::class, 'createProduct']);
+        $r->add('GET', '/api/products/:id', [CatalogController::class, 'showProduct']);
+        $r->add('PATCH', '/api/products/:id', [CatalogController::class, 'updateProduct']);
+        $r->add('DELETE', '/api/products/:id', [CatalogController::class, 'deleteProduct']);
+        $r->add('POST', '/api/catalog/examples', [CatalogController::class, 'examples']);
+        $r->add('POST', '/api/products/:id/duplicate', [CatalogController::class, 'duplicateProduct']);
+
+        $r->add('GET', '/api/orders', [OrdersController::class, 'index']);
+        $r->add('POST', '/api/orders', [OrdersController::class, 'create']);
+        $r->add('GET', '/api/orders/:id', [OrdersController::class, 'show']);
+        $r->add('POST', '/api/orders/:id/accept', [OrdersController::class, 'accept']);
+        $r->add('POST', '/api/orders/:id/reject', [OrdersController::class, 'reject']);
 
         $r->add('GET', '/api/settings', [SettingsController::class, 'show']);
 

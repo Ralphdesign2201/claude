@@ -36,6 +36,7 @@ $env = [
     'JWT_SECRET' => 'test-secret-test-secret-123456',
     'ALLOW_REGISTRATION' => 'false',
     'LOGIN_RATE_LIMIT_MAX' => '5',
+    'RATE_LIMIT_MAX' => '20000',
     'PATH' => (string) getenv('PATH'),
 ];
 
@@ -512,6 +513,290 @@ expect('Abo löschen (Rechnungen bleiben erhalten)', call('DELETE', "/api/recurr
 $res = call('GET', "/api/invoices?search=RE-&pageSize=100", null, $token);
 check('Rechnungen des gelöschten Abos bleiben bestehen', count(array_filter($res[1]['items'], static fn ($i) => $i['recurringId'] === null && str_contains($i['items'][0]['description'] ?? '', 'Hosting Paket M'))) === 3, count($res[1]['items']));
 
+echo "Katalog (Kategorien und Produkte)\n";
+$mkCat = static function (string $name, array $extra = []) use ($token) {
+    return call('POST', '/api/categories', ['name' => $name] + $extra, $token);
+};
+$res = $mkCat('Webseiten', ['sortOrder' => 1, 'description' => 'Individuelle Websites']);
+expect('Kategorie anlegen', $res, 201);
+$catWeb = $res[1]['id'];
+$catHost = $mkCat('Hosting & Domains', ['sortOrder' => 2])[1]['id'];
+$catPrint = $mkCat('Druck', ['sortOrder' => 3])[1]['id'];
+$catHidden = $mkCat('Intern', ['sortOrder' => 4, 'active' => false])[1]['id'];
+expect('Kategorie ohne Namen → 400', call('POST', '/api/categories', ['name' => ''], $token), 400);
+expect('Kategorie ohne Login → 401', call('GET', '/api/categories'), 401);
+expect('Unbekannte Kategorie ändern → 404', call('PATCH', '/api/categories/gibtsnicht', ['name' => 'x'], $token), 404);
+$res = call('PATCH', "/api/categories/$catHost", ['name' => 'Hosting, Domains & Wartung'], $token);
+check('Kategorie umbenennen', $res[0] === 200 && $res[1]['name'] === 'Hosting, Domains & Wartung' && $res[1]['active'] === true, $res[2]);
+
+$mkProduct = static function (array $data) use ($token) {
+    return call('POST', '/api/products', $data, $token);
+};
+$res = $mkProduct(['name' => 'Webseitenerstellung einmalig', 'categoryId' => $catWeb, 'type' => 'ONE_TIME', 'price' => 1500, 'description' => 'Komplette Website nach Ihren Wünschen']);
+expect('Einmalprodukt anlegen (Webseitenerstellung)', $res, 201);
+$pWeb = $res[1]['id'];
+check('Einmalprodukt: 19 % MwSt., kein Rhythmus, aktiv, Kategorie eingebettet', $res[1]['taxRate'] == 19 && $res[1]['intervalUnit'] === null && $res[1]['setupFee'] == 0 && $res[1]['active'] === true && $res[1]['category']['name'] === 'Webseiten' && $res[1]['minQuantity'] == 1, $res[2]);
+$pScript = $mkProduct(['name' => 'Skripte einmalig', 'categoryId' => $catWeb, 'type' => 'ONE_TIME', 'price' => 300])[1]['id'];
+$res = $mkProduct(['name' => 'Druckauftrag Flyer A5', 'categoryId' => $catPrint, 'type' => 'ONE_TIME', 'price' => 0.12, 'unit' => 'Stück', 'minQuantity' => 100]);
+$pFlyer = $res[1]['id'];
+check('Druckauftrag mit Einheit und Mindestmenge', $res[1]['unit'] === 'Stück' && $res[1]['minQuantity'] == 100, $res[2]);
+$res = $mkProduct(['name' => 'Webhosting M', 'categoryId' => $catHost, 'type' => 'RENTAL', 'price' => 9.9, 'intervalUnit' => 'MONTHLY', 'setupFee' => 19]);
+expect('Mietprodukt anlegen (Webhosting)', $res, 201);
+$pHost = $res[1]['id'];
+check('Mietprodukt: Rhythmus und Einrichtungsgebühr gespeichert', $res[1]['intervalUnit'] === 'MONTHLY' && $res[1]['setupFee'] == 19 && $res[1]['price'] == 9.9, $res[2]);
+$pDomain = $mkProduct(['name' => 'Domain beispiel.de', 'categoryId' => $catHost, 'type' => 'RENTAL', 'price' => 14.4, 'intervalUnit' => 'YEARLY'])[1]['id'];
+$mkProduct(['name' => 'Miethomepage', 'categoryId' => $catWeb, 'type' => 'RENTAL', 'price' => 49, 'intervalUnit' => 'MONTHLY']);
+$mkProduct(['name' => 'Wartungsservice', 'categoryId' => $catHost, 'type' => 'RENTAL', 'price' => 79, 'intervalUnit' => 'MONTHLY']);
+$mkProduct(['name' => 'SEO Service', 'categoryId' => $catHost, 'type' => 'RENTAL', 'price' => 199, 'intervalUnit' => 'QUARTERLY']);
+$res = $mkProduct(['name' => 'Projektarbeit nach Stunden', 'categoryId' => $catWeb, 'type' => 'HOURLY', 'price' => 85]);
+expect('Zeitprodukt anlegen (Stundenbasis)', $res, 201);
+$pHours = $res[1]['id'];
+check('Zeitprodukt erhält automatisch die Einheit „Std.“', $res[1]['unit'] === 'Std.' && $res[1]['intervalUnit'] === null, $res[2]);
+$pInactive = $mkProduct(['name' => 'Auslaufprodukt', 'categoryId' => $catWeb, 'type' => 'ONE_TIME', 'price' => 10, 'active' => false])[1]['id'];
+$pHiddenCat = $mkProduct(['name' => 'Nur intern', 'categoryId' => $catHidden, 'type' => 'ONE_TIME', 'price' => 10])[1]['id'];
+$pNoCat = $mkProduct(['name' => 'Beratung vor Ort', 'type' => 'ONE_TIME', 'price' => 120])[1]['id'];
+
+$res = $mkProduct(['name' => 'Kaputt', 'type' => 'RENTAL', 'price' => 5]);
+check('Mietprodukt ohne Rhythmus → 400 mit Feldfehler', $res[0] === 400 && isset($res[1]['details']['fieldErrors']['intervalUnit']), $res[2]);
+$res = $mkProduct(['name' => 'Kaputt', 'type' => 'ONE_TIME', 'price' => -5]);
+check('Negativer Preis → 400', $res[0] === 400 && isset($res[1]['details']['fieldErrors']['price']), $res[2]);
+expect('Unbekannte Produktart → 400', $mkProduct(['name' => 'Kaputt', 'type' => 'ABO', 'price' => 5]), 400);
+expect('Steuersatz über 100 → 400', $mkProduct(['name' => 'Kaputt', 'type' => 'ONE_TIME', 'price' => 5, 'taxRate' => 190]), 400);
+expect('Unbekannte Kategorie → 400', $mkProduct(['name' => 'Kaputt', 'type' => 'ONE_TIME', 'price' => 5, 'categoryId' => 'gibtsnicht']), 400);
+expect('Mindestmenge 0 → 400', $mkProduct(['name' => 'Kaputt', 'type' => 'ONE_TIME', 'price' => 5, 'minQuantity' => 0]), 400);
+$res = $mkProduct(['name' => 'Einmal mit Rhythmus', 'type' => 'ONE_TIME', 'price' => 5, 'intervalUnit' => 'YEARLY', 'setupFee' => 50]);
+check('Einmalprodukt ignoriert Rhythmus und Einrichtungsgebühr', $res[0] === 201 && $res[1]['intervalUnit'] === null && $res[1]['setupFee'] == 0, $res[2]);
+call('DELETE', '/api/products/' . $res[1]['id'], null, $token);
+
+$res = call('PATCH', "/api/products/$pScript", ['type' => 'RENTAL', 'intervalUnit' => 'YEARLY', 'setupFee' => 10], $token);
+check('Produktart ändern: Einmal → Miete', $res[0] === 200 && $res[1]['type'] === 'RENTAL' && $res[1]['intervalUnit'] === 'YEARLY' && $res[1]['setupFee'] == 10, $res[2]);
+$res = call('PATCH', "/api/products/$pScript", ['type' => 'ONE_TIME'], $token);
+check('Produktart zurück: Rhythmus und Einrichtung werden geleert', $res[1]['type'] === 'ONE_TIME' && $res[1]['intervalUnit'] === null && $res[1]['setupFee'] == 0, $res[2]);
+expect('Miete ohne Rhythmus per Änderung → 400', call('PATCH', "/api/products/$pScript", ['type' => 'RENTAL'], $token), 400);
+$res = call('PATCH', "/api/products/$pNoCat", ['categoryId' => $catPrint], $token);
+check('Produkt in Kategorie verschieben', $res[1]['category']['id'] === $catPrint, $res[2]);
+$res = call('PATCH', "/api/products/$pNoCat", ['categoryId' => ''], $token);
+check('Produkt aus Kategorie lösen', $res[1]['categoryId'] === null && $res[1]['category'] === null, $res[2]);
+$res = call('POST', "/api/products/$pHost/duplicate", null, $token);
+check('Produkt duplizieren (inaktive Kopie)', $res[0] === 201 && $res[1]['name'] === 'Webhosting M (Kopie)' && $res[1]['active'] === false && $res[1]['intervalUnit'] === 'MONTHLY' && $res[1]['setupFee'] == 19 && $res[1]['id'] !== $pHost, $res[2]);
+call('DELETE', '/api/products/' . $res[1]['id'], null, $token);
+expect('Unbekanntes Produkt → 404', call('GET', '/api/products/gibtsnicht', null, $token), 404);
+
+$res = call('GET', '/api/products?type=RENTAL', null, $token);
+check('Filter nach Produktart (5 Mietprodukte)', $res[0] === 200 && count($res[1]) === 5 && array_unique(array_column($res[1], 'type')) === ['RENTAL'], count($res[1]));
+$res = call('GET', "/api/products?categoryId=$catWeb", null, $token);
+check('Filter nach Kategorie', count($res[1]) === 5 && !in_array($pHost, array_column($res[1], 'id'), true), count($res[1]));
+$res = call('GET', '/api/products?categoryId=none', null, $token);
+check('Filter „Ohne Kategorie“', count($res[1]) === 1 && $res[1][0]['id'] === $pNoCat, $res[2]);
+$res = call('GET', '/api/products?active=false', null, $token);
+check('Filter inaktive Produkte', count($res[1]) === 1 && $res[1][0]['id'] === $pInactive, $res[2]);
+$res = call('GET', '/api/products?search=' . urlencode('hosting'), null, $token);
+check('Produktsuche', count($res[1]) === 1 && $res[1][0]['name'] === 'Webhosting M', $res[2]);
+$res = call('GET', '/api/categories', null, $token);
+check('Kategorien nach Reihenfolge, mit Produktanzahl', count($res[1]) === 4 && array_column($res[1], 'name') === ['Webseiten', 'Hosting, Domains & Wartung', 'Druck', 'Intern'] && $res[1][0]['productCount'] === 5 && $res[1][3]['active'] === false, $res[2]);
+
+// „Endlos“: keine Begrenzung bei Kategorien und Produkten
+$bulkCats = [];
+for ($i = 1; $i <= 25; $i++) {
+    $bulkCats[] = $mkCat("Testkategorie $i", ['sortOrder' => 100 + $i])[1]['id'];
+}
+$created = 0;
+for ($i = 1; $i <= 60; $i++) {
+    $created += $mkProduct(['name' => "Testprodukt $i", 'categoryId' => $bulkCats[$i % 25], 'type' => ['ONE_TIME', 'RENTAL', 'HOURLY'][$i % 3], 'price' => $i, 'intervalUnit' => 'MONTHLY'])[0] === 201 ? 1 : 0;
+}
+check('Keine Obergrenze: 25 weitere Kategorien und 60 weitere Produkte angelegt', $created === 60 && count(call('GET', '/api/categories', null, $token)[1]) === 29 && count(call('GET', '/api/products', null, $token)[1]) === 72);
+foreach ($bulkCats as $bc) {
+    call('DELETE', "/api/categories/$bc", null, $token);
+}
+$res = call('GET', '/api/products?search=Testprodukt', null, $token);
+check('Kategorie löschen: Produkte bleiben erhalten (ohne Kategorie)', count($res[1]) === 60 && count(array_filter($res[1], static fn ($p) => $p['categoryId'] !== null)) === 0 && count(call('GET', '/api/categories', null, $token)[1]) === 4);
+foreach ($res[1] as $bp) {
+    call('DELETE', "/api/products/{$bp['id']}", null, $token);
+}
+
+$res = call('POST', '/api/catalog/examples', [], $token);
+check('Beispielkatalog: 3 Kategorien, 9 Produkte, alle inaktiv', $res[0] === 201 && $res[1]['categories'] === 3 && $res[1]['products'] === 9, $res[2]);
+$res = call('GET', '/api/products?active=false&search=' . urlencode('Miethomepage'), null, $token);
+check('Beispielprodukt „Miethomepage“: Miete monatlich, 49 €, 199 € Einrichtung, inaktiv', count($res[1]) === 1 && $res[1][0]['type'] === 'RENTAL' && $res[1][0]['intervalUnit'] === 'MONTHLY' && $res[1][0]['price'] == 49 && $res[1][0]['setupFee'] == 199 && $res[1][0]['active'] === false, $res[2]);
+$res = call('POST', '/api/catalog/examples', [], $token);
+check('Beispielkatalog ist wiederholbar, ohne Doppelte anzulegen', $res[0] === 201 && $res[1]['categories'] === 0 && $res[1]['products'] === 0, $res[2]);
+expect('Beispielkatalog ohne Login → 401', call('POST', '/api/catalog/examples', []), 401);
+$exampleIds = array_column(call('GET', '/api/categories', null, $token)[1], 'id', 'name');
+foreach (['Einmalige Leistungen', 'Mietprodukte', 'Zeitbasierte Leistungen'] as $n) {
+    foreach (call('GET', '/api/products?categoryId=' . $exampleIds[$n], null, $token)[1] as $pr) {
+        call('DELETE', "/api/products/{$pr['id']}", null, $token);
+    }
+    call('DELETE', "/api/categories/{$exampleIds[$n]}", null, $token);
+}
+
+echo "Bestellungen\n";
+$res = call('POST', '/api/clients', ['name' => 'Bea Besteller', 'company' => 'Besteller KG', 'email' => 'bea@besteller.de'], $token);
+$orderClient = $res[1]['id'];
+$oAccess = call('POST', "/api/clients/$orderClient/portal", [], $token)[1];
+$strangerClient = call('POST', '/api/clients', ['name' => 'Fremd Besteller', 'email' => 'fremd-besteller@example.com'], $token)[1]['id'];
+$strangerP = ["X-Portal-Token: " . call('POST', "/api/clients/$strangerClient/portal", [], $token)[1]['token']];
+$OP = ["X-Portal-Token: {$oAccess['token']}"];
+expect('Portal-Katalog ohne Schlüssel → 401', call('GET', '/api/portal/products'), 401);
+$res = call('GET', '/api/portal/products', null, null, $OP);
+$catalog = $res[1];
+$catNames = array_column($catalog, 'name');
+check('Portal-Katalog: aktive Kategorien in Reihenfolge, verborgene fehlen, „Weitere Produkte“ am Ende', $res[0] === 200 && $catNames === ['Webseiten', 'Hosting, Domains & Wartung', 'Druck', 'Weitere Produkte'] && !in_array('Intern', $catNames, true), $catNames);
+$allProducts = array_merge(...array_column($catalog, 'products'));
+$allNames = array_column($allProducts, 'name');
+check('Portal-Katalog: inaktive Produkte und Produkte verborgener Kategorien sind unsichtbar', !in_array('Auslaufprodukt', $allNames, true) && !in_array('Nur intern', $allNames, true) && in_array('Webhosting M', $allNames, true) && in_array('Beratung vor Ort', $allNames, true) && count($allNames) === 10, $allNames);
+$hostP = current(array_filter($allProducts, static fn ($x) => $x['id'] === $pHost));
+check('Portal-Produkt: nur freigegebene Felder', array_diff(array_keys($hostP), ['id', 'name', 'description', 'type', 'price', 'taxRate', 'unit', 'intervalUnit', 'setupFee', 'minQuantity']) === [] && !isset($hostP['active'], $hostP['categoryId'], $hostP['sortOrder']) && $hostP['intervalUnit'] === 'MONTHLY' && $hostP['setupFee'] == 19, array_keys($hostP));
+
+$before = count(mails());
+$res = call('POST', '/api/portal/orders', ['productId' => $pWeb, 'quantity' => 1, 'note' => 'Bitte mit Blog und Kontaktformular'], null, $OP);
+expect('Kunde bestellt Webseitenerstellung', $res, 201);
+$o1 = $res[1];
+check('Bestellung: Nummer BE-JJJJ-0001, Status „Eingegangen“, Schnappschuss, Summen', $o1['number'] === "BE-$year-0001" && $o1['status'] === 'PENDING' && $o1['productName'] === 'Webseitenerstellung einmalig' && $o1['unitPrice'] == 1500 && $o1['totals']['net'] == 1500 && $o1['totals']['tax'] == 285 && $o1['totals']['gross'] == 1785 && $o1['note'] === 'Bitte mit Blog und Kontaktformular', $o1);
+check('Bestellung im Portal: nur freigegebene Felder', array_diff(array_keys($o1), ['id', 'number', 'status', 'createdAt', 'decidedAt', 'productName', 'productType', 'unitPrice', 'taxRate', 'quantity', 'unit', 'intervalUnit', 'setupFee', 'note', 'rejectReason', 'totals']) === [] && !isset($o1['clientId'], $o1['invoiceId'], $o1['recurringId'], $o1['projectId'], $o1['source']), array_keys($o1));
+$all = mails();
+$recent = array_slice($all, $before);
+$subjects = array_map(static fn ($m) => $m['head'], $recent);
+check('E-Mails: Benachrichtigung an die Firma und Eingangsbestätigung an den Kunden', count($recent) === 2 && str_contains(implode("\n", $subjects), 'X-Envelope-To: hallo@ralph-design.de') && str_contains(implode("\n", $subjects), 'X-Envelope-To: bea@besteller.de') && str_contains(mailText($recent[0]) . mailText($recent[1]), 'Bitte mit Blog und Kontaktformular') && str_contains(mailText($recent[0]) . mailText($recent[1]), 'in Kürze'), count($recent));
+
+$res = call('POST', '/api/portal/orders', ['productId' => $pFlyer, 'quantity' => 50], null, $OP);
+check('Unter der Mindestmenge → 400', $res[0] === 400 && str_contains($res[1]['error'], 'Mindestmenge: 100'), $res[2]);
+$res = call('POST', '/api/portal/orders', ['productId' => $pFlyer, 'quantity' => 500], null, $OP);
+check('Druckauftrag: 500 Stück × 0,12 € = 60,00 € netto', $res[0] === 201 && $res[1]['totals']['net'] == 60 && $res[1]['totals']['gross'] == 71.4 && $res[1]['unit'] === 'Stück', $res[2]);
+$oFlyer = $res[1];
+$res = call('POST', '/api/portal/orders', ['productId' => $pHost], null, $OP);
+check('Mietprodukt: Menge 1 als Standard, erste Zahlung inkl. Einrichtung (28,90 € netto, 34,39 € brutto)', $res[0] === 201 && $res[1]['quantity'] == 1 && $res[1]['totals']['recurringNet'] == 9.9 && $res[1]['totals']['setupNet'] == 19 && $res[1]['totals']['net'] == 28.9 && $res[1]['totals']['gross'] == 34.39 && $res[1]['intervalUnit'] === 'MONTHLY', $res[2]);
+$oHost = $res[1];
+$res = call('POST', '/api/portal/orders', ['productId' => $pHours, 'quantity' => 20, 'note' => 'Relaunch der Unterseiten'], null, $OP);
+check('Zeitprodukt: 20 Std. × 85 € = 1.700,00 € netto (Schätzung)', $res[0] === 201 && $res[1]['totals']['net'] == 1700 && $res[1]['unit'] === 'Std.', $res[2]);
+$oHours = $res[1];
+$oHost2 = call('POST', '/api/portal/orders', ['productId' => $pDomain, 'quantity' => 2], null, $OP)[1];
+expect('Inaktives Produkt bestellen → 404', call('POST', '/api/portal/orders', ['productId' => $pInactive], null, $OP), 404);
+expect('Produkt einer verborgenen Kategorie bestellen → 404', call('POST', '/api/portal/orders', ['productId' => $pHiddenCat], null, $OP), 404);
+expect('Unbekanntes Produkt bestellen → 404', call('POST', '/api/portal/orders', ['productId' => 'gibtsnicht'], null, $OP), 404);
+expect('Menge 0 → 400', call('POST', '/api/portal/orders', ['productId' => $pWeb, 'quantity' => 0], null, $OP), 400);
+expect('Negative Menge → 400', call('POST', '/api/portal/orders', ['productId' => $pWeb, 'quantity' => -3], null, $OP), 400);
+expect('Unsinnig große Menge → 400', call('POST', '/api/portal/orders', ['productId' => $pWeb, 'quantity' => 1000000], null, $OP), 400);
+expect('Zu lange Anmerkung → 400', call('POST', '/api/portal/orders', ['productId' => $pWeb, 'note' => str_repeat('x', 2001)], null, $OP), 400);
+expect('Bestellen ohne Schlüssel → 401', call('POST', '/api/portal/orders', ['productId' => $pWeb]), 401);
+
+$res = call('GET', '/api/portal/orders', null, null, $OP);
+check('Kunde sieht seine 5 Bestellungen, neueste zuerst', $res[0] === 200 && count($res[1]) === 5 && $res[1][0]['id'] === $oHost2['id'] && $res[1][4]['id'] === $o1['id'], array_column($res[1], 'number'));
+$res = call('GET', '/api/portal/orders', null, null, $strangerP);
+check('Mandantentrennung: der andere Kunde sieht diese Bestellungen nicht', $res[0] === 200 && count($res[1]) === 0, $res[2]);
+expect('Mandantentrennung: fremde Bestellung stornieren → 404', call('POST', "/api/portal/orders/{$o1['id']}/cancel", [], null, $strangerP), 404);
+$res = call('POST', "/api/portal/orders/{$oHost2['id']}/cancel", [], null, $OP);
+check('Kunde storniert eine offene Bestellung', $res[0] === 200 && $res[1]['status'] === 'CANCELLED' && $res[1]['decidedAt'] !== null, $res[2]);
+expect('Zweites Stornieren → 409', call('POST', "/api/portal/orders/{$oHost2['id']}/cancel", [], null, $OP), 409);
+expect('Stornierte Bestellung kann nicht angenommen werden → 409', call('POST', "/api/orders/{$oHost2['id']}/accept", [], $token), 409);
+
+// Mitarbeiter-Sicht
+$res = call('GET', '/api/orders', null, $token);
+check('Mitarbeiter: Bestellliste mit Kunde und Summen, offene zuerst', $res[0] === 200 && $res[1]['meta']['total'] === 5 && $res[1]['items'][0]['status'] === 'PENDING' && $res[1]['items'][4]['status'] === 'CANCELLED' && $res[1]['items'][0]['client']['company'] === 'Besteller KG' && isset($res[1]['items'][0]['totals']['gross']), array_column($res[1]['items'], 'status'));
+$res = call('GET', '/api/orders?status=PENDING', null, $token);
+check('Filter nach Status', $res[1]['meta']['total'] === 4, $res[2]);
+$res = call('GET', '/api/settings', null, $token);
+check('Einstellungen melden 4 offene Bestellungen', $res[1]['pendingOrders'] === 4, $res[2]);
+expect('Bestellungen ohne Login → 401', call('GET', '/api/orders'), 401);
+
+// Preisschnappschuss
+$res = call('PATCH', "/api/products/$pWeb", ['price' => 2000], $token);
+$res = call('GET', "/api/orders/{$o1['id']}", null, $token);
+check('Preisänderung am Produkt ändert bestehende Bestellungen nicht', $res[1]['unitPrice'] == 1500 && $res[1]['productName'] === 'Webseitenerstellung einmalig', $res[2]);
+
+// Annahme: Einmalprodukt → Rechnung
+$before = count(mails());
+$res = call('POST', "/api/orders/{$o1['id']}/accept", [], $token);
+expect('Einmalprodukt-Bestellung annehmen', $res, 200);
+$acc = $res[1];
+check('Angenommen: Rechnung verknüpft, kein Abo, kein Projekt', $acc['status'] === 'ACCEPTED' && $acc['invoice']['number'] !== null && $acc['recurring'] === null && $acc['project'] === null && $acc['decidedAt'] !== null, $acc);
+$res = call('GET', "/api/invoices/{$acc['invoice']['id']}", null, $token);
+check('Rechnung: Entwurf, Position zum Bestellpreis (1.500 €, nicht 2.000 €), 19 %, Hinweis auf die Bestellung', $res[1]['status'] === 'DRAFT' && count($res[1]['items']) === 1 && $res[1]['items'][0]['unitPrice'] == 1500 && $res[1]['items'][0]['description'] === 'Webseitenerstellung einmalig' && $res[1]['taxRate'] == 19 && str_contains($res[1]['notes'], $o1['number']) && $res[1]['totals']['total'] == 1785 && $res[1]['dueDate'] !== null && $res[1]['clientId'] === $orderClient, $res[2]);
+$recent = array_slice(mails(), $before);
+check('Kunde erhält die Bestätigung per E-Mail', count($recent) === 1 && str_contains($recent[0]['head'], 'X-Envelope-To: bea@besteller.de') && str_contains(mailText($recent[0]), 'bestätigt'), count($recent));
+expect('Zweite Annahme → 409', call('POST', "/api/orders/{$o1['id']}/accept", [], $token), 409);
+expect('Ablehnen nach Annahme → 409', call('POST', "/api/orders/{$o1['id']}/reject", ['reason' => 'x'], $token), 409);
+$res = call('GET', '/api/portal/orders', null, null, $OP);
+$mine = current(array_filter($res[1], static fn ($o) => $o['id'] === $o1['id']));
+check('Kunde sieht „Bestätigt“, ohne interne Verknüpfungen', $mine['status'] === 'ACCEPTED' && !isset($mine['invoiceId'], $mine['invoice']), $mine);
+expect('Kunde kann bestätigte Bestellung nicht stornieren → 409', call('POST', "/api/portal/orders/{$o1['id']}/cancel", [], null, $OP), 409);
+
+// Annahme: Mietprodukt → Abo + Einrichtungsrechnung + erste Rechnung
+$res = call('POST', "/api/orders/{$oHost['id']}/accept", [], $token);
+expect('Mietprodukt-Bestellung annehmen', $res, 200);
+$accH = $res[1];
+check('Miete: Abo, erste Rechnung und Einrichtungsrechnung verknüpft', $accH['recurring']['title'] === 'Webhosting M' && $accH['recurring']['active'] == 1 && $accH['invoice'] !== null && $accH['setupInvoice'] !== null && $accH['invoice']['id'] !== $accH['setupInvoice']['id'], $accH);
+$rec = call('GET', "/api/recurring/{$accH['recurring']['id']}", null, $token)[1];
+$todayStart = gmdate('Y-m-d') . 'T00:00:00.000Z';
+check('Abo: monatlich, 9,90 € netto, Platzhalter im Text, Start heute, erste Abrechnung gelaufen (nächster Termin +1 Monat)', $rec['intervalUnit'] === 'MONTHLY' && $rec['clientId'] === $orderClient && $rec['startDate'] === $todayStart && $rec['occurrence'] === 1 && $rec['nextRunDate'] === App\Services\RecurringService::iso(App\Services\RecurringService::scheduleDate($todayStart, 'MONTHLY', 1)) && str_contains($rec['items'][0]['description'], '{zeitraum}') && $rec['items'][0]['unitPrice'] == 9.9 && $rec['totals']['total'] == 11.78 && $rec['autoSend'] === false, $rec);
+$first = call('GET', "/api/invoices/{$accH['invoice']['id']}", null, $token)[1];
+check('Erste Abo-Rechnung: Entwurf, Zeitraum eingesetzt, 11,78 € brutto, mit dem Abo verknüpft', $first['status'] === 'DRAFT' && preg_match('/^Webhosting M \(\d\d\.\d\d\.\d{4} – \d\d\.\d\d\.\d{4}\)$/u', $first['items'][0]['description']) === 1 && $first['totals']['total'] == 11.78 && $first['recurringId'] === $accH['recurring']['id'], $first['items'][0]['description'] ?? $first);
+$setup = call('GET', "/api/invoices/{$accH['setupInvoice']['id']}", null, $token)[1];
+check('Einrichtungsrechnung: „Einrichtung: Webhosting M“, 19 € netto, 22,61 € brutto, Entwurf', $setup['status'] === 'DRAFT' && $setup['items'][0]['description'] === 'Einrichtung: Webhosting M' && $setup['items'][0]['unitPrice'] == 19 && $setup['totals']['total'] == 22.61 && $setup['recurringId'] === null, $setup['items'] ?? $setup);
+
+// Annahme: Miete mit Startdatum in der Zukunft, ohne sofortige Rechnung
+$oFuture = call('POST', '/api/portal/orders', ['productId' => $pDomain, 'quantity' => 2], null, $OP)[1];
+$res = call('POST', "/api/orders/{$oFuture['id']}/accept", ['startDate' => '2099-03-01', 'billNow' => true], $token);
+$rec = call('GET', "/api/recurring/{$res[1]['recurring']['id']}", null, $token)[1];
+check('Miete mit Startdatum in der Zukunft: Abo wartet, keine Rechnung, keine Einrichtung (Domain hat keine)', $res[0] === 200 && $res[1]['invoice'] === null && $res[1]['setupInvoice'] === null && $rec['occurrence'] === 0 && $rec['nextRunDate'] === '2099-03-01T00:00:00.000Z' && $rec['intervalUnit'] === 'YEARLY' && $rec['items'][0]['quantity'] == 2, $res[2]);
+
+// Annahme: Miete mit automatischem Versand
+$oAuto = call('POST', '/api/portal/orders', ['productId' => $pHost], null, $OP)[1];
+$before = count(mails());
+$res = call('POST', "/api/orders/{$oAuto['id']}/accept", ['autoSend' => true], $token);
+$firstAuto = call('GET', "/api/invoices/{$res[1]['invoice']['id']}", null, $token)[1];
+$newMails = array_slice(mails(), $before);
+check('Miete mit „automatisch senden“: erste Rechnung geht sofort per E-Mail raus (Status Versendet)', $res[0] === 200 && $firstAuto['status'] === 'SENT' && count($firstAuto['emails']) === 1 && count(array_filter($newMails, static fn ($m) => str_contains($m['head'], 'X-Envelope-To: bea@besteller.de') && count(attachments($m)) === 1)) === 1, count($newMails));
+$recAuto = call('GET', "/api/recurring/{$res[1]['recurring']['id']}", null, $token)[1];
+check('… und das Abo versendet künftige Rechnungen automatisch', $recAuto['autoSend'] === true, $recAuto['autoSend']);
+
+// Annahme: Zeitprodukt → Projekt
+$res = call('POST', "/api/orders/{$oHours['id']}/accept", [], $token);
+expect('Zeitprodukt-Bestellung annehmen', $res, 200);
+check('Projekt verknüpft, keine Rechnung', $res[1]['project']['name'] === 'Projektarbeit nach Stunden' && $res[1]['invoice'] === null && $res[1]['recurring'] === null, $res[1]);
+$proj = call('GET', "/api/projects/{$res[1]['project']['id']}", null, $token)[1];
+check('Projekt: Stundensatz 85 €, Budget 1.700 € (20 Std.), geplant, Kunde, Bestellnummer und Anmerkung in der Beschreibung', $proj['hourlyRate'] == 85 && $proj['budget'] == 1700 && $proj['status'] === 'PLANNED' && $proj['clientId'] === $orderClient && str_contains($proj['description'], $oHours['number']) && str_contains($proj['description'], 'Relaunch der Unterseiten'), $proj);
+
+// Ablehnen
+$before = count(mails());
+$res = call('POST', "/api/orders/{$oFlyer['id']}/reject", ['reason' => 'Wir drucken aktuell nur ab 1.000 Stück'], $token);
+check('Bestellung ablehnen mit Begründung', $res[0] === 200 && $res[1]['status'] === 'REJECTED' && $res[1]['rejectReason'] === 'Wir drucken aktuell nur ab 1.000 Stück' && $res[1]['invoice'] === null, $res[2]);
+$recent = array_slice(mails(), $before);
+check('Kunde erhält die Ablehnung samt Grund per E-Mail', count($recent) === 1 && str_contains(mailText($recent[0]), 'Wir drucken aktuell nur ab 1.000 Stück') && str_contains(mailText($recent[0]), 'leider'), count($recent));
+$mine = current(array_filter(call('GET', '/api/portal/orders', null, null, $OP)[1], static fn ($o) => $o['id'] === $oFlyer['id']));
+check('Kunde sieht „Abgelehnt“ mit Begründung', $mine['status'] === 'REJECTED' && $mine['rejectReason'] === 'Wir drucken aktuell nur ab 1.000 Stück', $mine);
+expect('Ablehnung ohne Grund ist erlaubt', call('POST', "/api/orders/" . call('POST', '/api/portal/orders', ['productId' => $pScript], null, $OP)[1]['id'] . "/reject", [], $token), 200);
+
+// Bestellung im Auftrag des Kunden erfassen
+$res = call('POST', '/api/orders', ['clientId' => $orderClient, 'productId' => $pInactive, 'quantity' => 3, 'note' => 'Telefonische Bestellung'], $token);
+check('Mitarbeiter erfasst Bestellung für den Kunden (auch inaktives Produkt), Quelle „Admin“', $res[0] === 201 && $res[1]['source'] === 'ADMIN' && $res[1]['status'] === 'PENDING' && $res[1]['quantity'] == 3, $res[2]);
+$adminOrder = $res[1];
+expect('Bestellung für unbekannten Kunden → 404', call('POST', '/api/orders', ['clientId' => 'gibtsnicht', 'productId' => $pWeb], $token), 404);
+expect('Bestellung für unbekanntes Produkt → 404', call('POST', '/api/orders', ['clientId' => $orderClient, 'productId' => 'gibtsnicht'], $token), 404);
+expect('Bestellung unter Mindestmenge (Mitarbeiter) → 400', call('POST', '/api/orders', ['clientId' => $orderClient, 'productId' => $pFlyer, 'quantity' => 10], $token), 400);
+
+// Produkt löschen: Bestellung bleibt bearbeitbar
+$res = call('DELETE', "/api/products/$pInactive", null, $token);
+$res2 = call('GET', "/api/orders/{$adminOrder['id']}", null, $token);
+check('Produkt gelöscht: Bestellung behält Name und Preis, Verknüpfung entfällt', $res[0] === 204 && $res2[1]['productId'] === null && $res2[1]['productName'] === 'Auslaufprodukt' && $res2[1]['unitPrice'] == 10, $res2[2]);
+$res = call('POST', "/api/orders/{$adminOrder['id']}/accept", [], $token);
+check('… und lässt sich trotzdem annehmen', $res[0] === 200 && $res[1]['invoice'] !== null, $res[2]);
+$res = call('GET', "/api/clients/$orderClient", null, $token);
+$log = json_encode($res[1]['activities'], JSON_UNESCAPED_UNICODE);
+check('Aktivitätsverlauf des Kunden enthält Bestell- und Entscheidungsereignisse', str_contains($log, 'angenommen') && str_contains($log, 'abgelehnt') && str_contains($log, 'über das Kundenportal') && str_contains($log, 'vom Kunden storniert'), count($res[1]['activities']));
+$res = call('GET', '/api/settings', null, $token);
+check('Keine offenen Bestellungen mehr', $res[1]['pendingOrders'] === 0, $res[2]);
+
+// Schutz vor Bestell-Spam
+$spamClient = call('POST', '/api/clients', ['name' => 'Spam Kunde', 'email' => 'spam@example.com'], $token)[1]['id'];
+$SP = ['X-Portal-Token: ' . call('POST', "/api/clients/$spamClient/portal", [], $token)[1]['token']];
+$codes = [];
+for ($i = 0; $i < 21; $i++) {
+    $codes[] = call('POST', '/api/portal/orders', ['productId' => $pScript], null, $SP)[0];
+}
+check('Mehr als 20 offene Bestellungen gleichzeitig werden abgelehnt (409)', count(array_filter($codes, static fn ($c) => $c === 201)) === 20 && end($codes) === 409, array_count_values($codes));
+call('DELETE', "/api/clients/$spamClient", null, $token);
+call('DELETE', "/api/clients/$strangerClient", null, $token);
+
 echo "Kundenportal\n";
 $portalDb = new PDO('sqlite:' . "$tmp/test.db");
 $res = call('GET', "/api/clients/$clientId/portal", null, $token);
@@ -692,7 +977,7 @@ $check = new PDO('sqlite:' . $dbCopy);
 check('Backup-Datenbank ist intakt und enthält alle Daten (Kunden, Rechnungen, Mahnungen, Abos)', $check->query('PRAGMA integrity_check')->fetchColumn() === 'ok' && (int) $check->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientTotal && (int) $check->query('SELECT COUNT(*) FROM Invoice')->fetchColumn() === $invoiceTotal && (int) $check->query('SELECT COUNT(*) FROM Reminder')->fetchColumn() >= 1 && (int) $check->query('SELECT COUNT(*) FROM Recurring')->fetchColumn() >= 1, [$clientTotal, $invoiceTotal]);
 check('Dokument im Backup hat den richtigen Inhalt', $zip->getFromName("uploads/$uploadedName") === 'Sicherungstest');
 $manifest = json_decode((string) $zip->getFromName('manifest.json'), true);
-check('Manifest: Prüfsumme passt zur Datenbank, Migrationen aufgelistet', $manifest['database']['sha256'] === hash('sha256', (string) $zip->getFromName('database.sqlite')) && $manifest['uploads'] === 1 && count($manifest['migrations']) === 3, $manifest);
+check('Manifest: Prüfsumme passt zur Datenbank, Migrationen aufgelistet', $manifest['database']['sha256'] === hash('sha256', (string) $zip->getFromName('database.sqlite')) && $manifest['uploads'] === 1 && count($manifest['migrations']) === 4, $manifest);
 $zip->close();
 unset($check);
 
@@ -779,6 +1064,15 @@ $tz->addFromString('manifest.json', json_encode(['database' => ['sha256' => str_
 $tz->close();
 [$code, $out] = $cli('restore.php', [$tampered, '--yes'], ['BACKUP_PASSPHRASE' => ''] + $restoreEnv);
 check('Falsche Prüfsumme im Manifest: Wiederherstellung wird verweigert', $code === 1 && str_contains($out, 'Prüfsumme'), $out);
+
+// Skripte mehrfach ausführbar (Regression: „SELECT 1“-Abfragen)
+$seedEnv = ['DATABASE_PATH' => "$tmp/seedtest.db", 'BACKUP_DIR' => "$tmp/seed-backups"];
+[$code] = $cli('migrate.php', [], $seedEnv);
+[$c1, $o1] = $cli('seed.php', [], $seedEnv);
+[$c2, $o2] = $cli('seed.php', [], $seedEnv);
+[$c3, $o3] = $cli('seed-catalog.php', [], $seedEnv);
+[$c4, $o4] = $cli('seed-catalog.php', [], $seedEnv);
+check('bin/seed.php und bin/seed-catalog.php sind beliebig oft ausführbar', $code === 0 && $c1 === 0 && $c2 === 0 && $c3 === 0 && $c4 === 0 && str_contains($o3, '3 Kategorie(n) und 9 Produkt(e)') && str_contains($o4, '0 Kategorie(n) und 0 Produkt(e)'), [$o2, $o4]);
 
 // Cron-Anbindung
 foreach (glob("$tmp/backups/crm-backup-*.zip") as $f) {

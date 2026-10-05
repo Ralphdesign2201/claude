@@ -23,6 +23,8 @@ Rechnungen mit Zahlungen und – für Admins – die Teamverwaltung.
 - **Angebote**: Nummern `AN-JJJJ-0001`, PDF, E-Mail, mit einem Klick in eine Rechnung umwandeln
 - **Mahnwesen**: Übersicht überfälliger Rechnungen, drei Stufen (Zahlungserinnerung, 1. Mahnung, letzte Mahnung) mit editierbarem Text, Gebühr und Frist, Mahnbrief als PDF
 - **Abos (wiederkehrende Rechnungen)**: Domains, Hosting, Wartung, Homepage-Miete – monatlich bis jährlich, automatisch per Cron
+- **Produktkatalog**: beliebig viele Kategorien und Produkte in drei Arten: Einmalkauf (Webseite, Skripte, Druckaufträge), Mietprodukte (Hosting, Domains, Miethomepage, Wartung, SEO) und Zeitprodukte (Projekte auf Stundenbasis)
+- **Bestellungen**: Kunden bestellen im Portal, du nimmst an oder lehnst ab; aus einer Annahme entstehen automatisch Rechnung, Abo oder Projekt
 - **Kundenportal**: Kunden sehen ihre Rechnungen und Angebote selbst, laden PDFs herunter und nehmen Angebote online an – per persönlichem Link, ohne Passwort
 - **Datensicherung**: automatische, geprüfte und auf Wunsch verschlüsselte Backups (Datenbank + Dokumente) mit Aufbewahrungsregel und Wiederherstellung
 - **Verträge**, **Notizen** (pinnbar), **Dokumente** (Upload bis 25 MB)
@@ -86,6 +88,28 @@ Fällige Abos werden erzeugt durch
   (Token mit mindestens 16 Zeichen in der `.env` als `CRON_TOKEN` setzen, sonst ist der Endpunkt gesperrt)
 - oder per Klick auf „Fällige jetzt abrechnen“ in der Oberfläche.
 
+## Produkte und Bestellungen
+
+Unter „Produkte“ legst du **beliebig viele Kategorien und Produkte** an (kein Limit). Jedes Produkt hat eine von drei Arten:
+
+| Art | Beispiele | Preis | Beim Annehmen einer Bestellung entsteht |
+|---|---|---|---|
+| **Einmalig** | Webseitenerstellung, Skripte, Druckaufträge | Festpreis (optional mit Einheit, z. B. „Stück“, und Mindestmenge) | eine **Rechnung** (Entwurf) |
+| **Miete** | Webhosting, Domain, Miethomepage, Wartung, SEO | Preis je Zeitraum (monatlich bis jährlich), optional einmalige Einrichtungsgebühr | ein **Abo** (wiederkehrende Rechnung), eine Rechnung für die Einrichtung und auf Wunsch gleich die erste Abo-Rechnung |
+| **Nach Stunden** | Projekte auf Stundenbasis | Stundensatz | ein **Projekt** mit Stundensatz und Budget aus der geschätzten Stundenzahl, abgerechnet wird später nach den gebuchten Zeiten |
+
+Unter dem Reiter „Produkte“ im Kundenportal sehen Kunden die **aktiven** Produkte nach Kategorien und bestellen mit Menge und Anmerkung. Der Preis
+wird im Bestelldialog live berechnet (netto, MwSt., brutto). Die Bestellung erscheint bei dir unter „Bestellungen“ (mit Zähler im Menü und Hinweis auf dem Dashboard);
+du bekommst eine E-Mail, der Kunde eine Eingangsbestätigung (wenn E-Mail eingerichtet ist). Dort **nimmst du an oder lehnst mit Begründung ab**; der Kunde sieht den Stand im Portal
+und per E-Mail. Solange eine Bestellung offen ist, kann der Kunde sie zurückziehen. Du kannst Bestellungen auch **für Kunden erfassen** (z. B. nach einem Telefonat).
+
+- **Preise werden bei der Bestellung festgehalten.** Spätere Preisänderungen oder das Löschen des Produkts ändern bestehende Bestellungen nicht.
+- Inaktive Produkte und Produkte in ausgeblendeten Kategorien sehen Kunden nicht; in Angebote, Rechnungen und Abos kannst du sie weiter einfügen („Produkt aus dem Katalog einfügen“).
+- Aus einer Bestellung entstehen **nur Entwürfe**: nichts wird ohne dein Zutun versendet (außer du aktivierst beim Abo „automatisch senden“).
+- Das Löschen einer Kategorie löscht ihre Produkte nicht; sie erscheinen dann unter „Ohne Kategorie“ bzw. im Portal unter „Weitere Produkte“.
+- Pro Kunde sind höchstens 20 offene Bestellungen gleichzeitig möglich (Schutz vor Missbrauch).
+- **Schnellstart:** Auf der leeren Produktseite legt „Beispielkatalog anlegen“ (oder `php bin/seed-catalog.php`) deine typischen Produkte mit Preisvorschlägen an. Alles ist zunächst inaktiv, bis du es prüfst und aktivierst.
+
 ## Kundenportal
 
 Beim Kunden findest du die Karte „Kundenportal“. „Zugang erstellen“ erzeugt einen persönlichen Link der Form
@@ -137,7 +161,7 @@ Standardtext; bitte rechtlich mit dem Steuerberater abstimmen. Empfängeradresse
 php tests/run.php           # oder: composer test
 ```
 
-Startet einen Server und einen kleinen SMTP-Testserver mit frischer Temp-Datenbank und prüft die komplette API per HTTP (Auth, CRUD, Rechnungslogik, Upload, Rechte, Sicherheit, E-Mail-Versand mit Anhängen, Angebote, Mahnwesen, Abo-Zeitplan, Kundenportal mit Mandantentrennung, Backup, Verschlüsselung und Wiederherstellung).
+Startet einen Server und einen kleinen SMTP-Testserver mit frischer Temp-Datenbank und prüft die komplette API per HTTP (Auth, CRUD, Rechnungslogik, Upload, Rechte, Sicherheit, E-Mail-Versand mit Anhängen, Angebote, Mahnwesen, Abo-Zeitplan, Katalog und Bestellungen, Kundenportal mit Mandantentrennung, Backup, Verschlüsselung und Wiederherstellung).
 
 ## Endpunkte
 
@@ -155,6 +179,8 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Mahnwesen     | `GET /api/reminders/overview`, `GET /api/invoices/:id/reminder-draft?level=`, `POST /api/invoices/:id/reminders`, `GET /api/reminders/:id/pdf`, `DELETE /api/reminders/:id` |
 | Abos          | `GET/POST /api/recurring`, `GET/PATCH/DELETE /api/recurring/:id`, `POST /api/recurring/:id/run`, `POST /api/recurring/run-due`, `POST /api/cron/run` (Token) |
 | Kundenportal  | Verwaltung: `GET/POST/DELETE /api/clients/:id/portal`; Kunden (Header `X-Portal-Token`): `GET /api/portal/me`, `/api/portal/invoices`, `/api/portal/invoices/:id/pdf`, `/api/portal/quotes`, `/api/portal/quotes/:id/pdf`, `POST /api/portal/quotes/:id/accept|decline` |
+| Katalog       | `GET/POST /api/categories`, `PATCH/DELETE /api/categories/:id`, `GET/POST /api/products`, `GET/PATCH/DELETE /api/products/:id`, `POST /api/products/:id/duplicate`, `POST /api/catalog/examples` |
+| Bestellungen  | `GET/POST /api/orders`, `GET /api/orders/:id`, `POST /api/orders/:id/accept`, `POST /api/orders/:id/reject`; Portal: `GET /api/portal/products`, `GET/POST /api/portal/orders`, `POST /api/portal/orders/:id/cancel` |
 | Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
 | Einstellungen | `GET /api/settings` (Mail eingerichtet? Firmendaten gesetzt?) |
 | Verträge      | `GET/POST /api/contracts`, `GET/PATCH/DELETE /api/contracts/:id` |
@@ -179,7 +205,7 @@ src/Pdf/                PDF-Schreiber, Layouts für Rechnung, Angebot und Mahnun
 src/Mail/               SMTP-Client (STARTTLS/SSL, Anhänge)
 src/Services/           Rechnungslogik, Mailvorlagen, Abo-Zeitplan, Portal-Zugang, Backups
 database/migrations/    SQL-Migrationen (werden von bin/migrate.php angewendet)
-bin/                    migrate.php, seed.php, cron.php (Abos + Backup), backup.php, restore.php
+bin/                    migrate.php, seed.php, seed-catalog.php, cron.php (Abos + Backup), backup.php, restore.php
 uploads/                hochgeladene Dateien (außerhalb des Document Root)
 tests/run.php           End-to-End-Tests
 ```

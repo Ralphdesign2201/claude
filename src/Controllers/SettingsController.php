@@ -8,6 +8,7 @@ use App\Http\Request;
 use App\Http\Response;
 use App\Mail\Mailer;
 use App\Pdf\DocumentPdf;
+use App\Support\Db;
 
 /** Nicht-geheime Einstellungen, damit die Oberfläche fehlende Konfiguration erklären kann. */
 final class SettingsController
@@ -16,6 +17,7 @@ final class SettingsController
     {
         $co = DocumentPdf::company();
         return Response::json([
+            'pendingOrders' => (int) Db::value('SELECT COUNT(*) FROM "ProductOrder" WHERE "status" = \'PENDING\''),
             'mailConfigured' => Mailer::configured(),
             'mailDriver' => Mailer::driver(),
             'mailFrom' => Mailer::fromAddress(),

@@ -60,6 +60,51 @@ final class MailTemplates
         ];
     }
 
+    /** @param array<string,mixed> $o Bestellung (Schnappschuss) */
+    private static function orderLine(array $o): string
+    {
+        $qty = \App\Support\Format::qty((float) $o['quantity']) . ($o['unit'] ? ' ' . $o['unit'] : '×');
+        return "$qty {$o['productName']}";
+    }
+
+    /** Eingangsbestätigung an den Kunden. @return array{subject:string,message:string} */
+    public static function orderReceived(array $client, array $o): array
+    {
+        return [
+            'subject' => "Ihre Bestellung {$o['number']} ist eingegangen",
+            'message' => self::greeting($client) . "\n\nvielen Dank, wir haben Ihre Bestellung {$o['number']} erhalten:\n\n" . self::orderLine($o)
+                . "\n\nWir prüfen sie und melden uns in Kürze bei Ihnen. Den Stand sehen Sie jederzeit in Ihrem Kundenportal.",
+        ];
+    }
+
+    /** Benachrichtigung an die Firma über eine neue Bestellung. @return array{subject:string,message:string} */
+    public static function orderNotify(array $client, array $o): array
+    {
+        $who = $client['company'] ?: $client['name'];
+        return [
+            'subject' => "Neue Bestellung {$o['number']} von $who",
+            'message' => "$who hat bestellt (Bestellung {$o['number']}):\n\n" . self::orderLine($o)
+                . ($o['note'] ? "\n\nAnmerkung des Kunden:\n{$o['note']}" : '') . "\n\nBitte im System unter „Bestellungen“ prüfen und annehmen oder ablehnen.",
+        ];
+    }
+
+    /** Entscheidung (angenommen/abgelehnt) an den Kunden. @return array{subject:string,message:string} */
+    public static function orderDecision(array $client, array $o): array
+    {
+        if ($o['status'] === 'ACCEPTED') {
+            return [
+                'subject' => "Ihre Bestellung {$o['number']} wurde bestätigt",
+                'message' => self::greeting($client) . "\n\nwir haben Ihre Bestellung {$o['number']} bestätigt:\n\n" . self::orderLine($o)
+                    . "\n\nDie Rechnung bzw. alle weiteren Informationen erhalten Sie von uns separat. Den Stand sehen Sie in Ihrem Kundenportal.",
+            ];
+        }
+        return [
+            'subject' => "Zu Ihrer Bestellung {$o['number']}",
+            'message' => self::greeting($client) . "\n\nleider können wir Ihre Bestellung {$o['number']} so nicht ausführen:\n\n" . self::orderLine($o)
+                . ($o['rejectReason'] ? "\n\nGrund: {$o['rejectReason']}" : '') . "\n\nBei Fragen melden Sie sich gerne.",
+        ];
+    }
+
     /** @return array{subject:string,message:string} */
     public static function quote(array $q): array
     {

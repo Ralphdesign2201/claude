@@ -24,6 +24,15 @@
   var QUOTE_STATUS = { DRAFT: ['Entwurf', 'neutral'], SENT: ['Versendet', 'info'], ACCEPTED: ['Angenommen', 'good'], DECLINED: ['Abgelehnt', 'bad'], EXPIRED: ['Abgelaufen', 'warn'] };
   var INTERVALS = { MONTHLY: 'monatlich', QUARTERLY: 'vierteljährlich', HALF_YEARLY: 'halbjährlich', YEARLY: 'jährlich' };
   var LEVELS = { 1: 'Zahlungserinnerung', 2: '1. Mahnung', 3: 'Letzte Mahnung' };
+  var TYPES = { ONE_TIME: ['Einmalig', 'info'], RENTAL: ['Miete', 'good'], HOURLY: ['Nach Stunden', 'warn'] };
+  var PERIOD = { MONTHLY: 'Monat', QUARTERLY: 'Quartal', HALF_YEARLY: 'Halbjahr', YEARLY: 'Jahr' };
+  var ORDER_STATUS = { PENDING: ['Neu', 'warn'], ACCEPTED: ['Angenommen', 'good'], REJECTED: ['Abgelehnt', 'bad'], CANCELLED: ['Storniert', 'neutral'] };
+  var priceText = function (p) {
+    var base = eur(p.price);
+    if (p.type === 'RENTAL') return base + ' / ' + PERIOD[p.intervalUnit];
+    if (p.type === 'HOURLY') return base + ' / ' + (p.unit || 'Std.');
+    return base + (p.unit ? ' / ' + p.unit : '');
+  };
   var pill = function (map, key) { var m = map[key] || [key, 'neutral']; return '<span class="pill ' + m[1] + '">' + esc(m[0]) + '</span>'; };
   var opts = function (map) { return Object.keys(map).map(function (k) { return [k, map[k][0]]; }); };
 
@@ -61,7 +70,7 @@
   var listAll = function (path, params) { return api('GET', path + qs(Object.assign({ pageSize: 100 }, params || {}))).then(function (r) { return r.items; }); };
 
   /* ---------- Zustand ---------- */
-  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '' };
+  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', orderId: null, pending: 0 };
 
   /* ---------- Rechnungs-Hilfen ---------- */
   function shownStatus(inv) {
@@ -104,7 +113,7 @@
 
   /* ---------- Rahmen ---------- */
   function navItems() {
-    var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
+    var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
     if (me && me.role === 'ADMIN') n.push(['team', 'Team']);
     return n;
   }
@@ -115,10 +124,20 @@
     }
     $('#sb-avatar').textContent = (me.name || '?').split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
     $('#sb-name').innerHTML = esc(me.name) + '<br><span class="sub">' + (me.role === 'ADMIN' ? 'Admin' : 'Mitarbeiter') + '</span>';
+    drawNav();
+  }
+  function drawNav() {
     $('#nav').innerHTML = navItems().map(function (n) {
-      var cur = ui.view === n[0] || (n[0] === 'clients' && ui.view === 'client') || (n[0] === 'invoices' && ui.view === 'invoice') || (n[0] === 'quotes' && ui.view === 'quote');
-      return '<button data-act="nav" data-v="' + n[0] + '"' + (cur ? ' aria-current="page"' : '') + '>' + n[1] + '</button>';
+      var cur = ui.view === n[0] || (n[0] === 'clients' && ui.view === 'client') || (n[0] === 'invoices' && ui.view === 'invoice') || (n[0] === 'quotes' && ui.view === 'quote') || (n[0] === 'orders' && ui.view === 'order');
+      var badge = n[0] === 'orders' && ui.pending > 0 ? '<span class="count" aria-label="' + ui.pending + ' neue">' + ui.pending + '</span>' : '';
+      return '<button data-act="nav" data-v="' + n[0] + '"' + (cur ? ' aria-current="page"' : '') + '>' + n[1] + badge + '</button>';
     }).join('');
+  }
+  /** Zählt offene Bestellungen für das Menü, ohne die Ansicht zu blockieren. */
+  function refreshBadge() {
+    api('GET', '/api/settings').then(function (st) {
+      if (st.pendingOrders !== ui.pending && $('#nav')) { ui.pending = st.pendingOrders; drawNav(); }
+    }).catch(function () { /* Badge ist optional */ });
   }
   var head = function (title, sub, actions) {
     return '<div class="head"><div><h1>' + title + '</h1>' + (sub ? '<p>' + sub + '</p>' : '') + '</div><div class="row">' + (actions || '') + '</div></div>';
@@ -127,10 +146,11 @@
 
   /* ---------- Ansichten ---------- */
   function vDashboard() {
-    return Promise.all([api('GET', '/api/dashboard/summary'), listAll('/api/invoices')]).then(function (r) {
-      var s = r[0], invoices = r[1];
+    return Promise.all([api('GET', '/api/dashboard/summary'), listAll('/api/invoices'), api('GET', '/api/settings')]).then(function (r) {
+      var s = r[0], invoices = r[1], pendingOrders = r[2].pendingOrders;
       var openCount = invoices.filter(function (i) { return i.totals.balance > 0 && i.status !== 'CANCELLED'; }).length;
       return head('Guten Tag, ' + esc(me.name.split(' ')[0]), 'Das ist heute los in deinem Studio.', '<button class="btn primary" data-act="new-invoice">+ Rechnung</button><button class="btn" data-act="new-client">+ Kunde</button>') +
+        (pendingOrders > 0 ? '<div class="demo"><span><b>' + pendingOrders + (pendingOrders === 1 ? ' neue Bestellung wartet' : ' neue Bestellungen warten') + '</b> auf deine Bestätigung.</span><button class="btn sm primary" data-act="nav" data-v="orders">Bestellungen ansehen</button></div>' : '') +
         '<div class="grid kpis">' +
         kpi('Bezahlt', eur(s.revenue.paid), 'Zahlungseingänge gesamt') +
         kpi('Offen', eur(s.revenue.outstanding), openCount + ' Rechnungen') +
@@ -372,6 +392,64 @@
     });
   }
 
+  function vProducts() {
+    return Promise.all([api('GET', '/api/categories'), api('GET', '/api/products')]).then(function (r) {
+      var cats = r[0], all = r[1], sel = ui.pcat;
+      if (sel && sel !== 'none' && !cats.some(function (c) { return c.id === sel; })) sel = ui.pcat = '';
+      var rows = all.filter(function (p) { return !sel || (sel === 'none' ? !p.categoryId : p.categoryId === sel); });
+      var uncat = all.filter(function (p) { return !p.categoryId; }).length;
+      var chips = [['', 'Alle (' + all.length + ')']].concat(cats.map(function (c) { return [c.id, c.name + ' (' + c.productCount + ')' + (c.active ? '' : ' · verborgen')]; }));
+      if (uncat) chips.push(['none', 'Ohne Kategorie (' + uncat + ')']);
+      var selCat = cats.filter(function (c) { return c.id === sel; })[0];
+      return head('Produkte', 'Katalog für Angebote, Rechnungen und Bestellungen im Kundenportal.', '<button class="btn" data-act="new-category">+ Kategorie</button><button class="btn primary" data-act="new-product">+ Produkt</button>') +
+        '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="pfilter" data-v="' + esc(c[0]) + '" aria-pressed="' + (sel === c[0]) + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
+        (selCat ? '<div class="card row" style="justify-content:space-between"><div><b>' + esc(selCat.name) + '</b>' + (selCat.description ? '<div class="sub">' + esc(selCat.description) + '</div>' : '') + '</div><div class="row"><button class="btn sm" data-act="new-product" data-cat="' + esc(selCat.id) + '">+ Produkt hier</button><button class="btn sm" data-act="edit-category" data-id="' + esc(selCat.id) + '">Kategorie bearbeiten</button><button class="btn sm ghost danger" data-act="del-category" data-id="' + esc(selCat.id) + '">Löschen</button></div></div>' : '') +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Produkt</th><th>Art</th><th class="r">Preis (netto)</th><th>Kategorie</th><th>Status</th><th></th></tr></thead><tbody>' + (rows.length ? rows.map(function (p) {
+          return '<tr><td><b>' + esc(p.name) + '</b>' + (p.description ? '<div class="sub">' + esc(p.description.length > 90 ? p.description.slice(0, 90) + '…' : p.description) + '</div>' : '') + '</td><td>' + pill(TYPES, p.type) + (p.type === 'RENTAL' ? '<div class="sub">' + INTERVALS[p.intervalUnit] + '</div>' : '') + '</td><td class="r num">' + priceText(p) + (p.setupFee > 0 ? '<div class="sub">+ ' + eur(p.setupFee) + ' Einrichtung</div>' : '') + '</td><td>' + esc(p.category ? p.category.name : '–') + '</td><td>' + (p.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Inaktiv</span>') + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="prod-edit" data-id="' + esc(p.id) + '">Bearbeiten</button><button class="btn sm ghost" data-act="prod-toggle" data-id="' + esc(p.id) + '" data-active="' + (p.active ? '1' : '0') + '">' + (p.active ? 'Deaktivieren' : 'Aktivieren') + '</button><button class="btn sm ghost" data-act="prod-dup" data-id="' + esc(p.id) + '">Kopieren</button><button class="btn sm ghost danger" data-act="prod-del" data-id="' + esc(p.id) + '">Löschen</button></div></td></tr>';
+        }).join('') : '<tr><td colspan="6" class="empty">' + (all.length ? 'In dieser Kategorie gibt es noch keine Produkte.' : 'Noch keine Produkte. Lege eine Kategorie und dein erstes Produkt an, z. B. „Webseitenerstellung einmalig“, „Webhosting“ oder „Projektarbeit nach Stunden“.') + '</td></tr>') + '</tbody></table></div></div>' +
+        (all.length === 0 ? '<div class="card stack"><b>Schnellstart</b><p class="sub" style="margin:0">Lege einen Beispielkatalog an: Einmalleistungen (Webseite, Skripte, Druckaufträge), Mietprodukte (Webhosting, Domain, Miethomepage, Wartung, SEO) und Projektarbeit nach Stunden. Preise und Texte sind Vorschläge, alles ist zunächst inaktiv, bis du es prüfst und aktivierst.</p><div><button class="btn primary" data-act="catalog-examples">Beispielkatalog anlegen</button></div></div>' : '') +
+        '<p class="sub">Aktive Produkte können Kunden im Kundenportal bestellen. Inaktive Produkte und Produkte in verborgenen Kategorien sind dort nicht sichtbar, du kannst sie aber weiter in Angebote und Rechnungen einfügen.</p>';
+    });
+  }
+
+  function vOrders() {
+    return api('GET', '/api/orders' + qs({ pageSize: 100, status: ui.ostatus })).then(function (res) {
+      var chips = [['', 'Alle']].concat(opts(ORDER_STATUS));
+      return head('Bestellungen', 'Bestellungen aus dem Kundenportal und von dir erfasste Bestellungen.', '<button class="btn primary" data-act="new-order">+ Bestellung erfassen</button>') +
+        '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="ofilter" data-v="' + c[0] + '" aria-pressed="' + (ui.ostatus === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>' +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Bestellung</th><th>Kunde</th><th>Produkt</th><th class="r">Betrag (netto)</th><th>Status</th></tr></thead><tbody>' + (res.items.length ? res.items.map(function (o) {
+          return '<tr class="click" data-act="open-order" data-id="' + esc(o.id) + '"><td><button class="link mono" data-act="open-order" data-id="' + esc(o.id) + '">' + esc(o.number) + '</button><div class="sub">' + fdate(o.createdAt) + (o.source === 'ADMIN' ? ' · von dir erfasst' : '') + '</div></td><td>' + esc(o.client.company || o.client.name) + '</td><td>' + qtyText(o) + ' ' + esc(o.productName) + '<div class="sub">' + pill(TYPES, o.productType) + '</div></td><td class="r num">' + eur(o.totals.net) + (o.productType === 'RENTAL' ? '<div class="sub">dann ' + eur(o.totals.recurringNet) + ' / ' + PERIOD[o.intervalUnit] + '</div>' : o.productType === 'HOURLY' ? '<div class="sub">geschätzt</div>' : '') + '</td><td>' + pill(ORDER_STATUS, o.status) + '</td></tr>';
+        }).join('') : '<tr><td colspan="5" class="empty">' + (ui.ostatus ? 'Keine Bestellungen mit diesem Status.' : 'Noch keine Bestellungen. Sobald ein Kunde im Portal bestellt, erscheint sie hier.') + '</td></tr>') + '</tbody></table></div></div>';
+    });
+  }
+  var qtyText = function (o) { return o.quantity.toLocaleString('de-DE') + (o.unit ? ' ' + esc(o.unit) : '×'); };
+
+  function orderEffect(o) {
+    if (o.productType === 'ONE_TIME') return 'Beim Annehmen wird eine <b>Rechnung (Entwurf)</b> über ' + eur(o.totals.net) + ' netto erstellt.';
+    if (o.productType === 'RENTAL') return 'Beim Annehmen wird ein <b>Abo</b> (' + INTERVALS[o.intervalUnit] + ', ' + eur(o.totals.recurringNet) + ' netto) angelegt' + (o.setupFee > 0 ? ' und eine <b>Rechnung für die Einrichtung</b> (' + eur(o.setupFee) + ' netto) erstellt' : '') + '. Auf Wunsch entsteht gleich die erste Abo-Rechnung.';
+    return 'Beim Annehmen wird ein <b>Projekt</b> mit Stundensatz ' + eur(o.unitPrice) + ' und Budget ' + eur(o.totals.net) + ' (' + o.quantity.toLocaleString('de-DE') + ' Std. geschätzt) angelegt. Abgerechnet wird später nach den gebuchten Zeiten.';
+  }
+
+  function vOrder() {
+    return api('GET', '/api/orders/' + ui.orderId).then(function (o) {
+      var t = o.totals, pending = o.status === 'PENDING';
+      var made = [];
+      if (o.invoice) made.push('<button class="link mono" data-act="open-invoice" data-id="' + esc(o.invoice.id) + '">Rechnung ' + esc(o.invoice.number) + '</button>');
+      if (o.setupInvoice) made.push('<button class="link mono" data-act="open-invoice" data-id="' + esc(o.setupInvoice.id) + '">Einrichtungsrechnung ' + esc(o.setupInvoice.number) + '</button>');
+      if (o.recurring) made.push('<button class="link" data-act="nav" data-v="recurring">Abo „' + esc(o.recurring.title) + '“</button>');
+      if (o.project) made.push('<button class="link" data-act="open-project" data-id="' + esc(o.project.id) + '">Projekt „' + esc(o.project.name) + '“</button>');
+      return '<button class="btn ghost sm back" data-act="nav" data-v="orders" style="align-self:flex-start">← Alle Bestellungen</button>' +
+        head('<span class="mono">' + esc(o.number) + '</span>', pill(ORDER_STATUS, o.status) + ' &nbsp;<button class="link" data-act="open-client" data-id="' + esc(o.client.id) + '">' + esc(o.client.company || o.client.name) + '</button>' + (o.source === 'ADMIN' ? ' · von dir erfasst' : ' · über das Kundenportal'),
+          pending ? '<button class="btn primary" data-act="order-accept">Annehmen</button><button class="btn danger" data-act="order-reject">Ablehnen</button>' : '') +
+        '<div class="grid two"><div class="card"><h2>Bestellte Leistung</h2><dl class="kv"><dt>Produkt</dt><dd><b>' + esc(o.productName) + '</b> ' + pill(TYPES, o.productType) + '</dd><dt>Menge</dt><dd>' + qtyText(o) + (o.productType === 'HOURLY' ? ' (geschätzt)' : '') + '</dd><dt>Preis</dt><dd class="num">' + priceText({ type: o.productType, price: o.unitPrice, intervalUnit: o.intervalUnit, unit: o.unit }) + ' netto</dd>' +
+          (o.setupFee > 0 ? '<dt>Einrichtung</dt><dd class="num">' + eur(o.setupFee) + ' netto, einmalig</dd>' : '') + '<dt>Bestellt am</dt><dd>' + fdate(o.createdAt) + '</dd>' + (o.decidedAt ? '<dt>Entschieden am</dt><dd>' + fdate(o.decidedAt) + '</dd>' : '') + '</dl>' +
+          '<div class="sums" style="margin-top:12px"><div><span>Netto' + (o.productType === 'RENTAL' ? ' (erste Zahlung)' : '') + '</span><span>' + eur(t.net) + '</span></div><div><span>MwSt. ' + o.taxRate + ' %</span><span>' + eur(t.tax) + '</span></div><div class="tot"><span>Brutto</span><span>' + eur(t.gross) + '</span></div></div></div>' +
+        '<div class="card"><h2>Anmerkung des Kunden</h2><p style="margin:0;white-space:pre-wrap">' + (o.note ? esc(o.note) : '<span class="sub">Keine Anmerkung.</span>') + '</p>' + (o.rejectReason ? '<h2 style="margin-top:16px">Grund der Ablehnung</h2><p style="margin:0">' + esc(o.rejectReason) + '</p>' : '') + '</div></div>' +
+        (pending ? '<div class="demo"><span>' + orderEffect(o) + '</span></div>' : '') +
+        (made.length ? '<div class="card"><h2>Daraus entstanden</h2><div class="row">' + made.join(' · ') + '</div></div>' : '');
+    });
+  }
+
   var fsize = function (b) { return b >= 1048576 ? (b / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(b / 1024)).toLocaleString('de-DE') + ' KB'; };
   var ftime = function (iso) { return iso ? new Date(iso).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–'; };
 
@@ -397,12 +475,13 @@
   }
 
   /* ---------- Rendern ---------- */
-  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
+  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
   var seq = 0;
   function render() {
     if (!token || !me) return;
     var mine = ++seq;
     renderShell();
+    refreshBadge();
     var main = $('#main');
     if (!main.firstChild) main.innerHTML = '<div class="empty">Lädt …</div>';
     return VIEWS[ui.view]().then(function (html) {
@@ -537,8 +616,8 @@
   function docDialog(kind, preset) {
     preset = preset || {};
     var isRec = kind === 'recurring', isQuote = kind === 'quote';
-    Promise.all([listAll('/api/clients', { sort: 'name' }), listAll('/api/projects')]).then(function (r) {
-      var clients = r[0], projects = r[1];
+    Promise.all([listAll('/api/clients', { sort: 'name' }), listAll('/api/projects'), api('GET', '/api/products?active=true')]).then(function (r) {
+      var clients = r[0], projects = r[1], products = r[2];
       if (!clients.length) return toast('Lege zuerst einen Kunden an.');
       var rows = (preset.items || []).map(function (x) { return { description: x.description, quantity: x.quantity, unitPrice: x.unitPrice }; });
       if (!rows.length) rows = [{ description: '', quantity: 1, unitPrice: 0 }];
@@ -574,6 +653,7 @@
       }
       var title = isRec ? (preset.id ? 'Abo bearbeiten' : 'Neues Abo') : isQuote ? 'Neues Angebot' : 'Neue Rechnung';
       var body = '<div class="form">' + top + '</div>' +
+        (products.length ? '<label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted)" for="iprod">Produkt aus dem Katalog einfügen<select id="iprod" style="font-weight:400;color:var(--fg)"><option value="">– Produkt wählen –</option>' + products.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc((p.category ? p.category.name + ' › ' : '') + p.name + ' – ' + priceText(p)) + '</option>'; }).join('') + '</select></label>' : '') +
         '<div><div class="sub" style="margin-bottom:6px;font-weight:600">Positionen' + (isRec ? ' <span style="font-weight:400">(Platzhalter: {monat} {jahr} {zeitraum})</span>' : '') + '</div><div class="items" id="items"></div><button type="button" class="btn sm" data-row-add style="margin-top:8px">+ Position</button></div>' +
         '<div class="form">' + field('idisc', 'Rabatt (€)', preset.discount != null ? preset.discount : '0', 'number', { attrs: 'min="0" step="1"' }) +
         (isRec ? '<label class="full" style="flex-direction:row;align-items:center;gap:8px"><input id="rauto" type="checkbox"' + (preset.autoSend ? ' checked' : '') + '> Rechnung bei Fälligkeit automatisch per E-Mail senden</label>' : '') + '</div><div class="sums" id="sums"></div>';
@@ -596,6 +676,18 @@
       }, function (f) {
         draw(f);
         f.addEventListener('input', function (e) { if (e.target.closest('.item-row')) rows = collect(f); sums(f); });
+        var picker = f.querySelector('#iprod');
+        if (picker) picker.addEventListener('change', function (e) {
+          var prod = products.filter(function (x) { return x.id === e.target.value; })[0];
+          e.target.value = '';
+          if (!prod) return;
+          var row = { description: isRec ? prod.name + ' ({zeitraum})' : prod.name + (prod.type === 'RENTAL' && !isRec ? ' (' + INTERVALS[prod.intervalUnit] + ')' : ''), quantity: prod.minQuantity || 1, unitPrice: prod.price };
+          rows = collect(f);
+          var blank = rows.length === 1 && !rows[0].description && !rows[0].unitPrice;
+          if (blank) { rows[0] = row; f.querySelector('#irate').value = prod.taxRate; } else rows.push(row);
+          if (isRec && prod.type === 'RENTAL') { if (!v(f, 'rtitle')) f.querySelector('#rtitle').value = prod.name; f.querySelector('#rint').value = prod.intervalUnit; }
+          draw(f);
+        });
         f.querySelector('#icl').addEventListener('change', function (e) { f.querySelector('#ipr').innerHTML = projOpts(e.target.value).map(function (o) { return '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>'; }).join(''); });
         f.addEventListener('click', function (e) {
           var add = e.target.closest('[data-row-add]'), del = e.target.closest('[data-row-del]');
@@ -606,6 +698,91 @@
     }).catch(function (e) { toast(e.message); });
   }
   var invoiceDialog = function (presetClient) { docDialog('invoice', { clientId: presetClient }); };
+
+  function categoryDialog(cat) {
+    cat = cat || { name: '', description: '', sortOrder: 0, active: true };
+    modal(cat.id ? 'Kategorie bearbeiten' : 'Neue Kategorie',
+      '<div class="form">' + field('catname', 'Name *', cat.name, 'text', { full: true }) + '<label class="full" for="catdesc">Beschreibung (im Portal sichtbar)<textarea id="catdesc" rows="3">' + esc(cat.description || '') + '</textarea></label>' +
+      field('catsort', 'Reihenfolge', cat.sortOrder, 'number', { attrs: 'step="1"' }) + '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="catactive" type="checkbox"' + (cat.active ? ' checked' : '') + '> Im Portal anzeigen</label></div>', 'Speichern',
+      function (f) {
+        if (!v(f, 'catname')) return bad('Bitte einen Namen eingeben.');
+        var body = { name: v(f, 'catname'), description: f.querySelector('#catdesc').value.trim(), sortOrder: parseInt(v(f, 'catsort'), 10) || 0, active: f.querySelector('#catactive').checked };
+        return (cat.id ? api('PATCH', '/api/categories/' + cat.id, body) : api('POST', '/api/categories', body)).then(function (c) { if (!cat.id) ui.pcat = c.id; done(cat.id ? 'Kategorie gespeichert' : 'Kategorie angelegt'); });
+      });
+  }
+
+  function productDialog(prod, presetCat) {
+    api('GET', '/api/categories').then(function (cats) {
+      prod = prod || { name: '', description: '', type: 'ONE_TIME', price: '', taxRate: 19, unit: '', intervalUnit: 'YEARLY', setupFee: 0, minQuantity: 1, active: true, sortOrder: 0, categoryId: presetCat || (ui.pcat && ui.pcat !== 'none' ? ui.pcat : '') };
+      var typeOpts = [['ONE_TIME', 'Einmaliger Kauf (z. B. Webseite, Skript, Druckauftrag)'], ['RENTAL', 'Mietprodukt, wiederkehrend (z. B. Hosting, Domain, Wartung)'], ['HOURLY', 'Zeitprodukt, nach Stunden (Projekt auf Stundenbasis)']];
+      modal(prod.id ? 'Produkt bearbeiten' : 'Neues Produkt',
+        '<div class="form">' + field('pname', 'Name *', prod.name, 'text', { full: true }) +
+        selectField('pcat', 'Kategorie', [['', '– ohne Kategorie –']].concat(cats.map(function (c) { return [c.id, c.name]; })), prod.categoryId || '') +
+        selectField('ptype', 'Art', typeOpts, prod.type) +
+        '<label for="pprice"><span id="plabel">Preis (netto) in €</span><input id="pprice" type="number" min="0" step="0.01" value="' + esc(prod.price) + '"></label>' + field('ptax', 'MwSt. (%)', prod.taxRate, 'number', { attrs: 'min="0" max="100" step="1"' }) +
+        '<div class="form full" id="rentalFields" style="padding:0">' + selectField('pint', 'Abrechnung', Object.keys(PERIOD).map(function (k) { return [k, INTERVALS[k]]; }), prod.intervalUnit || 'YEARLY') + field('psetup', 'Einrichtungsgebühr (netto, einmalig)', prod.setupFee || 0, 'number', { attrs: 'min="0" step="0.01"' }) + '</div>' +
+        '<div class="form full" id="unitFields" style="padding:0">' + field('punit', 'Einheit (z. B. Stück, Seite)', prod.unit, 'text', { attrs: 'maxlength="50"' }) + field('pmin', 'Mindestmenge', prod.minQuantity, 'number', { attrs: 'min="0.01" step="any"' }) + '</div>' +
+        '<label class="full" for="pdesc">Beschreibung (im Portal sichtbar)<textarea id="pdesc" rows="3">' + esc(prod.description || '') + '</textarea></label>' +
+        field('psort', 'Reihenfolge', prod.sortOrder, 'number', { attrs: 'step="1"' }) + '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="pactive" type="checkbox"' + (prod.active ? ' checked' : '') + '> Im Portal bestellbar</label></div>', 'Speichern',
+        function (f) {
+          if (!v(f, 'pname')) return bad('Bitte einen Namen eingeben.');
+          var price = parseFloat(v(f, 'pprice'));
+          if (isNaN(price) || price < 0) return bad('Bitte einen Preis ab 0 eingeben.');
+          var body = { name: v(f, 'pname'), categoryId: v(f, 'pcat'), type: v(f, 'ptype'), price: price, taxRate: num(f, 'ptax'), description: f.querySelector('#pdesc').value.trim(), unit: v(f, 'punit'), minQuantity: num(f, 'pmin'), sortOrder: parseInt(v(f, 'psort'), 10) || 0, active: f.querySelector('#pactive').checked };
+          if (body.type === 'RENTAL') { body.intervalUnit = v(f, 'pint'); body.setupFee = num(f, 'psetup') || 0; }
+          return (prod.id ? api('PATCH', '/api/products/' + prod.id, body) : api('POST', '/api/products', body)).then(function () {
+            // Das gespeicherte Produkt soll sichtbar sein: den Filter auf seine Kategorie umstellen, falls ein anderer aktiv ist
+            if (ui.pcat) ui.pcat = body.categoryId || 'none';
+            done(prod.id ? 'Produkt gespeichert' : 'Produkt angelegt');
+          });
+        }, function (f) {
+          var sync = function () {
+            var t = f.querySelector('#ptype').value;
+            f.querySelector('#plabel').textContent = t === 'RENTAL' ? 'Preis je Abrechnungszeitraum (netto) in €' : t === 'HOURLY' ? 'Stundensatz (netto) in €' : 'Preis (netto) in €';
+            f.querySelector('#rentalFields').hidden = t !== 'RENTAL';
+            f.querySelector('#unitFields').hidden = t === 'HOURLY' ? true : false;
+          };
+          f.querySelector('#ptype').addEventListener('change', sync); sync();
+        });
+    }).catch(fail);
+  }
+
+  /** Bestellung für einen Kunden erfassen (z. B. nach einem Telefonat). */
+  function newOrderDialog() {
+    Promise.all([listAll('/api/clients', { sort: 'name' }), api('GET', '/api/products')]).then(function (r) {
+      var clients = r[0], products = r[1];
+      if (!clients.length) return toast('Lege zuerst einen Kunden an.');
+      if (!products.length) return toast('Lege zuerst Produkte im Katalog an.');
+      modal('Bestellung erfassen',
+        '<div class="form">' + selectField('okc', 'Kunde', clientOptions(clients), clients[0].id, true) +
+        selectField('okp', 'Produkt', products.map(function (p) { return [p.id, (p.category ? p.category.name + ' › ' : '') + p.name + ' – ' + priceText(p) + (p.active ? '' : ' (inaktiv)')]; }), products[0].id, true) +
+        field('okq', 'Menge', 1, 'number', { attrs: 'min="0.01" step="any"' }) + '<label class="full" for="okn">Anmerkung<textarea id="okn" rows="3"></textarea></label></div>', 'Bestellung anlegen',
+        function (f) {
+          var q = num(f, 'okq');
+          if (!(q > 0)) return bad('Bitte eine Menge über 0 eingeben.');
+          return api('POST', '/api/orders', { clientId: v(f, 'okc'), productId: v(f, 'okp'), quantity: q, note: f.querySelector('#okn').value.trim() }).then(function (o) { ui.orderId = o.id; ui.view = 'order'; done('Bestellung ' + o.number + ' angelegt'); });
+        });
+    }).catch(fail);
+  }
+
+  function acceptOrderDialog(o) {
+    var rental = o.productType === 'RENTAL';
+    modal('Bestellung ' + esc(o.number) + ' annehmen',
+      '<div class="demo" style="margin:0"><span>' + orderEffect(o) + '</span></div>' +
+      (rental ? '<div class="form">' + field('astart', 'Erste Abrechnung am', today(), 'date') + '<label class="full" style="flex-direction:row;align-items:center;gap:8px"><input id="abill" type="checkbox" checked> Erste Abo-Rechnung gleich erzeugen (wenn der Start heute oder früher ist)</label>' +
+        '<label class="full" style="flex-direction:row;align-items:center;gap:8px"><input id="aauto" type="checkbox"> Abo-Rechnungen automatisch per E-Mail an den Kunden senden</label></div>' : '') +
+      '<div class="sub">Der Kunde bekommt eine Bestätigung per E-Mail (wenn E-Mail eingerichtet ist). Die Rechnungen bleiben Entwürfe, bis du sie versendest.</div>', 'Annehmen',
+      function (f) {
+        var body = rental ? { startDate: v(f, 'astart') ? v(f, 'astart') : '', billNow: f.querySelector('#abill').checked, autoSend: f.querySelector('#aauto').checked } : {};
+        return api('POST', '/api/orders/' + o.id + '/accept', body).then(function () { done('Bestellung angenommen'); });
+      });
+  }
+
+  function rejectOrderDialog(o) {
+    modal('Bestellung ' + esc(o.number) + ' ablehnen',
+      '<div class="form"><label class="full" for="rreason">Grund (der Kunde sieht ihn im Portal und in der E-Mail)<textarea id="rreason" rows="4" placeholder="optional"></textarea></label></div>', 'Ablehnen',
+      function (f) { return api('POST', '/api/orders/' + o.id + '/reject', { reason: f.querySelector('#rreason').value.trim() }).then(function () { done('Bestellung abgelehnt'); }); }, null, true);
+  }
 
   function copyText(text, okMsg) {
     var ok = function () { toast(okMsg || 'Kopiert'); };
@@ -744,6 +921,21 @@
       case 'del-user': return confirmDialog('Der Benutzer verliert sofort den Zugang.', 'Entfernen', function () { return api('DELETE', '/api/users/' + id).then(function () { done('Benutzer entfernt'); }); });
       case 'del-invoice': return confirmDialog('Die Rechnung wird dauerhaft gelöscht. Die Nummer wird nicht erneut vergeben, solange eine höhere existiert.', 'Endgültig löschen', function () { return api('DELETE', '/api/invoices/' + ui.invoiceId).then(function () { go('invoices'); toast('Rechnung gelöscht'); }); });
       case 'pdf': return downloadPdf(el, el.dataset.url);
+      case 'pfilter': ui.pcat = el.dataset.v; return render();
+      case 'ofilter': ui.ostatus = el.dataset.v; return render();
+      case 'open-order': return go('order', { orderId: id });
+      case 'catalog-examples': el.disabled = true; return api('POST', '/api/catalog/examples', {}).then(function (r) { done(r.products + ' Produkte in ' + r.categories + ' Kategorien angelegt. Bitte Preise prüfen und aktivieren.'); }).catch(function (err) { el.disabled = false; toast(err.message); });
+      case 'new-category': return categoryDialog();
+      case 'edit-category': return api('GET', '/api/categories').then(function (list) { categoryDialog(list.filter(function (c) { return c.id === id; })[0]); }).catch(fail);
+      case 'del-category': return confirmDialog('Die Kategorie wird gelöscht. Ihre Produkte bleiben erhalten und stehen danach unter „Ohne Kategorie“.', 'Kategorie löschen', function () { return api('DELETE', '/api/categories/' + id).then(function () { ui.pcat = ''; done('Kategorie gelöscht'); }); });
+      case 'new-product': return productDialog(null, el.dataset.cat);
+      case 'prod-edit': return api('GET', '/api/products/' + id).then(function (p) { productDialog(p); }).catch(fail);
+      case 'prod-toggle': return api('PATCH', '/api/products/' + id, { active: el.dataset.active !== '1' }).then(function () { done(el.dataset.active === '1' ? 'Produkt deaktiviert' : 'Produkt aktiviert'); }).catch(fail);
+      case 'prod-dup': return api('POST', '/api/products/' + id + '/duplicate').then(function () { done('Kopie angelegt (inaktiv)'); }).catch(fail);
+      case 'prod-del': return confirmDialog('Das Produkt wird aus dem Katalog gelöscht. Bereits eingegangene Bestellungen behalten Name und Preis.', 'Produkt löschen', function () { return api('DELETE', '/api/products/' + id).then(function () { done('Produkt gelöscht'); }); });
+      case 'new-order': return newOrderDialog();
+      case 'order-accept': return api('GET', '/api/orders/' + ui.orderId).then(acceptOrderDialog).catch(fail);
+      case 'order-reject': return api('GET', '/api/orders/' + ui.orderId).then(rejectOrderDialog).catch(fail);
       case 'copy-text': return copyText(el.dataset.text, 'Link kopiert');
       case 'portal-issue': return portalDialog(id);
       case 'portal-revoke': return confirmDialog('Der Kunde kann das Portal danach nicht mehr öffnen. Du kannst jederzeit einen neuen Link erstellen.', 'Zugang sperren', function () { return api('DELETE', '/api/clients/' + id + '/portal').then(function () { done('Portalzugang gesperrt'); }); });

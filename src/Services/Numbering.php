@@ -8,7 +8,7 @@ use App\Support\Db;
 
 final class Numbering
 {
-    private const PREFIXES = ['Invoice' => 'RE', 'Quote' => 'AN'];
+    private const PREFIXES = ['Invoice' => 'RE', 'Quote' => 'AN', 'ProductOrder' => 'BE'];
 
     /** Nächste Nummer im Format PRÄFIX-JJJJ-0001; basiert auf der höchsten vorhandenen Nummer, nicht auf der Anzahl. */
     public static function next(string $table): string

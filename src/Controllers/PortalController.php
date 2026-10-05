@@ -13,6 +13,7 @@ use App\Pdf\DocumentPdf;
 use App\Pdf\InvoicePdf;
 use App\Services\InvoiceService;
 use App\Services\MailTemplates;
+use App\Services\OrderService;
 use App\Services\PortalService;
 use App\Support\Activity;
 use App\Support\Dates;
@@ -156,6 +157,66 @@ final class PortalController
     public static function declineQuote(Request $r): Response
     {
         return self::respond($r, 'DECLINED');
+    }
+
+    /* ---------- Katalog und Bestellungen ---------- */
+
+    private const ORDER_SCHEMA = [
+        'productId' => ['required' => true, 'min' => 1],
+        'quantity' => ['type' => 'number', 'positive' => true],
+        'note' => ['max' => 2000],
+    ];
+
+    public static function products(Request $r): Response
+    {
+        PortalService::authenticate($r);
+        return Response::json(OrderService::portalCatalog());
+    }
+
+    public static function orderList(Request $r): Response
+    {
+        $client = PortalService::authenticate($r);
+        $rows = Db::all('SELECT "id" FROM "ProductOrder" WHERE "clientId" = ? ORDER BY "createdAt" DESC LIMIT 200', [$client['id']]);
+
+        return Response::json(array_map(static fn ($row) => self::publicOrder(OrderService::detail($row['id'])), $rows));
+    }
+
+    public static function createOrder(Request $r): Response
+    {
+        $client = PortalService::authenticate($r);
+        $data = Validator::validate($r->body(), self::ORDER_SCHEMA);
+        $order = OrderService::create($client['id'], $data['productId'], (float) ($data['quantity'] ?? 1), trim((string) ($data['note'] ?? '')), 'PORTAL', true);
+
+        return Response::json(self::publicOrder($order), 201);
+    }
+
+    public static function cancelOrder(Request $r): Response
+    {
+        $client = PortalService::authenticate($r);
+        return Response::json(self::publicOrder(OrderService::cancel($r->param('id'), $client['id'])));
+    }
+
+    /** Nur freigegebene Felder: keine internen Verknüpfungen zu Rechnung, Abo oder Projekt. */
+    private static function publicOrder(array $o): array
+    {
+        return [
+            'id' => $o['id'],
+            'number' => $o['number'],
+            'status' => $o['status'],
+            'createdAt' => $o['createdAt'],
+            'decidedAt' => $o['decidedAt'],
+            'productName' => $o['productName'],
+            'productType' => $o['productType'],
+            'unitPrice' => $o['unitPrice'],
+            'taxRate' => $o['taxRate'],
+            'quantity' => $o['quantity'],
+            'unit' => $o['unit'],
+            'intervalUnit' => $o['intervalUnit'],
+            'setupFee' => $o['setupFee'],
+            'note' => $o['note'],
+            'rejectReason' => $o['rejectReason'],
+            'totals' => $o['totals'],
+        ];
     }
 
     private static function respond(Request $r, string $status): Response

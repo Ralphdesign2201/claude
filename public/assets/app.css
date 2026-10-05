@@ -219,3 +219,18 @@ select.inline { padding: 4px 8px; }
 .pay-box dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .p-foot { color: var(--muted); font-size: 13px; text-align: center; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
+
+/* Katalog im Kundenportal */
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.product { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
+.product h3 { font: 600 16px var(--f-display); line-height: 1.3; }
+.product .desc { color: var(--muted); font-size: 13.5px; flex: 1; white-space: pre-line; }
+.price { font: 700 22px var(--f-display); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.price small { font: 500 13px var(--f-body); color: var(--muted); }
+.cat-head { margin: 6px 0 -2px; font: 600 15px var(--f-display); color: var(--muted); }
+.order-sum { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.order-sum div { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+.order-sum .tot { font: 700 17px var(--f-display); border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; }
+
+.tabs button { white-space: nowrap; }
+.tabs { scrollbar-width: thin; }

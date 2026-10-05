@@ -10,7 +10,7 @@ use Throwable;
 
 final class Db
 {
-    private const HAS_UPDATED_AT = ['User', 'Client', 'Project', 'Task', 'Invoice', 'Contract', 'Note', 'Quote', 'Recurring'];
+    private const HAS_UPDATED_AT = ['User', 'Client', 'Project', 'Task', 'Invoice', 'Contract', 'Note', 'Quote', 'Recurring', 'Category', 'Product', 'ProductOrder'];
 
     private static ?PDO $pdo = null;
     private static int $depth = 0;
@@ -170,7 +170,7 @@ final class Db
         $out = [];
         $groups = [];
         foreach ($row as $key => $value) {
-            if (str_contains($key, '__')) {
+            if (is_string($key) && str_contains($key, '__')) {
                 [$group, $field] = explode('__', $key, 2);
                 $groups[$group][$field] = $value;
             } else {
