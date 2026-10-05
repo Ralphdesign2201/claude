@@ -49,6 +49,18 @@ final class MailTemplates
     }
 
     /** @return array{subject:string,message:string} */
+    public static function portal(array $client, string $link, ?string $expiresAt): array
+    {
+        $company = DocumentPdf::company()['name'];
+        $valid = $expiresAt ? ' Der Link ist bis zum ' . Format::date($expiresAt) . ' gültig.' : '';
+        return [
+            'subject' => "Ihr Kundenportal bei $company",
+            'message' => self::greeting($client) . "\n\nin Ihrem persönlichen Kundenportal finden Sie alle Rechnungen und Angebote und können sie jederzeit als PDF herunterladen:\n\n$link\n\n"
+                . "Der Link ist nur für Sie bestimmt – bitte geben Sie ihn nicht weiter.$valid",
+        ];
+    }
+
+    /** @return array{subject:string,message:string} */
     public static function quote(array $q): array
     {
         $company = DocumentPdf::company()['name'];

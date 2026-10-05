@@ -7,11 +7,13 @@ namespace App;
 use App\Controllers\AuthController;
 use App\Controllers\ClientsController;
 use App\Controllers\ContractsController;
+use App\Controllers\BackupController;
 use App\Controllers\CronController;
 use App\Controllers\DashboardController;
 use App\Controllers\DocumentsController;
 use App\Controllers\InvoicesController;
 use App\Controllers\NotesController;
+use App\Controllers\PortalController;
 use App\Controllers\ProjectsController;
 use App\Controllers\QuotesController;
 use App\Controllers\RecurringController;
@@ -75,6 +77,11 @@ final class App
             'Cache-Control' => 'no-cache',
             'Content-Security-Policy' => "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         ]), $pub);
+        $r->add('GET', '/portal', static fn () => Response::file(APP_ROOT . '/public/assets/portal.html', [
+            'Content-Type' => 'text/html; charset=utf-8',
+            'Cache-Control' => 'no-cache',
+            'Content-Security-Policy' => "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        ]), $pub);
         $r->add('GET', '/health', static fn () => Response::json(['status' => 'ok']), $pub);
         $r->add('GET', '/uploads/:name', [DocumentsController::class, 'serve'], $pub);
 
@@ -87,6 +94,9 @@ final class App
         $r->add('GET', '/api/clients/:id', [ClientsController::class, 'show']);
         $r->add('PATCH', '/api/clients/:id', [ClientsController::class, 'update']);
         $r->add('DELETE', '/api/clients/:id', [ClientsController::class, 'delete']);
+        $r->add('GET', '/api/clients/:id/portal', [PortalController::class, 'status']);
+        $r->add('POST', '/api/clients/:id/portal', [PortalController::class, 'issue']);
+        $r->add('DELETE', '/api/clients/:id/portal', [PortalController::class, 'revoke']);
         $r->add('POST', '/api/clients/:id/contacts', [ClientsController::class, 'createContact']);
         $r->add('PATCH', '/api/clients/:id/contacts/:contactId', [ClientsController::class, 'updateContact']);
         $r->add('DELETE', '/api/clients/:id/contacts/:contactId', [ClientsController::class, 'deleteContact']);
@@ -144,6 +154,14 @@ final class App
         $r->add('POST', '/api/recurring/:id/run', [RecurringController::class, 'run']);
         $r->add('POST', '/api/cron/run', [CronController::class, 'run'], $pub);
 
+        $r->add('GET', '/api/portal/me', [PortalController::class, 'me'], $pub);
+        $r->add('GET', '/api/portal/invoices', [PortalController::class, 'invoiceList'], $pub);
+        $r->add('GET', '/api/portal/invoices/:id/pdf', [PortalController::class, 'invoicePdf'], $pub);
+        $r->add('GET', '/api/portal/quotes', [PortalController::class, 'quoteList'], $pub);
+        $r->add('GET', '/api/portal/quotes/:id/pdf', [PortalController::class, 'quotePdf'], $pub);
+        $r->add('POST', '/api/portal/quotes/:id/accept', [PortalController::class, 'acceptQuote'], $pub);
+        $r->add('POST', '/api/portal/quotes/:id/decline', [PortalController::class, 'declineQuote'], $pub);
+
         $r->add('GET', '/api/settings', [SettingsController::class, 'show']);
 
         $r->add('GET', '/api/contracts', [ContractsController::class, 'index']);
@@ -162,6 +180,11 @@ final class App
         $r->add('DELETE', '/api/documents/:id', [DocumentsController::class, 'delete']);
 
         $r->add('GET', '/api/dashboard/summary', [DashboardController::class, 'summary']);
+
+        $r->add('GET', '/api/backups', [BackupController::class, 'index'], $admin);
+        $r->add('POST', '/api/backups', [BackupController::class, 'create'], $admin);
+        $r->add('GET', '/api/backups/:name', [BackupController::class, 'download'], $admin);
+        $r->add('DELETE', '/api/backups/:name', [BackupController::class, 'delete'], $admin);
 
         $r->add('GET', '/api/users', [UsersController::class, 'index']);
         $r->add('POST', '/api/users', [UsersController::class, 'create'], $admin);

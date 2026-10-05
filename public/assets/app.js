@@ -193,8 +193,8 @@
   }
 
   function vClient() {
-    return Promise.all([api('GET', '/api/clients/' + ui.clientId), listAll('/api/invoices', { clientId: ui.clientId }), listAll('/api/quotes', { clientId: ui.clientId }), api('GET', '/api/recurring' + qs({ clientId: ui.clientId }))]).then(function (r) {
-      var c = r[0], invoices = r[1], quotes = r[2], recs = r[3].items;
+    return Promise.all([api('GET', '/api/clients/' + ui.clientId), listAll('/api/invoices', { clientId: ui.clientId }), listAll('/api/quotes', { clientId: ui.clientId }), api('GET', '/api/recurring' + qs({ clientId: ui.clientId })), api('GET', '/api/clients/' + ui.clientId + '/portal')]).then(function (r) {
+      var c = r[0], invoices = r[1], quotes = r[2], recs = r[3].items, portal = r[4];
       var contact = c.contacts[0];
       var notes = c.notes.slice().sort(function (a, b) { return (b.pinned - a.pinned) || (a.createdAt < b.createdAt ? 1 : -1); });
       return '<button class="btn ghost sm back" data-act="nav" data-v="clients" style="align-self:flex-start">← Alle Kunden</button>' +
@@ -210,6 +210,10 @@
         '<div class="card"><h2>Rechnungen</h2><div class="list">' + (invoices.length ? invoices.map(function (i) {
           return '<div><div class="grow"><button class="link mono" data-act="open-invoice" data-id="' + esc(i.id) + '">' + esc(i.number) + '</button><div class="sub">' + fdate(i.issueDate) + '</div></div><span class="num">' + eur(i.totals.total) + '</span>' + pill(INVOICE_STATUS, shownStatus(i)) + '</div>';
         }).join('') : '<div class="empty">Noch keine Rechnungen.</div>') + '</div></div></div>' +
+        '<div class="card"><h2>Kundenportal ' + (portal.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Kein Zugang</span>') + '</h2>' +
+        '<p class="sub" style="margin:0 0 12px">Im Portal sieht ' + esc(c.name) + ' die eigenen Rechnungen und Angebote, lädt sie als PDF herunter und kann Angebote annehmen. Der Zugang läuft über einen persönlichen Link, ein Passwort ist nicht nötig.</p>' +
+        (portal.active ? '<dl class="kv" style="margin-bottom:12px"><dt>Erstellt</dt><dd>' + fdate(portal.createdAt) + '</dd><dt>Gültig bis</dt><dd>' + (portal.expiresAt ? fdate(portal.expiresAt) : 'unbegrenzt') + '</dd><dt>Zuletzt genutzt</dt><dd>' + (portal.lastUsedAt ? fdate(portal.lastUsedAt) : 'noch nie') + '</dd></dl>' : '') +
+        '<div class="row"><button class="btn primary" data-act="portal-issue" data-id="' + esc(c.id) + '">' + (portal.active ? 'Neuen Link erstellen' : 'Zugang erstellen') + '</button>' + (portal.active ? '<button class="btn danger" data-act="portal-revoke" data-id="' + esc(c.id) + '">Zugang sperren</button>' : '') + '</div></div>' +
         '<div class="grid two-eq"><div class="card"><h2>Angebote <button class="btn sm" data-act="new-quote" data-id="' + esc(c.id) + '">+ Angebot</button></h2><div class="list">' + (quotes.length ? quotes.map(function (q) {
           return '<div><div class="grow"><button class="link mono" data-act="open-quote" data-id="' + esc(q.id) + '">' + esc(q.number) + '</button><div class="sub">' + fdate(q.issueDate) + '</div></div><span class="num">' + eur(q.totals.total) + '</span>' + pill(QUOTE_STATUS, q.status) + '</div>';
         }).join('') : '<div class="empty">Noch keine Angebote.</div>') + '</div></div>' +
@@ -368,13 +372,27 @@
     });
   }
 
+  var fsize = function (b) { return b >= 1048576 ? (b / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(b / 1024)).toLocaleString('de-DE') + ' KB'; };
+  var ftime = function (iso) { return iso ? new Date(iso).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–'; };
+
   function vTeam() {
-    return api('GET', '/api/users').then(function (users) {
-      return head('Team', 'Benutzer und Rollen verwalten.', '<button class="btn primary" data-act="new-user">+ Benutzer</button>') +
+    return Promise.all([api('GET', '/api/users'), api('GET', '/api/backups')]).then(function (r) {
+      var users = r[0], bk = r[1], st = bk.settings;
+      var ageH = bk.lastBackupAt ? (Date.now() - new Date(bk.lastBackupAt).getTime()) / 36e5 : null;
+      var warn = ageH === null ? 'Es gibt noch kein Backup. Erstelle jetzt eines und richte den täglichen Cron-Job ein.' : ageH > 48 ? 'Das letzte Backup ist ' + Math.floor(ageH / 24) + ' Tage alt. Läuft der tägliche Cron-Job?' : '';
+      return head('Team', 'Benutzer, Rollen und Datensicherung.', '<button class="btn primary" data-act="new-user">+ Benutzer</button>') +
         '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th></th></tr></thead><tbody>' + users.map(function (u) {
           var self = u.id === me.id;
           return '<tr><td><b>' + esc(u.name) + '</b>' + (self ? ' <span class="tag">du</span>' : '') + '</td><td>' + esc(u.email) + '</td><td><select class="inline" data-user="' + esc(u.id) + '" aria-label="Rolle von ' + esc(u.name) + '"><option value="ADMIN"' + (u.role === 'ADMIN' ? ' selected' : '') + '>Admin</option><option value="MEMBER"' + (u.role === 'MEMBER' ? ' selected' : '') + '>Mitarbeiter</option></select></td><td class="r">' + (self ? '' : '<button class="btn sm ghost danger" data-act="del-user" data-id="' + esc(u.id) + '">Entfernen</button>') + '</td></tr>';
-        }).join('') + '</tbody></table></div></div>';
+        }).join('') + '</tbody></table></div></div>' +
+        '<div class="card"><h2>Datensicherung <button class="btn primary sm" data-act="backup-create">Backup jetzt erstellen</button></h2>' +
+        (warn ? '<div class="errbox" style="margin-bottom:12px">' + esc(warn) + '</div>' : '') +
+        '<p class="sub" style="margin:0 0 12px">Ein Backup enthält die komplette Datenbank und alle hochgeladenen Dokumente. ' + (st.auto ? 'Es entsteht automatisch (täglicher Cron-Aufruf, wenn das letzte älter als ' + st.intervalHours + ' Stunden ist). ' : 'Die automatische Sicherung ist abgeschaltet. ') +
+        'Aufbewahrt werden die letzten ' + st.keep + ' Sicherungen und je Monat die neueste der letzten ' + st.keepMonths + ' Monate. ' + (st.encrypted ? '<span class="pill good">Verschlüsselt</span> ' : '<span class="pill warn">Nicht verschlüsselt</span> ') + (st.copyConfigured ? '<span class="pill good">Zweitkopie aktiv</span>' : '<span class="pill neutral">Keine Zweitkopie</span>') + '</p>' +
+        '<div class="tablewrap"><table><thead><tr><th>Backup</th><th>Erstellt</th><th class="r">Größe</th><th></th></tr></thead><tbody>' + (bk.items.length ? bk.items.map(function (b) {
+          return '<tr><td class="mono">' + esc(b.name) + '</td><td class="num">' + ftime(b.createdAt) + '</td><td class="r num">' + fsize(b.size) + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="backup-dl" data-name="' + esc(b.name) + '">Herunterladen</button><button class="btn sm ghost danger" data-act="backup-del" data-name="' + esc(b.name) + '">Löschen</button></div></td></tr>';
+        }).join('') : '<tr><td colspan="4" class="empty">Noch kein Backup vorhanden.</td></tr>') + '</tbody></table></div>' +
+        '<p class="sub" style="margin:12px 0 0">Wichtig: Speichere Backups zusätzlich an einem anderen Ort (anderer Server, Cloud-Ordner, externe Festplatte). Wiederherstellen: <span class="mono">php bin/restore.php &lt;Datei&gt; --yes</span></p></div>';
     });
   }
 
@@ -589,6 +607,39 @@
   }
   var invoiceDialog = function (presetClient) { docDialog('invoice', { clientId: presetClient }); };
 
+  function copyText(text, okMsg) {
+    var ok = function () { toast(okMsg || 'Kopiert'); };
+    var fallback = function () {
+      var inp = $('#plink'); if (inp) { inp.focus(); inp.select(); }
+      toast('Bitte den Text markieren und mit Strg+C kopieren');
+    };
+    try { (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : Promise.reject()).then(ok, fallback); } catch (e) { fallback(); }
+  }
+
+  /** Portalzugang erstellen: optional per E-Mail senden, danach den Link zum Kopieren anzeigen. */
+  function portalDialog(clientId) {
+    api('GET', '/api/clients/' + clientId + '/portal').then(function (st) {
+      var canMail = st.mailConfigured;
+      modal(st.active ? 'Neuen Zugangslink erstellen' : 'Portalzugang erstellen',
+        (st.active ? notice('Der bisherige Link wird dadurch ungültig.') : '') +
+        '<div class="form">' + (canMail ? '<label class="full" style="flex-direction:row;align-items:center;gap:8px"><input id="psend" type="checkbox"' + (st.recipient ? ' checked' : '') + '> Link per E-Mail an den Kunden senden</label>' + field('pto', 'Empfänger', st.recipient || '', 'email', { full: true }) : '<div class="full sub">E-Mail-Versand ist nicht eingerichtet. Du bekommst den Link gleich zum Kopieren und kannst ihn selbst schicken.</div>') + '</div>' +
+        '<div class="sub">Der Link wird nur ein Mal angezeigt. Wer ihn hat, sieht die Rechnungen und Angebote dieses Kunden.</div>', 'Link erstellen',
+        function (f) {
+          var send = canMail && f.querySelector('#psend').checked;
+          if (send && !v(f, 'pto')) return bad('Bitte eine Empfängeradresse eingeben.');
+          return api('POST', '/api/clients/' + clientId + '/portal', send ? { send: true, to: v(f, 'pto') } : {}).then(function (res) {
+            render();
+            modal('Portalzugang bereit',
+              (res.emailed ? '<div class="pill good" style="align-self:flex-start">Per E-Mail an ' + esc(res.to) + ' gesendet</div>' : '') + (res.emailError ? notice('E-Mail konnte nicht gesendet werden: ' + esc(res.emailError) + '. Du kannst den Link unten kopieren.') : '') +
+              '<label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted)" for="plink">Zugangslink<input id="plink" readonly value="' + esc(res.link) + '" style="font-weight:400;color:var(--fg)"></label>' +
+              '<div class="row"><button type="button" class="btn primary" data-act="copy-text" data-text="' + esc(res.link) + '">Link kopieren</button></div>' +
+              '<div class="sub">' + (res.expiresAt ? 'Gültig bis ' + fdate(res.expiresAt) + '. ' : '') + 'Dieser Link wird nicht erneut angezeigt.</div>', 'Fertig', function () { return true; });
+            return false; // der Ergebnis-Dialog bleibt offen
+          });
+        });
+    }).catch(fail);
+  }
+
   var notice = function (html) { return '<div class="errbox" style="margin:0">' + html + '</div>'; };
 
   /** E-Mail-Dialog für Rechnung oder Angebot: Vorschlag laden, bearbeiten, senden. */
@@ -651,7 +702,7 @@
       var a = document.createElement('a');
       a.href = URL.createObjectURL(r.blob); a.download = r.name; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-      toast('PDF heruntergeladen');
+      toast('Datei heruntergeladen');
     }).catch(function (err) { toast(err.message); }).then(function () { btn.disabled = false; });
   }
 
@@ -693,6 +744,12 @@
       case 'del-user': return confirmDialog('Der Benutzer verliert sofort den Zugang.', 'Entfernen', function () { return api('DELETE', '/api/users/' + id).then(function () { done('Benutzer entfernt'); }); });
       case 'del-invoice': return confirmDialog('Die Rechnung wird dauerhaft gelöscht. Die Nummer wird nicht erneut vergeben, solange eine höhere existiert.', 'Endgültig löschen', function () { return api('DELETE', '/api/invoices/' + ui.invoiceId).then(function () { go('invoices'); toast('Rechnung gelöscht'); }); });
       case 'pdf': return downloadPdf(el, el.dataset.url);
+      case 'copy-text': return copyText(el.dataset.text, 'Link kopiert');
+      case 'portal-issue': return portalDialog(id);
+      case 'portal-revoke': return confirmDialog('Der Kunde kann das Portal danach nicht mehr öffnen. Du kannst jederzeit einen neuen Link erstellen.', 'Zugang sperren', function () { return api('DELETE', '/api/clients/' + id + '/portal').then(function () { done('Portalzugang gesperrt'); }); });
+      case 'backup-create': el.disabled = true; return api('POST', '/api/backups', {}).then(function (b) { done('Backup erstellt (' + fsize(b.size) + ')'); }).catch(function (err) { el.disabled = false; toast(err.message); });
+      case 'backup-dl': return downloadPdf(el, '/api/backups/' + encodeURIComponent(el.dataset.name));
+      case 'backup-del': return confirmDialog('Das Backup <b class="mono">' + esc(el.dataset.name) + '</b> wird dauerhaft gelöscht.', 'Löschen', function () { return api('DELETE', '/api/backups/' + encodeURIComponent(el.dataset.name)).then(function () { done('Backup gelöscht'); }); });
       case 'open-quote': return go('quote', { quoteId: id });
       case 'new-quote': return docDialog('quote', { clientId: id });
       case 'qfilter': ui.qstatus = el.dataset.v; return render();

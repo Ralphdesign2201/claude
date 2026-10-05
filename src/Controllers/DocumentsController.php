@@ -8,6 +8,7 @@ use App\Http\ApiError;
 use App\Http\Request;
 use App\Http\Response;
 use App\Support\Db;
+use App\Support\Env;
 use App\Support\Where;
 
 final class DocumentsController
@@ -43,7 +44,8 @@ final class DocumentsController
 
     public static function uploadDir(): string
     {
-        return APP_ROOT . '/uploads';
+        $dir = Env::get('UPLOAD_DIR', '') ?: APP_ROOT . '/uploads';
+        return rtrim($dir, '/\\');
     }
 
     public static function index(Request $r): Response

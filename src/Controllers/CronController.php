@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Http\ApiError;
 use App\Http\Request;
 use App\Http\Response;
+use App\Services\BackupService;
 use App\Services\RecurringService;
 use App\Support\Env;
 
@@ -24,6 +25,13 @@ final class CronController
         }
 
         $results = RecurringService::runDue();
-        return Response::json(['created' => count($results), 'runs' => $results]);
+        $backup = null;
+        $backupError = null;
+        try {
+            $backup = BackupService::runIfDue();
+        } catch (\Throwable $e) {
+            $backupError = $e->getMessage();
+        }
+        return Response::json(['created' => count($results), 'runs' => $results, 'backup' => $backup, 'backupError' => $backupError]);
     }
 }

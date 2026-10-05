@@ -29,6 +29,9 @@ $env = [
     'COMPANY_IBAN' => 'DE89 3704 0044 0532 0130 00',
     'CRON_TOKEN' => 'cron-token-cron-token-123',
     'REMINDER_FEE_2' => '5',
+    'BACKUP_DIR' => "$tmp/backups",
+    'UPLOAD_DIR' => "$tmp/uploads",
+    'APP_URL' => 'https://crm.example.com',
     'DATABASE_PATH' => "$tmp/test.db",
     'JWT_SECRET' => 'test-secret-test-secret-123456',
     'ALLOW_REGISTRATION' => 'false',
@@ -57,11 +60,19 @@ $server = proc_open(
 register_shutdown_function(static function () use ($server, $sink, $tmp) {
     proc_terminate($server);
     proc_terminate($sink);
-    foreach (array_merge(glob("$tmp/mail/*") ?: [], glob("$tmp/*") ?: []) as $f) {
-        @unlink($f);
-    }
-    @rmdir("$tmp/mail");
-    @rmdir($tmp);
+    $remove = static function (string $path) use (&$remove): void {
+        if (is_dir($path) && !is_link($path)) {
+            foreach (scandir($path) ?: [] as $f) {
+                if ($f !== '.' && $f !== '..') {
+                    $remove("$path/$f");
+                }
+            }
+            @rmdir($path);
+        } else {
+            @unlink($path);
+        }
+    };
+    $remove($tmp);
 });
 
 for ($i = 0; $i < 50; $i++) {
@@ -454,6 +465,7 @@ expect('Cron ohne Token → 401', call('POST', '/api/cron/run'), 401);
 expect('Cron mit falschem Token → 401', call('POST', '/api/cron/run', null, null, ['X-Cron-Token: falsch-falsch-falsch']), 401);
 expect('Cron-Endpunkt braucht kein Login-Token, Abo-API schon', call('GET', '/api/recurring'), 401);
 $res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron: erstes Backup entsteht automatisch', is_array($res[1]['backup'] ?? null) && preg_match('/^crm-backup-\d{8}-\d{6}\.zip$/', $res[1]['backup']['name']) === 1 && ($res[1]['backupError'] ?? null) === null, $res[1]['backup'] ?? $res[2]);
 check('Cron: 3 versäumte Monate werden als Entwürfe nachgeholt', $res[0] === 200 && $res[1]['created'] === 3 && count(array_unique(array_column($res[1]['runs'], 'number'))) === 3 && !in_array(true, array_column($res[1]['runs'], 'sent'), true), $res[2]);
 $res = call('GET', "/api/invoices?recurringId=$hostingId&pageSize=50", null, $token);
 $descriptions = array_map(static fn ($i) => $i['items'][0]['description'], $res[1]['items']);
@@ -461,7 +473,7 @@ check('Rechnungen aus dem Abo: Entwurf, Platzhalter ersetzt, Betrag 23,68 € br
 $res = call('GET', "/api/recurring/$hostingId", null, $token);
 check('Abo: Lauf 3 gezählt, nächster Termin = 1. des Folgemonats, Rechnungen verknüpft', $res[1]['occurrence'] === 3 && $res[1]['nextRunDate'] === gmdate('Y-m-d', strtotime('first day of next month')) . 'T00:00:00.000Z' && count($res[1]['invoices']) === 3 && $res[1]['lastRunAt'] !== null, $res[2]);
 $res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
-check('Cron ist idempotent: zweiter Lauf erzeugt nichts', $res[0] === 200 && $res[1]['created'] === 0, $res[2]);
+check('Cron ist idempotent: zweiter Lauf erzeugt weder Rechnungen noch ein weiteres Backup', $res[0] === 200 && $res[1]['created'] === 0 && $res[1]['backup'] === null, $res[2]);
 
 $res = call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'Pflege', 'intervalUnit' => 'QUARTERLY', 'startDate' => $today, 'items' => [['description' => 'Pflege {zeitraum}', 'unitPrice' => 30]]], $token);
 $careId = $res[1]['id'];
@@ -500,6 +512,132 @@ expect('Abo löschen (Rechnungen bleiben erhalten)', call('DELETE', "/api/recurr
 $res = call('GET', "/api/invoices?search=RE-&pageSize=100", null, $token);
 check('Rechnungen des gelöschten Abos bleiben bestehen', count(array_filter($res[1]['items'], static fn ($i) => $i['recurringId'] === null && str_contains($i['items'][0]['description'] ?? '', 'Hosting Paket M'))) === 3, count($res[1]['items']));
 
+echo "Kundenportal\n";
+$portalDb = new PDO('sqlite:' . "$tmp/test.db");
+$res = call('GET', "/api/clients/$clientId/portal", null, $token);
+check('Portal: anfangs kein Zugang', $res[0] === 200 && $res[1]['active'] === false && $res[1]['mailConfigured'] === true && $res[1]['recipient'] === 'anna@beispiel.de', $res[2]);
+expect('Portal-Zugang für unbekannten Kunden → 404', call('POST', '/api/clients/gibtsnicht/portal', [], $token), 404);
+expect('Portal-Verwaltung braucht Login → 401', call('POST', "/api/clients/$clientId/portal", []), 401);
+$res = call('POST', "/api/clients/$clientId/portal", [], $token);
+expect('Portal-Zugang erstellen', $res, 201);
+$portalToken = $res[1]['token'];
+check('Link: feste Adresse (APP_URL), Schlüssel im Fragment, ca. 1 Jahr gültig', strlen($portalToken) === 43 && $res[1]['link'] === "https://crm.example.com/portal#$portalToken" && $res[1]['emailed'] === false && $res[1]['expiresAt'] > gmdate('Y-m-d\TH:i:s', strtotime('+360 days')), $res[1]);
+$hash = $portalDb->query('SELECT tokenHash FROM PortalToken ORDER BY createdAt DESC LIMIT 1')->fetchColumn();
+check('Datenbank speichert nur den SHA-256-Hash, nie den Schlüssel', $hash === hash('sha256', $portalToken) && $hash !== $portalToken && !str_contains((string) json_encode($portalDb->query('SELECT * FROM PortalToken')->fetchAll(PDO::FETCH_ASSOC)), $portalToken));
+$P = ["X-Portal-Token: $portalToken"];
+expect('Portal ohne Schlüssel → 401', call('GET', '/api/portal/me'), 401);
+expect('Portal mit falschem Schlüssel → 401', call('GET', '/api/portal/me', null, null, ['X-Portal-Token: ' . str_repeat('a', 43)]), 401);
+expect('Portal akzeptiert kein Mitarbeiter-Token als Schlüssel → 401', call('GET', '/api/portal/me', null, null, ["X-Portal-Token: $token"]), 401);
+expect('Mitarbeiter-API akzeptiert den Portal-Schlüssel nicht → 401', call('GET', '/api/clients', null, $portalToken), 401);
+
+[$portalOverdueId] = $mk('2020-06-01T00:00:00Z', 'SENT', 250);
+$res = call('GET', '/api/portal/me', null, null, $P);
+check('Portal: Name, Firmendaten (Bank), Offen/Überfällig', $res[0] === 200 && $res[1]['client']['name'] === 'Anna Beispiel' && $res[1]['client']['company'] === 'Beispiel GmbH' && $res[1]['company']['name'] === 'Ralph Design' && $res[1]['company']['iban'] === 'DE89 3704 0044 0532 0130 00' && $res[1]['summary']['open'] > 0 && $res[1]['summary']['overdue'] > 0 && !isset($res[1]['client']['email']), $res[2]);
+$res = call('GET', '/api/portal/invoices', null, null, $P);
+$portalInvoices = $res[1];
+$admin = call('GET', "/api/invoices?clientId=$clientId&pageSize=100", null, $token)[1]['items'];
+$visible = array_values(array_filter($admin, static fn ($i) => in_array($i['status'], ['SENT', 'OVERDUE', 'PAID'], true)));
+$ids1 = array_column($portalInvoices, 'number'); sort($ids1);
+$ids2 = array_column($visible, 'number'); sort($ids2);
+check('Portal zeigt genau die versendeten/überfälligen/bezahlten Rechnungen (keine Entwürfe, keine Stornos)', $res[0] === 200 && $ids1 === $ids2 && count($ids1) > 3 && array_diff(array_column($portalInvoices, 'status'), ['SENT', 'OVERDUE', 'PAID']) === [], [$ids1, $ids2]);
+$draftInvoice = current(array_filter($admin, static fn ($i) => $i['status'] === 'DRAFT'));
+check('Es gibt Entwurfs-Rechnungen, die der Kunde nicht sieht', $draftInvoice !== false && !in_array($draftInvoice['number'], $ids1, true));
+$first = $portalInvoices[0];
+check('Portal-Rechnung enthält nur freigegebene Felder', array_diff(array_keys($first), ['id', 'number', 'status', 'issueDate', 'dueDate', 'currency', 'taxRate', 'discount', 'notes', 'items', 'payments', 'totals']) === [] && !isset($first['clientId'], $first['projectId'], $first['recurringId'], $first['emails'], $first['reminders']) && isset($first['totals']['balance']), array_keys($first));
+$overdueRow = current(array_filter($portalInvoices, static fn ($i) => $i['status'] === 'OVERDUE'));
+check('Überfällige Rechnung wird als OVERDUE angezeigt', $overdueRow !== false && $overdueRow['totals']['balance'] > 0);
+
+$res = call('GET', "/api/portal/invoices/{$first['id']}/pdf", null, null, $P);
+check('Portal: Rechnungs-PDF herunterladen', $res[0] === 200 && str_starts_with($res[2], '%PDF') && str_contains(pdfText($res[2]), $first['number']), substr($res[2], 0, 60));
+expect('Portal: PDF einer Entwurfs-Rechnung → 404', call('GET', "/api/portal/invoices/{$draftInvoice['id']}/pdf", null, null, $P), 404);
+expect('Portal: PDF ohne Schlüssel → 401', call('GET', "/api/portal/invoices/{$first['id']}/pdf"), 401);
+
+// Mandantentrennung: Daten eines anderen Kunden
+$res = call('POST', '/api/clients', ['name' => 'Fremder Kunde', 'email' => 'fremd@example.com'], $token);
+$otherClient = $res[1]['id'];
+$res = call('POST', '/api/invoices', ['clientId' => $otherClient, 'status' => 'SENT', 'items' => [['description' => 'Geheim', 'unitPrice' => 999]]], $token);
+$otherInvoiceId = $res[1]['id'];
+$res = call('POST', '/api/quotes', ['clientId' => $otherClient, 'status' => 'SENT', 'items' => [['description' => 'Geheim', 'unitPrice' => 999]]], $token);
+$otherQuoteId = $res[1]['id'];
+expect('Mandantentrennung: fremde Rechnung (PDF) → 404', call('GET', "/api/portal/invoices/$otherInvoiceId/pdf", null, null, $P), 404);
+expect('Mandantentrennung: fremdes Angebot (PDF) → 404', call('GET', "/api/portal/quotes/$otherQuoteId/pdf", null, null, $P), 404);
+expect('Mandantentrennung: fremdes Angebot annehmen → 404', call('POST', "/api/portal/quotes/$otherQuoteId/accept", [], null, $P), 404);
+check('Mandantentrennung: fremde Daten tauchen in Listen nicht auf', !in_array($otherInvoiceId, array_column(call('GET', '/api/portal/invoices', null, null, $P)[1], 'id'), true) && !in_array($otherQuoteId, array_column(call('GET', '/api/portal/quotes', null, null, $P)[1], 'id'), true));
+$otherAccess = call('POST', "/api/clients/$otherClient/portal", [], $token)[1];
+$res = call('GET', '/api/portal/invoices', null, null, ["X-Portal-Token: {$otherAccess['token']}"]);
+check('Der andere Kunde sieht nur seine eigene Rechnung', count($res[1]) === 1 && $res[1][0]['id'] === $otherInvoiceId, $res[2]);
+
+// Angebote beantworten
+$mkQuote = static function (string $status, ?string $valid = null) use ($clientId, $token) {
+    $res = call('POST', '/api/quotes', array_filter(['clientId' => $clientId, 'status' => $status, 'validUntil' => $valid, 'items' => [['description' => 'Relaunch', 'quantity' => 2, 'unitPrice' => 500]]]), $token);
+    return $res[1];
+};
+$draftQuote = $mkQuote('DRAFT');
+$sentQuote = $mkQuote('SENT');
+$expiredQuote = $mkQuote('SENT', '2020-01-01');
+$res = call('GET', '/api/portal/quotes', null, null, $P);
+$quoteNumbers = array_column($res[1], 'number');
+check('Portal-Angebote: ohne Entwürfe, mit Summen', $res[0] === 200 && !in_array($draftQuote['number'], $quoteNumbers, true) && in_array($sentQuote['number'], $quoteNumbers, true) && isset($res[1][0]['totals']['total']) && !isset($res[1][0]['clientId'], $res[1][0]['invoiceId']), $quoteNumbers);
+expect('Portal: Angebots-PDF', call('GET', "/api/portal/quotes/{$sentQuote['id']}/pdf", null, null, $P), 200);
+expect('Portal: Entwurfs-Angebot nicht abrufbar → 404', call('GET', "/api/portal/quotes/{$draftQuote['id']}/pdf", null, null, $P), 404);
+expect('Portal: Entwurfs-Angebot nicht annehmbar → 404', call('POST', "/api/portal/quotes/{$draftQuote['id']}/accept", [], null, $P), 404);
+$res = call('POST', "/api/portal/quotes/{$expiredQuote['id']}/accept", [], null, $P);
+check('Portal: abgelaufenes Angebot nicht annehmbar → 409', $res[0] === 409 && str_contains($res[1]['error'], 'abgelaufen'), $res[2]);
+$before = count(mails());
+$res = call('POST', "/api/portal/quotes/{$sentQuote['id']}/accept", [], null, $P);
+check('Kunde nimmt Angebot im Portal an', $res[0] === 200 && $res[1]['status'] === 'ACCEPTED' && $res[1]['respondedAt'] !== null, $res[2]);
+$res = call('GET', "/api/quotes/{$sentQuote['id']}", null, $token);
+check('Mitarbeiter sieht „Angenommen“ im System', $res[1]['status'] === 'ACCEPTED' && $res[1]['respondedAt'] !== null, $res[2]);
+$all = mails();
+check('Benachrichtigung an die Firma per E-Mail', count($all) === $before + 1 && str_contains(end($all)['head'], 'X-Envelope-To: hallo@ralph-design.de') && str_contains(mailText(end($all)), 'angenommen'), mailText(end($all)));
+expect('Zweite Antwort auf dasselbe Angebot → 409', call('POST', "/api/portal/quotes/{$sentQuote['id']}/decline", [], null, $P), 409);
+$sent2 = $mkQuote('SENT');
+$res = call('POST', "/api/portal/quotes/{$sent2['id']}/decline", [], null, $P);
+check('Kunde lehnt Angebot ab', $res[0] === 200 && $res[1]['status'] === 'DECLINED', $res[2]);
+$res = call('GET', '/api/dashboard/summary', null, $token);
+check('Aktivitätsprotokoll hält die Kundenantwort fest', str_contains(json_encode($res[1]['activities']), 'im Portal'), array_column($res[1]['activities'], 'message'));
+
+// Versand des Zugangslinks per E-Mail
+$before = count(mails());
+$res = call('POST', "/api/clients/$clientId/portal", ['send' => true], $token);
+$newToken = $res[1]['token'];
+$all = mails();
+check('Zugangslink per E-Mail an den Kunden gesendet, Link im Text', $res[0] === 201 && $res[1]['emailed'] === true && $res[1]['to'] === 'anna@beispiel.de' && count($all) === $before + 1 && str_contains(mailText(end($all)), "https://crm.example.com/portal#$newToken") && str_contains(mailText(end($all)), 'Kundenportal') && str_contains(end($all)['head'], 'X-Envelope-To: anna@beispiel.de'), mailText(end($all)));
+expect('Neuer Link macht den alten ungültig → 401', call('GET', '/api/portal/me', null, null, $P), 401);
+$P = ["X-Portal-Token: $newToken"];
+expect('Neuer Link funktioniert', call('GET', '/api/portal/me', null, null, $P), 200);
+$res = call('POST', "/api/clients/$clientId/portal", ['send' => true, 'to' => 'reject@example.com'], $token);
+check('Mailfehler: Link wird trotzdem geliefert, Fehler gemeldet', $res[0] === 201 && $res[1]['emailed'] === false && str_contains((string) $res[1]['emailError'], '550') && strlen($res[1]['token']) === 43, $res[2]);
+$P = ["X-Portal-Token: {$res[1]['token']}"];
+$noMail = call('POST', '/api/clients', ['name' => 'Ohne Mail'], $token)[1]['id'];
+expect('Ohne Empfänger und ohne Kunden-E-Mail nicht sendbar → 400', call('POST', "/api/clients/$noMail/portal", ['send' => true], $token), 400);
+
+// Ablauf und Sperre
+$portalDb->exec("UPDATE PortalToken SET expiresAt = '2020-01-01T00:00:00.000Z' WHERE revokedAt IS NULL AND clientId = '$clientId'");
+expect('Abgelaufener Link → 401', call('GET', '/api/portal/me', null, null, $P), 401);
+$res = call('GET', "/api/clients/$clientId/portal", null, $token);
+check('Status zeigt abgelaufenen Zugang als inaktiv', $res[1]['active'] === false && $res[1]['expiresAt'] === '2020-01-01T00:00:00.000Z', $res[2]);
+$P = ["X-Portal-Token: " . call('POST', "/api/clients/$clientId/portal", [], $token)[1]['token']];
+$res = call('GET', "/api/clients/$clientId/portal", null, $token);
+check('Neuer Zugang: aktiv, „zuletzt genutzt“ noch leer', $res[1]['active'] === true && $res[1]['lastUsedAt'] === null, $res[2]);
+call('GET', '/api/portal/me', null, null, $P);
+$res = call('GET', "/api/clients/$clientId/portal", null, $token);
+check('Nutzung wird vermerkt („zuletzt genutzt“)', $res[1]['lastUsedAt'] !== null, $res[2]);
+expect('Zugang sperren', call('DELETE', "/api/clients/$clientId/portal", null, $token), 204);
+expect('Gesperrter Link → 401', call('GET', '/api/portal/me', null, null, $P), 401);
+$res = call('GET', "/api/clients/$clientId/portal", null, $token);
+check('Status nach Sperre: inaktiv', $res[1]['active'] === false, $res[2]);
+$statuses = [];
+for ($i = 0; $i < 21; $i++) {
+    $statuses[] = call('GET', '/api/portal/me', null, null, ['X-Portal-Token: ' . bin2hex(random_bytes(16))])[0];
+}
+check('Durchprobieren von Schlüsseln wird nach 20 Fehlversuchen gebremst (429)', end($statuses) === 429 && in_array(401, $statuses, true), $statuses);
+expect('Mitarbeiter-Zugang ist vom Portal-Limit nicht betroffen', call('GET', '/api/clients', null, $token), 200);
+$res = call('GET', '/portal');
+check('Portal-Seite wird ausgeliefert (mit Content-Security-Policy)', $res[0] === 200 && str_contains($res[2], '/assets/portal.js'), substr($res[2], 0, 80));
+$res = call('GET', '/assets/portal.js');
+check('Portal-Skript abrufbar', $res[0] === 200 && str_contains($res[2], 'use strict'));
+
 echo "Benutzerverwaltung\n";
 $res = call('POST', '/api/users', ['name' => 'Mitarbeiter', 'email' => 'team@example.com', 'password' => 'team12345'], $token);
 check('Admin legt Mitarbeiter an', $res[0] === 201 && $res[1]['role'] === 'MEMBER' && !isset($res[1]['passwordHash']), $res[2]);
@@ -515,6 +653,143 @@ expect('Letzten Admin nicht herabstufen → 400', call('PATCH', "/api/users/$adm
 expect('Eigenes Konto nicht löschbar → 400', call('DELETE', "/api/users/$adminId", null, $token), 400);
 expect('Mitarbeiter löschen', call('DELETE', "/api/users/$memberId", null, $token), 204);
 expect('Token gelöschter Benutzer wird abgelehnt → 401', call('GET', '/api/clients', null, $member), 401);
+
+echo "Backup\n";
+$res = call('GET', '/api/backups', null, $token);
+check('Backups: das automatische Cron-Backup ist vorhanden, Einstellungen sichtbar', $res[0] === 200 && count($res[1]['items']) === 1 && $res[1]['settings']['auto'] === true && $res[1]['settings']['keep'] === 14 && $res[1]['settings']['encrypted'] === false && $res[1]['lastBackupAt'] !== null, $res[2]);
+$member = call('POST', '/api/users', ['name' => 'Aushilfe', 'email' => 'aushilfe@example.com', 'password' => 'aushilfe123'], $token)[1];
+$memberToken = call('POST', '/api/auth/login', ['email' => 'aushilfe@example.com', 'password' => 'aushilfe123'])[1]['token'];
+expect('Backups: Mitarbeiter ohne Zugriff → 403', call('GET', '/api/backups', null, $memberToken), 403);
+expect('Backup erstellen: Mitarbeiter → 403', call('POST', '/api/backups', [], $memberToken), 403);
+expect('Backup-Download: Mitarbeiter → 403', call('GET', '/api/backups/crm-backup-20260101-000000.zip', null, $memberToken), 403);
+expect('Backups ohne Login → 401', call('GET', '/api/backups'), 401);
+call('DELETE', "/api/users/{$member['id']}", null, $token);
+
+$boundary2 = 'bnd' . bin2hex(random_bytes(6));
+$upload = "--$boundary2\r\nContent-Disposition: form-data; name=\"clientId\"\r\n\r\n$clientId\r\n--$boundary2\r\nContent-Disposition: form-data; name=\"file\"; filename=\"sicherung.txt\"\r\nContent-Type: text/plain\r\n\r\nSicherungstest\r\n--$boundary2--\r\n";
+$res = call('POST', '/api/documents', $upload, $token, ["Content-Type: multipart/form-data; boundary=$boundary2"]);
+$uploadedUrl = $res[1]['url'];
+$uploadedName = basename($uploadedUrl);
+$clientTotal = call('GET', '/api/clients?pageSize=1', null, $token)[1]['meta']['total'];
+$invoiceTotal = call('GET', '/api/invoices?pageSize=1', null, $token)[1]['meta']['total'];
+
+$res = call('POST', '/api/backups', [], $token);
+expect('Backup per Knopfdruck erstellen', $res, 201);
+$backup = $res[1];
+check('Backup: Name, Größe, 1 Dokument, unverschlüsselt (kein Passwort gesetzt)', preg_match('/^crm-backup-\d{8}-\d{6}\.zip$/', $backup['name']) === 1 && $backup['size'] > 1000 && $backup['uploads'] === 1 && $backup['encrypted'] === false, $backup);
+$zipPath = "$tmp/backups/{$backup['name']}";
+$zip = new ZipArchive();
+$zip->open($zipPath);
+$entries = [];
+for ($i = 0; $i < $zip->numFiles; $i++) {
+    $entries[] = $zip->getNameIndex($i);
+}
+sort($entries);
+check('Archiv enthält Datenbank, Manifest und das Dokument', $entries === ['database.sqlite', 'manifest.json', "uploads/$uploadedName"], $entries);
+$dbCopy = "$tmp/backup-check.db";
+file_put_contents($dbCopy, $zip->getFromName('database.sqlite'));
+$check = new PDO('sqlite:' . $dbCopy);
+check('Backup-Datenbank ist intakt und enthält alle Daten (Kunden, Rechnungen, Mahnungen, Abos)', $check->query('PRAGMA integrity_check')->fetchColumn() === 'ok' && (int) $check->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientTotal && (int) $check->query('SELECT COUNT(*) FROM Invoice')->fetchColumn() === $invoiceTotal && (int) $check->query('SELECT COUNT(*) FROM Reminder')->fetchColumn() >= 1 && (int) $check->query('SELECT COUNT(*) FROM Recurring')->fetchColumn() >= 1, [$clientTotal, $invoiceTotal]);
+check('Dokument im Backup hat den richtigen Inhalt', $zip->getFromName("uploads/$uploadedName") === 'Sicherungstest');
+$manifest = json_decode((string) $zip->getFromName('manifest.json'), true);
+check('Manifest: Prüfsumme passt zur Datenbank, Migrationen aufgelistet', $manifest['database']['sha256'] === hash('sha256', (string) $zip->getFromName('database.sqlite')) && $manifest['uploads'] === 1 && count($manifest['migrations']) === 3, $manifest);
+$zip->close();
+unset($check);
+
+$res = call('GET', '/api/backups', null, $token);
+check('Backup-Liste zeigt beide Sicherungen, neueste zuerst', count($res[1]['items']) === 2 && $res[1]['items'][0]['name'] === $backup['name'], $res[2]);
+$headers = get_headers($base . "/api/backups/{$backup['name']}", true, stream_context_create(['http' => ['header' => "Authorization: Bearer $token"]]));
+$dl = call('GET', "/api/backups/{$backup['name']}", null, $token);
+check('Backup herunterladen (ZIP, gleiche Größe wie auf der Platte)', $dl[0] === 200 && str_contains((string) ($headers['Content-Type'] ?? ''), 'application/zip') && strlen($dl[2]) === filesize($zipPath) && str_starts_with($dl[2], 'PK'), $headers);
+expect('Download mit Pfad-Trick → 404', call('GET', '/api/backups/..%2F..%2Fdatabase%2Fapp.db', null, $token), 404);
+expect('Download mit ungültigem Namen → 404', call('GET', '/api/backups/crm-backup-1.zip', null, $token), 404);
+expect('Download unbekanntes Backup → 404', call('GET', '/api/backups/crm-backup-20200101-000000.zip', null, $token), 404);
+expect('Löschen mit Pfad-Trick → 404', call('DELETE', '/api/backups/..%2F..%2F.env', null, $token), 404);
+expect('Backup löschen', call('DELETE', "/api/backups/{$res[1]['items'][1]['name']}", null, $token), 204);
+
+// Aufbewahrung (Rotation)
+$rot = "$tmp/rotation";
+mkdir($rot);
+foreach (['20261003-020000', '20261002-020000', '20261001-020000', '20260930-020000', '20260929-020000', '20260915-020000', '20260828-020000', '20260805-020000', '20260730-020000'] as $stamp) {
+    file_put_contents("$rot/crm-backup-$stamp.zip", 'x');
+}
+file_put_contents("$rot/notiz.txt", 'bleibt');
+putenv("BACKUP_DIR=$rot"); putenv('BACKUP_KEEP=3'); putenv('BACKUP_KEEP_MONTHS=2');
+$deleted = App\Services\BackupService::rotate();
+$left = array_map('basename', glob("$rot/*"));
+sort($left);
+check('Rotation: 3 neueste + je 1 pro Monat für die letzten 2 Monate bleiben, Rest wird gelöscht', $deleted === 5 && $left === ['crm-backup-20260930-020000.zip', 'crm-backup-20261001-020000.zip', 'crm-backup-20261002-020000.zip', 'crm-backup-20261003-020000.zip', 'notiz.txt'], [$deleted, $left]);
+putenv('BACKUP_DIR=' . "$tmp/backups"); putenv('BACKUP_KEEP'); putenv('BACKUP_KEEP_MONTHS');
+
+// Verschlüsselung und Wiederherstellung (Kommandozeile)
+$cli = static function (string $script, array $args, array $extra) use ($root, $env): array {
+    $p = proc_open(array_merge([PHP_BINARY, "$root/bin/$script"], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $root, array_merge($env, $extra));
+    $out = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+    return [proc_close($p), $out];
+};
+$secret = 'geheimes-backup-passwort-42';
+$encDir = "$tmp/enc-backups";
+[$code, $out] = $cli('backup.php', [], ['BACKUP_PASSPHRASE' => $secret, 'BACKUP_DIR' => $encDir, 'BACKUP_COPY_DIR' => "$tmp/copy"]);
+check('bin/backup.php erstellt ein verschlüsseltes Backup und kopiert es ins Zweitverzeichnis', $code === 0 && str_contains($out, 'verschlüsselt') && str_contains($out, 'Kopie') && count(glob("$encDir/crm-backup-*.zip")) === 1 && count(glob("$tmp/copy/crm-backup-*.zip")) === 1, $out);
+$encFile = glob("$encDir/crm-backup-*.zip")[0];
+$z = new ZipArchive();
+$z->open($encFile);
+$st = $z->statName('database.sqlite');
+$readable = $z->getFromName('database.sqlite');
+check('Verschlüsselung: AES-256, ohne Passwort ist nichts lesbar', $st['encryption_method'] === ZipArchive::EM_AES_256 && ($readable === false || !str_contains((string) $readable, 'SQLite format 3')) && !str_contains((string) file_get_contents($encFile), 'SQLite format 3') && !str_contains((string) file_get_contents($encFile), 'Beispiel GmbH'));
+$z->setPassword($secret);
+check('Mit Passwort ist die Datenbank lesbar', str_starts_with((string) $z->getFromName('database.sqlite'), 'SQLite format 3'));
+$z->close();
+
+$restoredDb = "$tmp/restored/app.db";
+$restoreEnv = ['DATABASE_PATH' => $restoredDb, 'UPLOAD_DIR' => "$tmp/restored-uploads", 'BACKUP_DIR' => "$tmp/restore-safety", 'BACKUP_PASSPHRASE' => $secret];
+[$code, $out] = $cli('restore.php', [$encFile], $restoreEnv);
+check('Wiederherstellung verlangt ausdrückliche Bestätigung (--yes), tut ohne nichts', $code === 1 && str_contains($out, '--yes') && !is_file($restoredDb), $out);
+[$code, $out] = $cli('restore.php', [$encFile, '--yes'], ['BACKUP_PASSPHRASE' => 'falsches-passwort'] + $restoreEnv);
+check('Falsches Passwort: Abbruch mit klarer Meldung, nichts wird angelegt', $code === 1 && str_contains($out, 'Passwort') && !is_file($restoredDb), $out);
+[$code, $out] = $cli('restore.php', [$encFile, '--yes'], $restoreEnv);
+check('Wiederherstellung in neue Datenbank erfolgreich', $code === 0 && str_contains($out, 'wiederhergestellt') && is_file($restoredDb), $out);
+$restored = new PDO('sqlite:' . $restoredDb);
+check('Wiederhergestellte Datenbank: gleiche Kunden und Rechnungen, intakt', $restored->query('PRAGMA integrity_check')->fetchColumn() === 'ok' && (int) $restored->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientTotal && (int) $restored->query('SELECT COUNT(*) FROM Invoice')->fetchColumn() === $invoiceTotal && (int) $restored->query('SELECT COUNT(*) FROM User')->fetchColumn() >= 1);
+check('Wiederhergestelltes Dokument hat den richtigen Inhalt', file_get_contents("$tmp/restored-uploads/$uploadedName") === 'Sicherungstest');
+unset($restored);
+[$code, $out] = $cli('restore.php', [$encFile, '--yes'], $restoreEnv);
+check('Wiederherstellung über bestehende Datenbank sichert den alten Stand vorher', $code === 0 && count(glob("$tmp/restore-safety/vor-wiederherstellung-*.sqlite")) === 1 && str_contains($out, 'gesichert'), $out);
+
+// Zip-Slip: präparierte Archive dürfen nichts außerhalb des Upload-Ordners schreiben
+$evil = "$tmp/evil.zip";
+$ez = new ZipArchive();
+$ez->open($evil, ZipArchive::CREATE);
+$ez->addFromString('database.sqlite', (string) file_get_contents($dbCopy));
+$ez->addFromString('uploads/../../evil-escape.txt', 'böse');
+$ez->addFromString('../evil-escape2.txt', 'böse');
+$ez->addFromString('uploads/.versteckt', 'böse');
+$ez->addFromString('uploads/gut.txt', 'ok');
+$ez->close();
+[$code, $out] = $cli('restore.php', [$evil, '--yes'], ['BACKUP_PASSPHRASE' => ''] + $restoreEnv);
+check('Zip-Slip: Archiv mit „..“-Pfaden wird nur für harmlose Dateien entpackt', $code === 0 && !file_exists("$tmp/evil-escape.txt") && !file_exists("$tmp/evil-escape2.txt") && !file_exists("$tmp/restored-uploads/.versteckt") && file_get_contents("$tmp/restored-uploads/gut.txt") === 'ok' && str_contains($out, '1 Dokument'), $out);
+file_put_contents("$tmp/kaputt.zip", 'das ist kein zip');
+[$code, $out] = $cli('restore.php', ["$tmp/kaputt.zip", '--yes'], $restoreEnv);
+check('Beschädigte Datei: sauberer Abbruch', $code === 1 && str_contains($out, 'nicht geöffnet'), $out);
+$tampered = "$tmp/tampered.zip";
+$tz = new ZipArchive();
+$tz->open($tampered, ZipArchive::CREATE);
+$tz->addFromString('database.sqlite', (string) file_get_contents($dbCopy));
+$tz->addFromString('manifest.json', json_encode(['database' => ['sha256' => str_repeat('0', 64)]]));
+$tz->close();
+[$code, $out] = $cli('restore.php', [$tampered, '--yes'], ['BACKUP_PASSPHRASE' => ''] + $restoreEnv);
+check('Falsche Prüfsumme im Manifest: Wiederherstellung wird verweigert', $code === 1 && str_contains($out, 'Prüfsumme'), $out);
+
+// Cron-Anbindung
+foreach (glob("$tmp/backups/crm-backup-*.zip") as $f) {
+    unlink($f);
+}
+$res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron legt ohne aktuelles Backup eines an, danach nicht mehr', is_array($res[1]['backup'] ?? null), $res[2]);
+$res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron: zweiter Lauf sichert nicht erneut', $res[1]['backup'] === null, $res[2]);
+[$code, $out] = $cli('cron.php', [], []);
+check('bin/cron.php meldet „Backup aktuell“', $code === 0 && str_contains($out, 'Backup aktuell'), $out);
 
 echo "Sicherheit\n";
 $forged = (static function () {

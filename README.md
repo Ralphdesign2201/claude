@@ -23,6 +23,8 @@ Rechnungen mit Zahlungen und – für Admins – die Teamverwaltung.
 - **Angebote**: Nummern `AN-JJJJ-0001`, PDF, E-Mail, mit einem Klick in eine Rechnung umwandeln
 - **Mahnwesen**: Übersicht überfälliger Rechnungen, drei Stufen (Zahlungserinnerung, 1. Mahnung, letzte Mahnung) mit editierbarem Text, Gebühr und Frist, Mahnbrief als PDF
 - **Abos (wiederkehrende Rechnungen)**: Domains, Hosting, Wartung, Homepage-Miete – monatlich bis jährlich, automatisch per Cron
+- **Kundenportal**: Kunden sehen ihre Rechnungen und Angebote selbst, laden PDFs herunter und nehmen Angebote online an – per persönlichem Link, ohne Passwort
+- **Datensicherung**: automatische, geprüfte und auf Wunsch verschlüsselte Backups (Datenbank + Dokumente) mit Aufbewahrungsregel und Wiederherstellung
 - **Verträge**, **Notizen** (pinnbar), **Dokumente** (Upload bis 25 MB)
 - **Dashboard**: Umsatz (bezahlt/offen/überfällig), aktive Projekte, offene Aufgaben, letzte Aktivitäten
 - **Activity-Log** je Kunde/Projekt
@@ -84,6 +86,44 @@ Fällige Abos werden erzeugt durch
   (Token mit mindestens 16 Zeichen in der `.env` als `CRON_TOKEN` setzen, sonst ist der Endpunkt gesperrt)
 - oder per Klick auf „Fällige jetzt abrechnen“ in der Oberfläche.
 
+## Kundenportal
+
+Beim Kunden findest du die Karte „Kundenportal“. „Zugang erstellen“ erzeugt einen persönlichen Link der Form
+`https://deine-domain.de/portal#<Schlüssel>`; auf Wunsch geht er direkt per E-Mail an den Kunden. Der Kunde braucht kein Passwort.
+
+Im Portal sieht er **nur seine eigenen** Daten:
+- Rechnungen (versendet, überfällig, bezahlt) mit Positionen, Zahlungen und offenem Betrag; **keine Entwürfe und keine stornierten Rechnungen**
+- die Bankverbindung mit Verwendungszweck, damit er direkt überweisen kann
+- Angebote (ohne Entwürfe), die er mit Bestätigung **annehmen oder ablehnen** kann; die Firma bekommt eine E-Mail, und der Status ist sofort im System sichtbar
+- PDF-Download aller Dokumente
+
+Zur Sicherheit: Der Schlüssel ist 256 Bit lang und wird nur als Hash gespeichert; der Link wird deshalb **nur einmal beim Erstellen** angezeigt.
+Ein neuer Link macht den alten ungültig, „Zugang sperren“ wirkt sofort, Links laufen nach `PORTAL_TOKEN_DAYS` (Standard 365) ab. Der Schlüssel steht im
+Teil nach dem `#` der Adresse und wird so nicht in Server-Protokolle geschrieben. Wiederholte falsche Schlüssel werden gebremst.
+Setze `APP_URL` auf die öffentliche Adresse, sonst wird sie aus der Anfrage abgeleitet.
+
+## Datensicherung (Backup)
+
+Ein Backup ist eine ZIP-Datei mit einem **konsistenten Schnappschuss der Datenbank** (auch bei laufendem Betrieb), allen **hochgeladenen Dokumenten** und
+einem Manifest mit Prüfsumme. Jedes Backup wird nach dem Erstellen automatisch geprüft (Datenbank-Integrität, Prüfsumme, Archiv lesbar).
+
+- **Automatisch:** `bin/cron.php` (derselbe tägliche Cron-Aufruf wie für Abos) erstellt ein Backup, wenn das letzte älter als `BACKUP_INTERVAL_HOURS` (24) ist. Alternativ nur sichern: `bin/backup.php`.
+- **Von Hand:** Team → „Datensicherung“ → „Backup jetzt erstellen“, Herunterladen und Löschen ebenfalls dort (nur für Admins).
+- **Aufbewahrung:** die neuesten `BACKUP_KEEP` (14) Backups und je Monat das neueste der letzten `BACKUP_KEEP_MONTHS` (12) Monate; der Rest wird gelöscht.
+- **Verschlüsselung:** Mit `BACKUP_PASSPHRASE` wird das Archiv per AES-256 verschlüsselt (öffnbar z. B. mit 7-Zip). Ohne Passwort ist es **nicht** verschlüsselt, und die Datenbank enthält alle Kundendaten und Passwort-Hashes. Das Passwort bitte separat im Passwortmanager aufbewahren: ohne es lässt sich das Backup nicht wiederherstellen.
+- **Zweitkopie:** `BACKUP_COPY_DIR` legt jede Sicherung zusätzlich an einem anderen Ort ab (Cloud-Ordner, Netzlaufwerk, externe Platte). **Backups, die nur auf demselben Server liegen, schützen nicht vor Serverausfall** – bitte unbedingt eine Kopie an einen anderen Ort bringen.
+- Die `.env` (Zugangsdaten) ist **nicht** im Backup enthalten und sollte separat gesichert werden.
+
+**Wiederherstellen:**
+
+```bash
+php bin/restore.php /pfad/zu/crm-backup-20261005-023000.zip --yes
+```
+
+Der bisherige Stand wird vorher als `vor-wiederherstellung-….sqlite` im Backup-Ordner gesichert. Bei verschlüsselten Backups muss `BACKUP_PASSPHRASE` gesetzt sein.
+Falsches Passwort, beschädigte Archive und falsche Prüfsummen brechen die Wiederherstellung ab, ohne etwas zu verändern. Während der Wiederherstellung sollte niemand
+im System arbeiten. Es lohnt sich, die Wiederherstellung einmal in Ruhe auszuprobieren (z. B. mit `DATABASE_PATH=/tmp/test.db UPLOAD_DIR=/tmp/up php bin/restore.php … --yes`), bevor man sie braucht.
+
 ## Rechnungs-PDF
 
 Auf der Rechnungsseite lädt „PDF herunterladen“ die Rechnung als PDF (`GET /api/invoices/:id/pdf`, mit Token).
@@ -97,7 +137,7 @@ Standardtext; bitte rechtlich mit dem Steuerberater abstimmen. Empfängeradresse
 php tests/run.php           # oder: composer test
 ```
 
-Startet einen Server und einen kleinen SMTP-Testserver mit frischer Temp-Datenbank und prüft die komplette API per HTTP (Auth, CRUD, Rechnungslogik, Upload, Rechte, Sicherheit, E-Mail-Versand mit Anhängen, Angebote, Mahnwesen, Abo-Zeitplan).
+Startet einen Server und einen kleinen SMTP-Testserver mit frischer Temp-Datenbank und prüft die komplette API per HTTP (Auth, CRUD, Rechnungslogik, Upload, Rechte, Sicherheit, E-Mail-Versand mit Anhängen, Angebote, Mahnwesen, Abo-Zeitplan, Kundenportal mit Mandantentrennung, Backup, Verschlüsselung und Wiederherstellung).
 
 ## Endpunkte
 
@@ -114,6 +154,8 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Angebote      | `GET/POST /api/quotes`, `GET/PATCH/DELETE /api/quotes/:id`, `GET /api/quotes/:id/pdf`, `GET /api/quotes/:id/email-draft`, `POST /api/quotes/:id/send`, `POST /api/quotes/:id/convert` |
 | Mahnwesen     | `GET /api/reminders/overview`, `GET /api/invoices/:id/reminder-draft?level=`, `POST /api/invoices/:id/reminders`, `GET /api/reminders/:id/pdf`, `DELETE /api/reminders/:id` |
 | Abos          | `GET/POST /api/recurring`, `GET/PATCH/DELETE /api/recurring/:id`, `POST /api/recurring/:id/run`, `POST /api/recurring/run-due`, `POST /api/cron/run` (Token) |
+| Kundenportal  | Verwaltung: `GET/POST/DELETE /api/clients/:id/portal`; Kunden (Header `X-Portal-Token`): `GET /api/portal/me`, `/api/portal/invoices`, `/api/portal/invoices/:id/pdf`, `/api/portal/quotes`, `/api/portal/quotes/:id/pdf`, `POST /api/portal/quotes/:id/accept|decline` |
+| Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
 | Einstellungen | `GET /api/settings` (Mail eingerichtet? Firmendaten gesetzt?) |
 | Verträge      | `GET/POST /api/contracts`, `GET/PATCH/DELETE /api/contracts/:id` |
 | Notizen       | `GET/POST /api/notes`, `PATCH/DELETE /api/notes/:id` |
@@ -128,16 +170,16 @@ Fehler kommen als `{ "error": "…", "details": … }` mit passendem HTTP-Status
 
 ```
 public/index.php        Einstiegspunkt (Document Root zeigt auf public/)
-public/assets/          Weboberfläche (index.html, app.js, app.css)
+public/assets/          Weboberfläche (index.html, app.js, app.css) und Kundenportal (portal.html, portal.js)
 src/App.php             Routen, CORS, Security-Header, Fehlerbehandlung
 src/Controllers/        ein Controller je Bereich
 src/Http/               Request, Response, Router, ApiError
 src/Support/            DB (PDO), Validator, JWT, Auth, Rate-Limit, Rechnungsmathe
 src/Pdf/                PDF-Schreiber, Layouts für Rechnung, Angebot und Mahnung
 src/Mail/               SMTP-Client (STARTTLS/SSL, Anhänge)
-src/Services/           Rechnungslogik, Mailvorlagen, Abo-Zeitplan
+src/Services/           Rechnungslogik, Mailvorlagen, Abo-Zeitplan, Portal-Zugang, Backups
 database/migrations/    SQL-Migrationen (werden von bin/migrate.php angewendet)
-bin/                    migrate.php, seed.php, cron.php (fällige Abos)
+bin/                    migrate.php, seed.php, cron.php (Abos + Backup), backup.php, restore.php
 uploads/                hochgeladene Dateien (außerhalb des Document Root)
 tests/run.php           End-to-End-Tests
 ```
