@@ -137,6 +137,7 @@ final class App
 
         $r->add('GET', '/api/recurring', [RecurringController::class, 'index']);
         $r->add('POST', '/api/recurring', [RecurringController::class, 'create']);
+        $r->add('POST', '/api/recurring/run-due', [RecurringController::class, 'runDue']);
         $r->add('GET', '/api/recurring/:id', [RecurringController::class, 'show']);
         $r->add('PATCH', '/api/recurring/:id', [RecurringController::class, 'update']);
         $r->add('DELETE', '/api/recurring/:id', [RecurringController::class, 'delete']);

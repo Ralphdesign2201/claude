@@ -147,6 +147,13 @@ final class RecurringController
         return Response::json(InvoiceService::detail($result['invoiceId']), 201);
     }
 
+    /** „Fällige jetzt abrechnen“: für Nutzer ohne Cron; erzeugt alle fälligen Abo-Rechnungen. */
+    public static function runDue(Request $r): Response
+    {
+        $results = RecurringService::runDue($r->user['id']);
+        return Response::json(['created' => count($results), 'runs' => $results]);
+    }
+
     /** @param list<array<string,mixed>> $items @return array<string,mixed> */
     private static function decorate(array $rec, array $items): array
     {

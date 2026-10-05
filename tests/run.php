@@ -463,6 +463,12 @@ check('Abo: Lauf 3 gezählt, nächster Termin = 1. des Folgemonats, Rechnungen v
 $res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
 check('Cron ist idempotent: zweiter Lauf erzeugt nichts', $res[0] === 200 && $res[1]['created'] === 0, $res[2]);
 
+$res = call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'Pflege', 'intervalUnit' => 'QUARTERLY', 'startDate' => $today, 'items' => [['description' => 'Pflege {zeitraum}', 'unitPrice' => 30]]], $token);
+$careId = $res[1]['id'];
+$res = call('POST', '/api/recurring/run-due', null, $token);
+check('„Fällige abrechnen“ per Login (ohne Cron-Token): 1 Rechnung, Entwurf (kein Auto-Versand)', $res[0] === 200 && $res[1]['created'] === 1 && $res[1]['runs'][0]['sent'] === false, $res[2]);
+expect('„Fällige abrechnen“ braucht Login → 401', call('POST', '/api/recurring/run-due'), 401);
+call('DELETE', "/api/recurring/$careId", null, $token);
 $before = count(mails());
 $res = call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'Homepage-Miete', 'intervalUnit' => 'MONTHLY', 'startDate' => $today, 'autoSend' => true, 'paymentDays' => 7, 'items' => [['description' => 'Homepage-Miete {monat} {jahr}', 'unitPrice' => 49]]], $token);
 $rentId = $res[1]['id'];
