@@ -7,11 +7,16 @@ namespace App;
 use App\Controllers\AuthController;
 use App\Controllers\ClientsController;
 use App\Controllers\ContractsController;
+use App\Controllers\CronController;
 use App\Controllers\DashboardController;
 use App\Controllers\DocumentsController;
 use App\Controllers\InvoicesController;
 use App\Controllers\NotesController;
 use App\Controllers\ProjectsController;
+use App\Controllers\QuotesController;
+use App\Controllers\RecurringController;
+use App\Controllers\RemindersController;
+use App\Controllers\SettingsController;
 use App\Controllers\TasksController;
 use App\Controllers\TimeEntriesController;
 use App\Controllers\UsersController;
@@ -19,6 +24,7 @@ use App\Http\ApiError;
 use App\Http\Request;
 use App\Http\Response;
 use App\Http\Router;
+use App\Mail\MailException;
 use App\Support\Env;
 use App\Support\RateLimit;
 use PDOException;
@@ -108,8 +114,36 @@ final class App
         $r->add('GET', '/api/invoices/:id/pdf', [InvoicesController::class, 'pdf']);
         $r->add('PATCH', '/api/invoices/:id', [InvoicesController::class, 'update']);
         $r->add('DELETE', '/api/invoices/:id', [InvoicesController::class, 'delete']);
+        $r->add('GET', '/api/invoices/:id/email-draft', [InvoicesController::class, 'emailDraft']);
+        $r->add('POST', '/api/invoices/:id/send', [InvoicesController::class, 'send']);
+        $r->add('GET', '/api/invoices/:id/reminder-draft', [RemindersController::class, 'draft']);
+        $r->add('POST', '/api/invoices/:id/reminders', [RemindersController::class, 'create']);
         $r->add('POST', '/api/invoices/:id/payments', [InvoicesController::class, 'addPayment']);
         $r->add('DELETE', '/api/invoices/:id/payments/:paymentId', [InvoicesController::class, 'deletePayment']);
+
+        $r->add('GET', '/api/reminders/overview', [RemindersController::class, 'overview']);
+        $r->add('GET', '/api/reminders/:id/pdf', [RemindersController::class, 'pdf']);
+        $r->add('DELETE', '/api/reminders/:id', [RemindersController::class, 'delete']);
+
+        $r->add('GET', '/api/quotes', [QuotesController::class, 'index']);
+        $r->add('POST', '/api/quotes', [QuotesController::class, 'create']);
+        $r->add('GET', '/api/quotes/:id', [QuotesController::class, 'show']);
+        $r->add('PATCH', '/api/quotes/:id', [QuotesController::class, 'update']);
+        $r->add('DELETE', '/api/quotes/:id', [QuotesController::class, 'delete']);
+        $r->add('GET', '/api/quotes/:id/pdf', [QuotesController::class, 'pdf']);
+        $r->add('GET', '/api/quotes/:id/email-draft', [QuotesController::class, 'emailDraft']);
+        $r->add('POST', '/api/quotes/:id/send', [QuotesController::class, 'send']);
+        $r->add('POST', '/api/quotes/:id/convert', [QuotesController::class, 'convert']);
+
+        $r->add('GET', '/api/recurring', [RecurringController::class, 'index']);
+        $r->add('POST', '/api/recurring', [RecurringController::class, 'create']);
+        $r->add('GET', '/api/recurring/:id', [RecurringController::class, 'show']);
+        $r->add('PATCH', '/api/recurring/:id', [RecurringController::class, 'update']);
+        $r->add('DELETE', '/api/recurring/:id', [RecurringController::class, 'delete']);
+        $r->add('POST', '/api/recurring/:id/run', [RecurringController::class, 'run']);
+        $r->add('POST', '/api/cron/run', [CronController::class, 'run'], $pub);
+
+        $r->add('GET', '/api/settings', [SettingsController::class, 'show']);
 
         $r->add('GET', '/api/contracts', [ContractsController::class, 'index']);
         $r->add('POST', '/api/contracts', [ContractsController::class, 'create']);
@@ -140,6 +174,10 @@ final class App
     {
         if ($e instanceof ApiError) {
             return Response::json(['error' => $e->getMessage(), 'details' => $e->details], $e->status);
+        }
+
+        if ($e instanceof MailException) {
+            return Response::json(['error' => $e->getMessage()], str_contains($e->getMessage(), 'nicht eingerichtet') ? 503 : 502);
         }
 
         if ($e instanceof PDOException) {

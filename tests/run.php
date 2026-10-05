@@ -13,7 +13,22 @@ $base = "http://127.0.0.1:$port";
 $tmp = sys_get_temp_dir() . '/crm-test-' . bin2hex(random_bytes(4));
 mkdir($tmp);
 
+$mailDir = "$tmp/mail";
+mkdir($mailDir);
+$smtpPort = $port + 1;
 $env = [
+    'SMTP_HOST' => '127.0.0.1',
+    'SMTP_PORT' => (string) $smtpPort,
+    'SMTP_ENCRYPTION' => 'none',
+    'SMTP_USER' => 'mailer',
+    'SMTP_PASSWORD' => 'secret',
+    'MAIL_FROM' => 'studio@example.com',
+    'COMPANY_NAME' => 'Ralph Design',
+    'COMPANY_ADDRESS' => 'Studiostraße 5|20095 Hamburg',
+    'COMPANY_EMAIL' => 'hallo@ralph-design.de',
+    'COMPANY_IBAN' => 'DE89 3704 0044 0532 0130 00',
+    'CRON_TOKEN' => 'cron-token-cron-token-123',
+    'REMINDER_FEE_2' => '5',
     'DATABASE_PATH' => "$tmp/test.db",
     'JWT_SECRET' => 'test-secret-test-secret-123456',
     'ALLOW_REGISTRATION' => 'false',
@@ -29,6 +44,8 @@ $run = static function (string $cmd) use ($env, $root): void {
 };
 $run(PHP_BINARY . ' bin/migrate.php');
 
+$sink = proc_open([PHP_BINARY, 'tests/smtp_sink.php', (string) $smtpPort, $mailDir], [1 => ['file', "$tmp/sink.log", 'a'], 2 => ['file', "$tmp/sink.log", 'a']], $sinkPipes, $root, $env);
+
 $server = proc_open(
     [PHP_BINARY, '-d', 'upload_max_filesize=25M', '-d', 'post_max_size=26M', '-S', "127.0.0.1:$port", '-t', 'public', 'public/index.php'],
     [1 => ['file', "$tmp/server.log", 'a'], 2 => ['file', "$tmp/server.log", 'a']],
@@ -37,11 +54,13 @@ $server = proc_open(
     $env,
 );
 
-register_shutdown_function(static function () use ($server, $tmp) {
+register_shutdown_function(static function () use ($server, $sink, $tmp) {
     proc_terminate($server);
-    foreach (glob("$tmp/*") ?: [] as $f) {
+    proc_terminate($sink);
+    foreach (array_merge(glob("$tmp/mail/*") ?: [], glob("$tmp/*") ?: []) as $f) {
         @unlink($f);
     }
+    @rmdir("$tmp/mail");
     @rmdir($tmp);
 });
 
@@ -80,6 +99,47 @@ function call(string $method, string $path, mixed $body = null, ?string $token =
     $raw = (string) @file_get_contents($base . $path, false, $ctx);
     preg_match('#HTTP/\S+ (\d+)#', $http_response_header[0] ?? '', $m);
     return [(int) ($m[1] ?? 0), json_decode($raw, true), $raw];
+}
+
+/** @return list<array{head:string,body:string,raw:string}> alle beim Test-Mailserver eingegangenen Mails, älteste zuerst */
+function mails(): array
+{
+    global $mailDir;
+    $files = glob("$mailDir/*.eml") ?: [];
+    sort($files);
+    return array_map(static function ($f) {
+        $raw = (string) file_get_contents($f);
+        [$head, $body] = array_pad(explode("\r\n\r\n", $raw, 2), 2, '');
+        return ['head' => $head, 'body' => $body, 'raw' => $raw];
+    }, $files);
+}
+
+/** @return array<string,string> Anhänge einer Mail: Dateiname => Inhalt */
+function attachments(array $mail): array
+{
+    preg_match_all('/Content-Disposition: attachment; filename="([^"]+)"\r\n\r\n(.*?)\r\n--/s', $mail['raw'], $m, PREG_SET_ORDER);
+    $out = [];
+    foreach ($m as $part) {
+        $out[$part[1]] = (string) base64_decode(preg_replace('/\s+/', '', $part[2]));
+    }
+    return $out;
+}
+
+function mailText(array $mail): string
+{
+    preg_match('/Content-Transfer-Encoding: base64\r\n\r\n(.*?)(\r\n--|\z)/s', $mail['raw'], $m);
+    return (string) base64_decode(preg_replace('/\s+/', '', $m[1] ?? ''));
+}
+
+/** Text aus den (Flate-komprimierten) Inhaltsströmen eines PDFs, grob genug für Stichproben. */
+function pdfText(string $pdf): string
+{
+    preg_match_all('/stream\n(.*?)\nendstream/s', $pdf, $m);
+    $out = '';
+    foreach ($m[1] as $stream) {
+        $out .= (string) @gzuncompress($stream);
+    }
+    return $out;
 }
 
 function check(string $name, bool $ok, mixed $detail = null): void
@@ -255,6 +315,184 @@ expect('Upload ohne Datei → 400', call('POST', '/api/documents', "--$boundary-
 expect('Dokument löschen', call('DELETE', "/api/documents/$docId", null, $token), 204);
 expect('Datei nach Löschung weg', call('GET', $docUrl), 404);
 call('DELETE', "/api/documents/$evilId", null, $token);
+
+echo "E-Mail-Versand (echter SMTP-Server)\n";
+$res = call('GET', '/api/settings', null, $token);
+check('Einstellungen: Mail eingerichtet', $res[0] === 200 && $res[1]['mailConfigured'] === true && $res[1]['mailDriver'] === 'smtp', $res[2]);
+$res = call('POST', '/api/invoices', ['clientId' => $clientId, 'dueDate' => '2030-01-01T00:00:00Z', 'items' => [['description' => 'Mail-Test', 'quantity' => 2, 'unitPrice' => 100]]], $token);
+$mailInvoiceId = $res[1]['id'];
+$mailInvoiceNumber = $res[1]['number'];
+$res = call('GET', "/api/invoices/$mailInvoiceId/email-draft", null, $token);
+check('E-Mail-Entwurf: Empfänger, Betreff, Text, Anhang', $res[0] === 200 && $res[1]['to'] === 'anna@beispiel.de' && str_contains($res[1]['subject'], $mailInvoiceNumber) && str_contains($res[1]['message'], 'Guten Tag Chef') && $res[1]['attachment'] === "Rechnung-$mailInvoiceNumber.pdf" && $res[1]['mailConfigured'] === true, $res[2]);
+$draft = $res[1];
+expect('Versand mit ungültiger Adresse → 400', call('POST', "/api/invoices/$mailInvoiceId/send", ['to' => "x@y.de\r\nBcc: evil@x.de", 'subject' => 'a', 'message' => 'b'], $token), 400);
+$before = count(mails());
+$res = call('POST', "/api/invoices/$mailInvoiceId/send", ['to' => $draft['to'], 'subject' => 'Rechnung für Müller & Söhne', 'message' => $draft['message']], $token);
+check('Rechnung senden: Status Entwurf → Versendet, Versand protokolliert', $res[0] === 200 && $res[1]['status'] === 'SENT' && count($res[1]['emails']) === 1 && $res[1]['emails'][0]['status'] === 'SENT', $res[2]);
+$all = mails();
+$mail = end($all);
+check('SMTP: genau eine Mail empfangen, mit Anmeldung', count($all) === $before + 1 && str_contains($mail['head'], 'X-Authenticated: yes') && str_contains($mail['head'], 'X-Envelope-To: anna@beispiel.de') && str_contains($mail['head'], 'X-Envelope-From: studio@example.com'), $mail['head']);
+check('Mail-Header: Umlaute im Betreff kodiert, Reply-To gesetzt', str_contains($mail['head'], '=?UTF-8?B?') && !preg_match('/Subject:[^\r\n]*[äöüÄÖÜß]/u', $mail['head']) && str_contains($mail['head'], 'Reply-To: hallo@ralph-design.de') && !str_contains($mail['head'], 'evil'), $mail['head']);
+$att = attachments($mail);
+check('Mail-Anhang: Rechnungs-PDF', array_keys($att) === ["Rechnung-$mailInvoiceNumber.pdf"] && str_starts_with(current($att), '%PDF-1.4') && str_contains(pdfText(current($att)), $mailInvoiceNumber), array_keys($att));
+check('Mail-Text im Klartext lesbar', str_contains(mailText($mail), 'Guten Tag Chef') && str_contains(mailText($mail), 'Freundliche Grüße'), mailText($mail));
+$before = count(mails());
+$res = call('POST', "/api/invoices/$mailInvoiceId/send", ['to' => 'reject@example.com', 'subject' => 'x', 'message' => 'y'], $token);
+check('Abgelehnter Empfänger → 502 mit Servermeldung', $res[0] === 502 && str_contains((string) ($res[1]['error'] ?? ''), '550'), $res[2]);
+$res = call('GET', "/api/invoices/$mailInvoiceId", null, $token);
+check('Fehlversuch im Verlauf als FAILED protokolliert', count($res[1]['emails']) === 2 && $res[1]['emails'][0]['status'] === 'FAILED' && $res[1]['emails'][1]['status'] === 'SENT', $res[1]['emails'] ?? null);
+check('Bei Fehler wurde nichts zugestellt', count(mails()) === $before);
+
+echo "Angebote\n";
+$res = call('POST', '/api/quotes', ['clientId' => $clientId, 'projectId' => $projectId, 'items' => [['description' => 'Webdesign Startseite', 'quantity' => 1, 'unitPrice' => 1800], ['description' => 'Kontaktformular', 'quantity' => 3, 'unitPrice' => 120]], 'discount' => 60], $token);
+expect('Angebot anlegen', $res, 201);
+$quoteId = $res[1]['id'];
+check("Nummer AN-$year-0001, gültig 30 Tage, Summen", $res[1]['number'] === "AN-$year-0001" && $res[1]['status'] === 'DRAFT' && $res[1]['validUntil'] > gmdate('Y-m-d\TH:i:s', strtotime('+29 days')) && $res[1]['totals']['subtotal'] == 2160 && $res[1]['totals']['tax'] == 399 && $res[1]['totals']['total'] == 2499, $res[1]['totals'] ?? $res[2]);
+$res = call('POST', '/api/quotes', ['clientId' => $clientId, 'items' => [['description' => 'X', 'unitPrice' => 1]]], $token);
+check('Zweite Nummer AN-0002', ($res[1]['number'] ?? '') === "AN-$year-0002", $res[2]);
+$secondQuoteId = $res[1]['id'];
+expect('Angebot ohne Positionen → 400', call('POST', '/api/quotes', ['clientId' => $clientId, 'items' => []], $token), 400);
+$res = call('GET', "/api/quotes/$quoteId/pdf", null, $token);
+check('Angebots-PDF mit „Angebot“ und Gültigkeit', $res[0] === 200 && str_starts_with($res[2], '%PDF') && str_contains(pdfText($res[2]), 'Angebot AN-') && str_contains(pdfText($res[2]), "G\xFCltig bis") && str_contains(pdfText($res[2]), 'Wir freuen uns'), substr(pdfText($res[2]), 0, 200));
+$res = call('GET', "/api/quotes?status=DRAFT", null, $token);
+check('Angebotsliste mit Summen und Kunde', $res[0] === 200 && count($res[1]['items']) === 2 && isset($res[1]['items'][0]['totals']['total'], $res[1]['items'][0]['client']['name']), $res[2]);
+$res = call('GET', "/api/quotes/$quoteId/email-draft", null, $token);
+check('Angebots-E-Mail-Entwurf', $res[0] === 200 && str_contains($res[1]['subject'], 'Angebot AN-') && str_contains($res[1]['message'], 'gültig bis'), $res[2]);
+$before = count(mails());
+$res = call('POST', "/api/quotes/$quoteId/send", ['to' => 'anna@beispiel.de', 'subject' => $res[1]['subject'], 'message' => $res[1]['message']], $token);
+$all = mails();
+check('Angebot senden: Status Versendet, PDF-Anhang Angebot-…pdf', $res[0] === 200 && $res[1]['status'] === 'SENT' && count($all) === $before + 1 && array_keys(attachments(end($all))) === ["Angebot-AN-$year-0001.pdf"], $res[2]);
+$res = call('POST', "/api/quotes/$quoteId/convert", null, $token);
+check('Angebot → Rechnung (Entwurf, gleiche Positionen und Summe)', $res[0] === 201 && $res[1]['status'] === 'DRAFT' && count($res[1]['items']) === 2 && $res[1]['totals']['total'] == 2499 && $res[1]['discount'] == 60 && $res[1]['dueDate'] !== null && $res[1]['projectId'] === $projectId, $res[2]);
+$convertedNumber = $res[1]['number'];
+$res = call('GET', "/api/quotes/$quoteId", null, $token);
+check('Angebot ist angenommen und verweist auf die Rechnung', $res[1]['status'] === 'ACCEPTED' && $res[1]['invoice']['number'] === $convertedNumber, $res[2]);
+expect('Zweite Umwandlung → 409', call('POST', "/api/quotes/$quoteId/convert", null, $token), 409);
+call('PATCH', "/api/quotes/$secondQuoteId", ['status' => 'DECLINED'], $token);
+expect('Abgelehntes Angebot nicht umwandelbar → 400', call('POST', "/api/quotes/$secondQuoteId/convert", null, $token), 400);
+$res = call('PATCH', "/api/quotes/$secondQuoteId", ['status' => 'SENT', 'validUntil' => '2020-01-01'], $token);
+check('Abgelaufenes Angebot wird als EXPIRED angezeigt', $res[1]['status'] === 'EXPIRED', $res[2]);
+expect('Angebot löschen', call('DELETE', "/api/quotes/$secondQuoteId", null, $token), 204);
+
+echo "Mahnwesen\n";
+$mk = static function (string $due, string $status, float $price) use ($clientId, $token) {
+    $res = call('POST', '/api/invoices', ['clientId' => $clientId, 'status' => $status, 'dueDate' => $due, 'items' => [['description' => 'Hosting-Paket', 'unitPrice' => $price]]], $token);
+    return [$res[1]['id'], $res[1]['number']];
+};
+[$overdueId, $overdueNumber] = $mk('2020-03-01T00:00:00Z', 'SENT', 1000);
+[$notDueId] = $mk('2099-03-01T00:00:00Z', 'SENT', 500);
+[$draftId] = $mk('2020-03-01T00:00:00Z', 'DRAFT', 500);
+$res = call('GET', '/api/reminders/overview', null, $token);
+$ids = array_column($res[1]['items'] ?? [], 'id');
+check('Überfällig-Übersicht: nur versendete, fällige, offene Rechnungen', $res[0] === 200 && in_array($overdueId, $ids, true) && !in_array($notDueId, $ids, true) && !in_array($draftId, $ids, true) && !in_array($invoiceId, $ids, true), $ids);
+$row = current(array_filter($res[1]['items'], static fn ($i) => $i['id'] === $overdueId));
+check('Übersicht: Tage überfällig, Stufe 0 → nächste Stufe 1', $row['daysOverdue'] > 1000 && $row['lastLevel'] === 0 && $row['nextLevel'] === 1 && $row['nextLevelName'] === 'Zahlungserinnerung' && $row['totals']['balance'] == 1190 && $row['client']['name'] === 'Anna Beispiel', $row);
+expect('Mahnentwurf für Entwurfs-Rechnung → 400', call('GET', "/api/invoices/$draftId/reminder-draft", null, $token), 400);
+$res = call('GET', "/api/invoices/$overdueId/reminder-draft", null, $token);
+check('Mahnentwurf Stufe 1: Text, Frist, Empfänger', $res[0] === 200 && $res[1]['level'] === 1 && $res[1]['fee'] == 0 && str_contains($res[1]['message'], $overdueNumber) && str_contains($res[1]['message'], '1.190,00 €') && str_contains($res[1]['subject'], 'Zahlungserinnerung') && $res[1]['to'] === 'anna@beispiel.de' && $res[1]['dueDate'] > gmdate('Y-m-d\TH:i:s', strtotime('+6 days')), $res[2]);
+$reminderDraft = $res[1];
+$res = call('GET', "/api/invoices/$overdueId/reminder-draft?level=2", null, $token);
+check('Mahnentwurf Stufe 2: Gebühr aus Einstellung, Text mit Gesamtbetrag', $res[1]['level'] === 2 && $res[1]['fee'] == 5 && str_contains($res[1]['message'], '1.195,00 €') && str_contains($res[1]['message'], 'Mahngebühr 5,00 €'), $res[2]);
+expect('Ungültige Mahnstufe → 400', call('GET', "/api/invoices/$overdueId/reminder-draft?level=4", null, $token), 400);
+$before = count(mails());
+$res = call('POST', "/api/invoices/$overdueId/reminders", ['level' => 1, 'fee' => 0, 'dueDate' => $reminderDraft['dueDate'], 'subject' => $reminderDraft['subject'], 'message' => $reminderDraft['message'], 'send' => true, 'to' => $reminderDraft['to']], $token);
+expect('Zahlungserinnerung senden', $res, 201);
+check('Erinnerung als versendet gespeichert', !empty($res[1]['emailedAt']) && $res[1]['level'] === 1, $res[2]);
+$reminder1 = $res[1]['id'];
+$all = mails();
+$names = array_keys(attachments(end($all)));
+check('Mail enthält Mahn-PDF und die Rechnung', count($all) === $before + 1 && $names === ["Zahlungserinnerung-$overdueNumber.pdf", "Rechnung-$overdueNumber.pdf"], $names);
+$res = call('GET', "/api/invoices/$overdueId", null, $token);
+check('Rechnung wurde auf ÜBERFÄLLIG gesetzt, Mahnung im Verlauf', $res[1]['status'] === 'OVERDUE' && count($res[1]['reminders']) === 1, $res[2]);
+$res = call('GET', '/api/reminders/overview', null, $token);
+$row = current(array_filter($res[1]['items'], static fn ($i) => $i['id'] === $overdueId));
+check('Übersicht: jetzt Stufe 1 erledigt → nächste Stufe 2', $row['lastLevel'] === 1 && $row['nextLevel'] === 2 && $row['nextLevelName'] === '1. Mahnung', $row);
+$res = call('GET', "/api/invoices/$overdueId/reminder-draft", null, $token);
+check('Mahnentwurf schlägt automatisch Stufe 2 vor', $res[1]['level'] === 2 && $res[1]['lastLevel'] === 1, $res[2]);
+$res = call('POST', "/api/invoices/$overdueId/reminders", ['level' => 2, 'fee' => 5, 'dueDate' => $reminderDraft['dueDate'], 'subject' => '1. Mahnung', 'message' => "Guten Tag,\n\nbitte zahlen Sie.", 'send' => false], $token);
+check('Mahnung ohne E-Mail-Versand speichern (z. B. zum Ausdrucken)', $res[0] === 201 && $res[1]['emailedAt'] === null && $res[1]['fee'] == 5, $res[2]);
+$reminder2 = $res[1]['id'];
+check('Ohne Versand keine zusätzliche Mail', count(mails()) === $before + 1);
+$res = call('GET', "/api/reminders/$reminder2/pdf", null, $token);
+$text = pdfText($res[2]);
+check('Mahn-PDF: Titel, Gebühr, Zahlbetrag 1.195,00 €', $res[0] === 200 && str_starts_with($res[2], '%PDF') && str_contains($text, '1. Mahnung zu Rechnung') && str_contains($text, 'Mahngeb') && str_contains($text, '1.195,00'), substr($text, 0, 300));
+expect('Mahn-PDF unbekannt → 404', call('GET', '/api/reminders/gibtsnicht/pdf', null, $token), 404);
+expect('Mahnung ohne Empfänger aber mit Versand → 400', call('POST', "/api/invoices/$overdueId/reminders", ['level' => 3, 'dueDate' => $reminderDraft['dueDate'], 'subject' => 'x', 'message' => 'y', 'send' => true], $token), 400);
+expect('Mahnung für Entwurfs-Rechnung → 400', call('POST', "/api/invoices/$draftId/reminders", ['level' => 1, 'dueDate' => $reminderDraft['dueDate'], 'subject' => 'x', 'message' => 'y'], $token), 400);
+expect('Mahnstufe 4 → 400', call('POST', "/api/invoices/$overdueId/reminders", ['level' => 4, 'dueDate' => $reminderDraft['dueDate'], 'subject' => 'x', 'message' => 'y'], $token), 400);
+$before = count(mails());
+$res = call('POST', "/api/invoices/$overdueId/reminders", ['level' => 3, 'dueDate' => $reminderDraft['dueDate'], 'subject' => 'x', 'message' => 'y', 'send' => true, 'to' => 'reject@example.com'], $token);
+$res2 = call('GET', "/api/invoices/$overdueId", null, $token);
+check('Fehlgeschlagener Mahnversand wird nicht als Mahnung gespeichert', $res[0] === 502 && count($res2[1]['reminders']) === 2 && count(mails()) === $before, $res[2]);
+expect('Mahnung löschen', call('DELETE', "/api/reminders/$reminder1", null, $token), 204);
+call('POST', "/api/invoices/$overdueId/payments", ['amount' => 1190], $token);
+$res = call('GET', '/api/reminders/overview', null, $token);
+check('Bezahlte Rechnung verschwindet aus der Mahnübersicht', !in_array($overdueId, array_column($res[1]['items'], 'id'), true), $res[2]);
+expect('Bezahlte Rechnung nicht mehr mahnbar → 400', call('GET', "/api/invoices/$overdueId/reminder-draft", null, $token), 400);
+
+echo "Wiederkehrende Rechnungen (Abos)\n";
+require_once $root . '/src/bootstrap.php';
+$ts = static fn (string $start, string $unit, int $n) => App\Services\RecurringService::iso(App\Services\RecurringService::scheduleDate($start, $unit, $n));
+check('Zeitplan: 31.01. monatlich → 29.02. (Schaltjahr), dann wieder 31.03.', $ts('2024-01-31T00:00:00Z', 'MONTHLY', 1) === '2024-02-29T00:00:00.000Z' && $ts('2024-01-31T00:00:00Z', 'MONTHLY', 2) === '2024-03-31T00:00:00.000Z' && $ts('2024-01-31T00:00:00Z', 'MONTHLY', 4) === '2024-05-31T00:00:00.000Z');
+check('Zeitplan: jährlich ab 29.02.2024 → 28.02.2025, 29.02.2028', $ts('2024-02-29T00:00:00Z', 'YEARLY', 1) === '2025-02-28T00:00:00.000Z' && $ts('2024-02-29T00:00:00Z', 'YEARLY', 4) === '2028-02-29T00:00:00.000Z');
+check('Zeitplan: quartalsweise und halbjährlich', $ts('2026-11-15T00:00:00Z', 'QUARTERLY', 1) === '2027-02-15T00:00:00.000Z' && $ts('2026-11-15T00:00:00Z', 'HALF_YEARLY', 1) === '2027-05-15T00:00:00.000Z');
+check('Platzhalter {monat} {jahr} {zeitraum}', App\Services\RecurringService::fill('Hosting {monat} {jahr} ({zeitraum})', new DateTimeImmutable('2026-03-01'), new DateTimeImmutable('2026-03-31')) === 'Hosting März 2026 (01.03.2026 – 31.03.2026)');
+
+$firstOfMonth2Ago = gmdate('Y-m-d', strtotime('first day of -2 months'));
+$today = gmdate('Y-m-d');
+$res = call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'Hosting Paket M', 'intervalUnit' => 'MONTHLY', 'startDate' => $firstOfMonth2Ago, 'items' => [['description' => 'Hosting Paket M – {monat} {jahr} ({zeitraum})', 'quantity' => 1, 'unitPrice' => 19.9]]], $token);
+expect('Monatliches Hosting-Abo anlegen', $res, 201);
+$hostingId = $res[1]['id'];
+check('Abo: 19,90 € netto/Monat, aktiv, nächster Lauf = Start', $res[1]['active'] === true && $res[1]['monthlyNet'] == 19.9 && $res[1]['nextRunDate'] === $firstOfMonth2Ago . 'T00:00:00.000Z' && $res[1]['occurrence'] === 0, $res[2]);
+$res = call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'Domain beispiel.de', 'intervalUnit' => 'YEARLY', 'startDate' => '2099-06-01', 'taxRate' => 19, 'items' => [['description' => 'Domain beispiel.de ({zeitraum})', 'unitPrice' => 12]]], $token);
+$domainId = $res[1]['id'];
+$res = call('GET', '/api/recurring', null, $token);
+check('Abo-Übersicht: Monatsumsatz 19,90 + 1,00 = 20,90 €, Jahresumsatz 250,80 €', $res[0] === 200 && count($res[1]['items']) === 2 && $res[1]['summary']['active'] === 2 && $res[1]['summary']['monthlyRevenue'] == 20.9 && $res[1]['summary']['yearlyRevenue'] == 250.8, $res[1]['summary'] ?? $res[2]);
+expect('Enddatum vor Startdatum → 400', call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'X', 'startDate' => '2026-05-01', 'endDate' => '2026-01-01', 'items' => [['description' => 'X', 'unitPrice' => 1]]], $token), 400);
+expect('Abo ohne Positionen → 400', call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'X', 'startDate' => '2026-05-01', 'items' => []], $token), 400);
+expect('Cron ohne Token → 401', call('POST', '/api/cron/run'), 401);
+expect('Cron mit falschem Token → 401', call('POST', '/api/cron/run', null, null, ['X-Cron-Token: falsch-falsch-falsch']), 401);
+expect('Cron-Endpunkt braucht kein Login-Token, Abo-API schon', call('GET', '/api/recurring'), 401);
+$res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron: 3 versäumte Monate werden als Entwürfe nachgeholt', $res[0] === 200 && $res[1]['created'] === 3 && count(array_unique(array_column($res[1]['runs'], 'number'))) === 3 && !in_array(true, array_column($res[1]['runs'], 'sent'), true), $res[2]);
+$res = call('GET', "/api/invoices?recurringId=$hostingId&pageSize=50", null, $token);
+$descriptions = array_map(static fn ($i) => $i['items'][0]['description'], $res[1]['items']);
+check('Rechnungen aus dem Abo: Entwurf, Platzhalter ersetzt, Betrag 23,68 € brutto', count($res[1]['items']) === 3 && !str_contains(implode('|', $descriptions), '{') && str_contains($descriptions[0] . $descriptions[1] . $descriptions[2], gmdate('Y') ) && $res[1]['items'][0]['status'] === 'DRAFT' && $res[1]['items'][0]['totals']['total'] == 23.68 && $res[1]['items'][0]['recurringId'] === $hostingId, $descriptions);
+$res = call('GET', "/api/recurring/$hostingId", null, $token);
+check('Abo: Lauf 3 gezählt, nächster Termin = 1. des Folgemonats, Rechnungen verknüpft', $res[1]['occurrence'] === 3 && $res[1]['nextRunDate'] === gmdate('Y-m-d', strtotime('first day of next month')) . 'T00:00:00.000Z' && count($res[1]['invoices']) === 3 && $res[1]['lastRunAt'] !== null, $res[2]);
+$res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron ist idempotent: zweiter Lauf erzeugt nichts', $res[0] === 200 && $res[1]['created'] === 0, $res[2]);
+
+$before = count(mails());
+$res = call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'Homepage-Miete', 'intervalUnit' => 'MONTHLY', 'startDate' => $today, 'autoSend' => true, 'paymentDays' => 7, 'items' => [['description' => 'Homepage-Miete {monat} {jahr}', 'unitPrice' => 49]]], $token);
+$rentId = $res[1]['id'];
+$res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron: genau ein fälliger Zeitraum + „automatisch senden“ → Rechnung per E-Mail raus', $res[0] === 200 && $res[1]['created'] === 1 && $res[1]['runs'][0]['sent'] === true && $res[1]['runs'][0]['error'] === null && count(mails()) === $before + 1, $res[2]);
+$res = call('GET', '/api/invoices/' . $res[1]['runs'][0]['invoiceId'], null, $token);
+$rentInvoice = $res[1];
+$due = new DateTimeImmutable($rentInvoice['dueDate']);
+$issue = new DateTimeImmutable($rentInvoice['issueDate']);
+check('Auto-Rechnung: Status Versendet, Zahlungsziel 7 Tage, Mailverlauf', $rentInvoice['status'] === 'SENT' && $issue->diff($due)->days === 7 && count($rentInvoice['emails']) === 1 && $rentInvoice['emails'][0]['status'] === 'SENT', $rentInvoice['dueDate']);
+
+$res = call('PATCH', "/api/recurring/$domainId", ['intervalUnit' => 'HALF_YEARLY', 'startDate' => '2099-01-31'], $token);
+check('Abo ändern berechnet den nächsten Termin neu', $res[0] === 200 && $res[1]['nextRunDate'] === '2099-01-31T00:00:00.000Z' && $res[1]['intervalUnit'] === 'HALF_YEARLY', $res[2]);
+$res = call('POST', "/api/recurring/$domainId/run", null, $token);
+check('„Jetzt abrechnen“: Entwurf erzeugt', $res[0] === 201 && $res[1]['status'] === 'DRAFT' && str_contains($res[1]['items'][0]['description'], '31.01.2099 – 30.07.2099'), $res[1]['items'][0]['description'] ?? $res[2]);
+$res = call('GET', "/api/recurring/$domainId", null, $token);
+check('Danach nächster Termin 31.07.2099 (halbjährlich)', $res[1]['occurrence'] === 1 && $res[1]['nextRunDate'] === '2099-07-31T00:00:00.000Z', $res[2]);
+
+$res = call('POST', '/api/recurring', ['clientId' => $clientId, 'title' => 'Einmal-Abo', 'intervalUnit' => 'YEARLY', 'startDate' => $today, 'endDate' => $today, 'items' => [['description' => 'Jahresgebühr', 'unitPrice' => 10]]], $token);
+$endedId = $res[1]['id'];
+call('POST', "/api/recurring/$endedId/run", null, $token);
+$res = call('GET', "/api/recurring/$endedId", null, $token);
+check('Abo mit Enddatum wird nach dem letzten Lauf beendet', $res[1]['active'] === false, $res[2]);
+expect('Beendetes Abo kann nicht abgerechnet werden → 400', call('POST', "/api/recurring/$endedId/run", null, $token), 400);
+call('PATCH', "/api/recurring/$hostingId", ['active' => false], $token);
+$res = call('GET', '/api/recurring?active=true', null, $token);
+check('Filter aktiv: pausiertes Abo fehlt', !in_array($hostingId, array_column($res[1]['items'], 'id'), true), array_column($res[1]['items'], 'title'));
+expect('Abo löschen (Rechnungen bleiben erhalten)', call('DELETE', "/api/recurring/$hostingId", null, $token), 204);
+$res = call('GET', "/api/invoices?search=RE-&pageSize=100", null, $token);
+check('Rechnungen des gelöschten Abos bleiben bestehen', count(array_filter($res[1]['items'], static fn ($i) => $i['recurringId'] === null && str_contains($i['items'][0]['description'] ?? '', 'Hosting Paket M'))) === 3, count($res[1]['items']));
 
 echo "Benutzerverwaltung\n";
 $res = call('POST', '/api/users', ['name' => 'Mitarbeiter', 'email' => 'team@example.com', 'password' => 'team12345'], $token);

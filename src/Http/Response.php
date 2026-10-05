@@ -38,6 +38,12 @@ final class Response
         return new self(200, null, $headers, $path);
     }
 
+    /** Der JSON-Inhalt der Antwort (für die Wiederverwendung in anderen Handlern). */
+    public function jsonData(): mixed
+    {
+        return $this->data;
+    }
+
     public function withHeader(string $name, string $value): self
     {
         $clone = clone $this;

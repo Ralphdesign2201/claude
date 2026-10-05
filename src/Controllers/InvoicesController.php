@@ -7,25 +7,20 @@ namespace App\Controllers;
 use App\Http\ApiError;
 use App\Http\Request;
 use App\Http\Response;
+use App\Mail\Mailer;
 use App\Pdf\InvoicePdf;
+use App\Services\InvoiceService;
+use App\Services\MailTemplates;
 use App\Support\Activity;
 use App\Support\Dates;
 use App\Support\Db;
-use App\Support\InvoiceMath;
 use App\Support\Pagination;
 use App\Support\Validator;
 use App\Support\Where;
 
 final class InvoicesController
 {
-    private const ITEM_SCHEMA = [
-        'description' => ['required' => true, 'min' => 1, 'max' => 2000],
-        'quantity' => ['type' => 'number', 'positive' => true, 'default' => 1],
-        'unitPrice' => ['required' => true, 'type' => 'number'],
-        'position' => ['type' => 'int'],
-    ];
-
-    private const SCHEMA = [
+    public const SCHEMA = [
         'clientId' => ['required' => true, 'min' => 1],
         'projectId' => [],
         'status' => ['enum' => ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED']],
@@ -35,7 +30,7 @@ final class InvoicesController
         'discount' => ['type' => 'number'],
         'notes' => ['max' => 20000],
         'currency' => ['min' => 3, 'max' => 3],
-        'items' => ['type' => 'list', 'required' => true, 'minItems' => 1, 'items' => self::ITEM_SCHEMA],
+        'items' => ['type' => 'list', 'required' => true, 'minItems' => 1, 'items' => InvoiceService::ITEM_SCHEMA],
     ];
 
     private const PAYMENT_SCHEMA = [
@@ -45,12 +40,19 @@ final class InvoicesController
         'note' => ['max' => 5000],
     ];
 
+    private const SEND_SCHEMA = [
+        'to' => ['required' => true, 'email' => true, 'max' => 255],
+        'subject' => ['required' => true, 'min' => 1, 'max' => 300],
+        'message' => ['required' => true, 'min' => 1, 'max' => 20000],
+    ];
+
     public static function index(Request $r): Response
     {
         $p = Pagination::from($r);
         $where = (new Where())
             ->eq('i.status', $r->q('status'))
             ->eq('i.clientId', $r->q('clientId'))
+            ->eq('i.recurringId', $r->q('recurringId'))
             ->search(['i.number'], $r->q('search'));
 
         $invoices = Db::all(
@@ -61,33 +63,17 @@ final class InvoicesController
         );
         $total = (int) Db::value('SELECT COUNT(*) FROM "Invoice" i' . $where->sql(), $where->params());
 
-        $ids = array_column($invoices, 'id');
-        $items = $payments = [];
-        if ($ids !== []) {
-            $in = Db::in($ids);
-            foreach (Db::all("SELECT * FROM \"InvoiceItem\" WHERE \"invoiceId\" IN ($in) ORDER BY \"position\" ASC", $ids) as $row) {
-                $items[$row['invoiceId']][] = $row;
-            }
-            foreach (Db::all("SELECT * FROM \"Payment\" WHERE \"invoiceId\" IN ($in) ORDER BY \"paidAt\" DESC", $ids) as $row) {
-                $payments[$row['invoiceId']][] = $row;
-            }
-        }
-        $invoices = array_map(
-            static fn ($inv) => InvoiceMath::withTotals($inv, $items[$inv['id']] ?? [], $payments[$inv['id']] ?? []),
-            $invoices,
-        );
-
-        return Response::json(Pagination::wrap($invoices, $total, $p['page'], $p['pageSize']));
+        return Response::json(Pagination::wrap(InvoiceService::withTotalsBatch($invoices), $total, $p['page'], $p['pageSize']));
     }
 
     public static function show(Request $r): Response
     {
-        return Response::json(self::detail($r->param('id')));
+        return Response::json(InvoiceService::detail($r->param('id')));
     }
 
     public static function pdf(Request $r): Response
     {
-        $invoice = self::detail($r->param('id'));
+        $invoice = InvoiceService::detail($r->param('id'));
 
         return Response::bytes(InvoicePdf::render($invoice), [
             'Content-Type' => 'application/pdf',
@@ -102,13 +88,7 @@ final class InvoicesController
         $items = $data['items'];
         unset($data['items']);
 
-        $id = Db::transaction(static function () use ($data, $items) {
-            $invoiceId = Db::insert('Invoice', $data + ['number' => self::nextNumber()]);
-            self::insertItems($invoiceId, $items);
-            return $invoiceId;
-        });
-
-        $invoice = self::detail($id);
+        $invoice = InvoiceService::detail(InvoiceService::create($data, $items));
         Activity::log('INVOICE_CREATED', "Rechnung {$invoice['number']} wurde erstellt", $invoice['clientId'], $invoice['projectId'], $r->user['id']);
 
         return Response::json($invoice, 201);
@@ -129,11 +109,11 @@ final class InvoicesController
             Db::update('Invoice', $id, $data, 'Rechnung nicht gefunden');
             if ($items !== null) {
                 Db::run('DELETE FROM "InvoiceItem" WHERE "invoiceId" = ?', [$id]);
-                self::insertItems($id, $items);
+                InvoiceService::insertItems($id, $items);
             }
         });
 
-        return Response::json(self::detail($id));
+        return Response::json(InvoiceService::detail($id));
     }
 
     public static function delete(Request $r): Response
@@ -151,7 +131,7 @@ final class InvoicesController
         $paymentId = Db::transaction(static function () use ($invoiceId, $data) {
             $paymentId = Db::insert('Payment', $data + ['invoiceId' => $invoiceId]);
 
-            $invoice = self::detail($invoiceId);
+            $invoice = InvoiceService::detail($invoiceId);
             if ($invoice['totals']['paid'] >= $invoice['totals']['total'] && $invoice['status'] !== 'PAID') {
                 Db::update('Invoice', $invoiceId, ['status' => 'PAID', 'paidAt' => Dates::now()]);
             }
@@ -169,36 +149,24 @@ final class InvoicesController
         return Response::noContent();
     }
 
-    /** @return array<string,mixed> */
-    private static function detail(string $id): array
+    /** Vorschlag für Empfänger, Betreff und Text der Rechnungs-E-Mail. */
+    public static function emailDraft(Request $r): Response
     {
-        $invoice = Db::require('Invoice', $id, 'Rechnung nicht gefunden');
-        $invoice['client'] = Db::find('Client', $invoice['clientId']);
-        $invoice['project'] = $invoice['projectId']
-            ? Db::one('SELECT "id", "name" FROM "Project" WHERE "id" = ?', [$invoice['projectId']])
-            : null;
-        $items = Db::all('SELECT * FROM "InvoiceItem" WHERE "invoiceId" = ? ORDER BY "position" ASC', [$id]);
-        $payments = Db::all('SELECT * FROM "Payment" WHERE "invoiceId" = ? ORDER BY "paidAt" DESC', [$id]);
+        $invoice = InvoiceService::detail($r->param('id'));
+        $draft = MailTemplates::invoice($invoice);
 
-        return InvoiceMath::withTotals($invoice, $items, $payments);
+        return Response::json($draft + [
+            'to' => MailTemplates::recipient($invoice['client']),
+            'mailConfigured' => Mailer::configured(),
+            'attachment' => 'Rechnung-' . $invoice['number'] . '.pdf',
+        ]);
     }
 
-    /** @param list<array<string,mixed>> $items */
-    private static function insertItems(string $invoiceId, array $items): void
+    /** Versendet die Rechnung als PDF-Anhang. Eine Entwurfs-Rechnung wird dabei auf „Versendet“ gesetzt. */
+    public static function send(Request $r): Response
     {
-        foreach ($items as $index => $item) {
-            Db::insert('InvoiceItem', $item + ['position' => $index, 'invoiceId' => $invoiceId]);
-        }
-    }
+        $data = Validator::validate($r->body(), self::SEND_SCHEMA);
 
-    /** Nächste Nummer im Format RE-JJJJ-0001; basiert auf der höchsten vorhandenen Nummer, nicht auf der Anzahl. */
-    private static function nextNumber(): string
-    {
-        $prefix = 'RE-' . gmdate('Y') . '-';
-        $max = (int) Db::value(
-            'SELECT MAX(CAST(SUBSTR("number", ?) AS INTEGER)) FROM "Invoice" WHERE "number" LIKE ? ESCAPE \'\\\'',
-            [strlen($prefix) + 1, addcslashes($prefix, '%_\\') . '%'],
-        );
-        return $prefix . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return Response::json(InvoiceService::sendEmail($r->param('id'), $data['to'], $data['subject'], $data['message'], $r->user['id']));
     }
 }

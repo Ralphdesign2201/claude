@@ -7,3 +7,4 @@ uploads/*
 !uploads/.gitkeep
 vendor
 .DS_Store
+database/outbox/
