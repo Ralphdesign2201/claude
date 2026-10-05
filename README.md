@@ -18,6 +18,7 @@ Rechnungen mit Zahlungen und – für Admins – die Teamverwaltung.
 - **Aufgaben**: Kanban-fähig (Status, Priorität, Position, Fälligkeit, Zuweisung)
 - **Zeiterfassung**: Einträge pro Projekt/Aufgabe, abrechenbar oder nicht
 - **Rechnungen**: Positionen, Steuersatz, Rabatt, automatische Nummerierung (`RE-2026-0001`), Zahlungen, automatischer Status „Bezahlt“ (auf Cent gerundet)
+- **Rechnungs-PDF**: Download per Klick im Browser, deutsches Geschäftsbrief-Layout (Absender, Empfänger, Positionen, MwSt., Bankverbindung, Mehrseitig mit Seitenzahlen)
 - **Verträge**, **Notizen** (pinnbar), **Dokumente** (Upload bis 25 MB)
 - **Dashboard**: Umsatz (bezahlt/offen/überfällig), aktive Projekte, offene Aufgaben, letzte Aktivitäten
 - **Activity-Log** je Kunde/Projekt
@@ -39,6 +40,13 @@ Demo-Login nach `bin/seed.php`: `admin@example.com` / `admin1234` (Passwort per 
 Ohne Seed: Der **erste** über `POST /api/auth/register` angelegte Benutzer wird Admin. Danach ist die
 Selbstregistrierung gesperrt (außer `ALLOW_REGISTRATION=true`); weitere Benutzer legt der Admin per `POST /api/users` an.
 
+## Rechnungs-PDF
+
+Auf der Rechnungsseite lädt „PDF herunterladen“ die Rechnung als PDF (`GET /api/invoices/:id/pdf`, mit Token).
+Die Absenderdaten (Name, Adresse, Bank, IBAN, USt-IdNr. …) stehen in der `.env` unter `COMPANY_*` – siehe `.env.example`.
+Das PDF wird ohne Bibliotheken erzeugt (`src/Pdf/`). Der Hinweis bei 0 % Umsatzsteuer (`INVOICE_ZERO_TAX_NOTE`) ist ein
+Standardtext; bitte rechtlich mit dem Steuerberater abstimmen. Empfängeradresse und USt-IdNr. pflegst du im Kundenformular.
+
 ## Tests
 
 ```bash
@@ -58,7 +66,7 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Projekte      | `GET/POST /api/projects`, `GET/PATCH/DELETE /api/projects/:id`, `GET/POST /api/projects/:id/tasks` |
 | Aufgaben      | `GET /api/tasks`, `PATCH/DELETE /api/tasks/:id` |
 | Zeiterfassung | `GET/POST /api/time-entries`, `PATCH/DELETE /api/time-entries/:id` |
-| Rechnungen    | `GET/POST /api/invoices`, `GET/PATCH/DELETE /api/invoices/:id`, `POST /api/invoices/:id/payments`, `DELETE /api/invoices/:id/payments/:paymentId` |
+| Rechnungen    | `GET/POST /api/invoices`, `GET/PATCH/DELETE /api/invoices/:id`, `GET /api/invoices/:id/pdf`, `POST /api/invoices/:id/payments`, `DELETE /api/invoices/:id/payments/:paymentId` |
 | Verträge      | `GET/POST /api/contracts`, `GET/PATCH/DELETE /api/contracts/:id` |
 | Notizen       | `GET/POST /api/notes`, `PATCH/DELETE /api/notes/:id` |
 | Dokumente     | `GET /api/documents`, `POST /api/documents` (multipart, Feld `file`), `DELETE /api/documents/:id` |
@@ -77,6 +85,7 @@ src/App.php             Routen, CORS, Security-Header, Fehlerbehandlung
 src/Controllers/        ein Controller je Bereich
 src/Http/               Request, Response, Router, ApiError
 src/Support/            DB (PDO), Validator, JWT, Auth, Rate-Limit, Rechnungsmathe
+src/Pdf/                PDF-Schreiber und Rechnungslayout
 database/migrations/    SQL-Migrationen (werden von bin/migrate.php angewendet)
 bin/                    migrate.php, seed.php
 uploads/                hochgeladene Dateien (außerhalb des Document Root)

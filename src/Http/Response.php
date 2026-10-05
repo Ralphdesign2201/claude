@@ -12,6 +12,7 @@ final class Response
         private readonly mixed $data,
         private array $headers = [],
         private readonly ?string $file = null,
+        private readonly bool $raw = false,
     ) {
     }
 
@@ -23,6 +24,12 @@ final class Response
     public static function noContent(): self
     {
         return new self(204, null);
+    }
+
+    /** @param array<string,string> $headers */
+    public static function bytes(string $body, array $headers): self
+    {
+        return new self(200, $body, $headers + ['Content-Length' => (string) strlen($body)], null, true);
     }
 
     /** @param array<string,string> $headers */
@@ -47,6 +54,10 @@ final class Response
         if ($this->file !== null) {
             header('Content-Length: ' . filesize($this->file));
             readfile($this->file);
+            return;
+        }
+        if ($this->raw) {
+            echo $this->data;
             return;
         }
         if ($this->data !== null) {

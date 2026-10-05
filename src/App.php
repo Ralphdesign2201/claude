@@ -105,6 +105,7 @@ final class App
         $r->add('GET', '/api/invoices', [InvoicesController::class, 'index']);
         $r->add('POST', '/api/invoices', [InvoicesController::class, 'create']);
         $r->add('GET', '/api/invoices/:id', [InvoicesController::class, 'show']);
+        $r->add('GET', '/api/invoices/:id/pdf', [InvoicesController::class, 'pdf']);
         $r->add('PATCH', '/api/invoices/:id', [InvoicesController::class, 'update']);
         $r->add('DELETE', '/api/invoices/:id', [InvoicesController::class, 'delete']);
         $r->add('POST', '/api/invoices/:id/payments', [InvoicesController::class, 'addPayment']);

@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Http\ApiError;
 use App\Http\Request;
 use App\Http\Response;
+use App\Pdf\InvoicePdf;
 use App\Support\Activity;
 use App\Support\Dates;
 use App\Support\Db;
@@ -82,6 +83,17 @@ final class InvoicesController
     public static function show(Request $r): Response
     {
         return Response::json(self::detail($r->param('id')));
+    }
+
+    public static function pdf(Request $r): Response
+    {
+        $invoice = self::detail($r->param('id'));
+
+        return Response::bytes(InvoicePdf::render($invoice), [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="Rechnung-' . preg_replace('/[^A-Za-z0-9._-]/', '_', $invoice['number']) . '.pdf"',
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     public static function create(Request $r): Response

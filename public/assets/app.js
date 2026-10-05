@@ -272,6 +272,7 @@
       var t = i.totals, st = shownStatus(i);
       return '<button class="btn ghost sm back" data-act="nav" data-v="invoices" style="align-self:flex-start">← Alle Rechnungen</button>' +
         head('<span class="mono">' + esc(i.number) + '</span>', pill(INVOICE_STATUS, st) + ' &nbsp;<button class="link" data-act="open-client" data-id="' + esc(i.client.id) + '">' + esc(i.client.company || i.client.name) + '</button>' + (i.project ? ' · ' + esc(i.project.name) : ''),
+          '<button class="btn" data-act="inv-pdf">PDF herunterladen</button>' +
           (i.status === 'DRAFT' ? '<button class="btn" data-act="inv-status" data-v="SENT">Als versendet markieren</button>' : '') +
           (t.balance > 0 && i.status !== 'CANCELLED' ? '<button class="btn primary" data-act="new-payment">Zahlung erfassen</button>' : '') +
           (i.status !== 'CANCELLED' && i.status !== 'PAID' ? '<button class="btn danger" data-act="inv-status" data-v="CANCELLED">Stornieren</button>' : '') +
@@ -351,13 +352,14 @@
   var done = function (msg) { toast(msg); render(); };
 
   function clientDialog(c) {
-    var isNew = !c; c = c || { name: '', company: '', email: '', phone: '', city: '', tags: '', status: 'LEAD' };
+    var isNew = !c; c = c || { name: '', company: '', email: '', phone: '', address: '', zip: '', city: '', vatId: '', tags: '', status: 'LEAD' };
     modal(isNew ? 'Neuer Kunde' : 'Kunde bearbeiten',
-      '<div class="form">' + field('cname', 'Ansprechpartner *', c.name) + field('ccompany', 'Firma', c.company) + field('cemail', 'E-Mail', c.email, 'email') + field('cphone', 'Telefon', c.phone) + field('ccity', 'Ort', c.city) +
+      '<div class="form">' + field('cname', 'Ansprechpartner *', c.name) + field('ccompany', 'Firma', c.company) + field('cemail', 'E-Mail', c.email, 'email') + field('cphone', 'Telefon', c.phone) + field('cvat', 'USt-IdNr.', c.vatId) +
+      field('caddr', 'Straße & Hausnummer', c.address, 'text', { full: true }) + field('czip', 'PLZ', c.zip) + field('ccity', 'Ort', c.city) +
       selectField('cstat', 'Status', opts(CLIENT_STATUS), c.status) + field('ctags', 'Tags (mit Komma getrennt)', c.tags, 'text', { full: true }) + '</div>', 'Speichern',
       function (f) {
         if (!v(f, 'cname')) return bad('Bitte einen Namen eingeben.');
-        var data = { name: v(f, 'cname'), company: v(f, 'ccompany'), email: v(f, 'cemail'), phone: v(f, 'cphone'), city: v(f, 'ccity'), tags: v(f, 'ctags'), status: v(f, 'cstat') };
+        var data = { name: v(f, 'cname'), company: v(f, 'ccompany'), email: v(f, 'cemail'), phone: v(f, 'cphone'), vatId: v(f, 'cvat'), address: v(f, 'caddr'), zip: v(f, 'czip'), city: v(f, 'ccity'), tags: v(f, 'ctags'), status: v(f, 'cstat') };
         return (isNew ? api('POST', '/api/clients', clean(data)) : api('PATCH', '/api/clients/' + c.id, data)).then(function (res) {
           if (isNew) { ui.clientId = res.id; ui.view = 'client'; }
           done(isNew ? 'Kunde angelegt' : 'Gespeichert');
@@ -475,6 +477,21 @@
     }).catch(function (e) { toast(e.message); });
   }
 
+  function downloadPdf(btn) {
+    btn.disabled = true;
+    fetch('/api/invoices/' + ui.invoiceId + '/pdf', { headers: { Authorization: 'Bearer ' + token } }).then(function (res) {
+      if (res.status === 401) { logout(); throw new Error('Bitte erneut anmelden'); }
+      if (!res.ok) throw new Error('PDF konnte nicht erstellt werden');
+      var name = (/filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '') || [])[1] || 'Rechnung.pdf';
+      return res.blob().then(function (blob) { return { blob: blob, name: name }; });
+    }).then(function (r) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(r.blob); a.download = r.name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      toast('PDF heruntergeladen');
+    }).catch(function (err) { toast(err.message); }).then(function () { btn.disabled = false; });
+  }
+
   /* ---------- Ereignisse ---------- */
   var fail = function (err) { toast(err.message); };
   document.addEventListener('click', function (e) {
@@ -512,6 +529,7 @@
       case 'del-payment': return del('/api/invoices/' + ui.invoiceId + '/payments/' + id, 'Zahlung gelöscht');
       case 'del-user': return confirmDialog('Der Benutzer verliert sofort den Zugang.', 'Entfernen', function () { return api('DELETE', '/api/users/' + id).then(function () { done('Benutzer entfernt'); }); });
       case 'del-invoice': return confirmDialog('Die Rechnung wird dauerhaft gelöscht. Die Nummer wird nicht erneut vergeben, solange eine höhere existiert.', 'Endgültig löschen', function () { return api('DELETE', '/api/invoices/' + ui.invoiceId).then(function () { go('invoices'); toast('Rechnung gelöscht'); }); });
+      case 'inv-pdf': return downloadPdf(el);
       case 'inv-status': return api('PATCH', '/api/invoices/' + ui.invoiceId, { status: el.dataset.v }).then(function () { done(el.dataset.v === 'SENT' ? 'Als versendet markiert' : 'Rechnung storniert'); }).catch(fail);
       case 'move':
         var tasks = Array.prototype.map.call(document.querySelectorAll('.task'), function (n) { return n.dataset.task; });

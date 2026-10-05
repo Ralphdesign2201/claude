@@ -198,6 +198,12 @@ expect('Rechnung ohne Positionen → 400', call('POST', '/api/invoices', ['clien
 $res = call('GET', '/api/dashboard/summary', null, $token);
 check('Dashboard: offen/überfällig vor Zahlung', $res[0] === 200 && $res[1]['revenue']['outstanding'] == 5117 + 1.19 && $res[1]['revenue']['overdue'] == 5117 && $res[1]['revenue']['paid'] == 0, $res[1]['revenue'] ?? $res[2]);
 
+$pdf = call('GET', "/api/invoices/$invoiceId/pdf", null, $token);
+check('Rechnungs-PDF: gültiges PDF', $pdf[0] === 200 && str_starts_with($pdf[2], '%PDF-1.4') && str_contains($pdf[2], '%%EOF') && strlen($pdf[2]) > 1500, substr($pdf[2], 0, 80));
+$headers = get_headers($base . "/api/invoices/$invoiceId/pdf", true, stream_context_create(['http' => ['header' => "Authorization: Bearer $token"]]));
+check('Rechnungs-PDF: Dateiname im Header', str_contains((string) ($headers['Content-Disposition'] ?? ''), "Rechnung-RE-$year-0001.pdf") && str_contains((string) ($headers['Content-Type'] ?? ''), 'application/pdf'), $headers);
+expect('Rechnungs-PDF ohne Token → 401', call('GET', "/api/invoices/$invoiceId/pdf"), 401);
+expect('Rechnungs-PDF unbekannte Rechnung → 404', call('GET', '/api/invoices/gibtsnicht/pdf', null, $token), 404);
 $res = call('POST', "/api/invoices/$invoiceId/payments", ['amount' => 5000, 'method' => 'Überweisung'], $token);
 expect('Teilzahlung', $res, 201);
 $res = call('GET', "/api/invoices/$invoiceId", null, $token);
