@@ -64,6 +64,11 @@ final class App
         $pub = Router::PUBLIC;
         $admin = Router::ADMIN;
 
+        $r->add('GET', '/', static fn () => Response::file(APP_ROOT . '/public/assets/index.html', [
+            'Content-Type' => 'text/html; charset=utf-8',
+            'Cache-Control' => 'no-cache',
+            'Content-Security-Policy' => "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        ]), $pub);
         $r->add('GET', '/health', static fn () => Response::json(['status' => 'ok']), $pub);
         $r->add('GET', '/uploads/:name', [DocumentsController::class, 'serve'], $pub);
 

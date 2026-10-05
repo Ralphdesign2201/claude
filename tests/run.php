@@ -102,6 +102,14 @@ function expect(string $name, array $res, int $status): void
 echo "Health & Auth\n";
 $res = call('GET', '/health');
 expect('GET /health', $res, 200);
+$res = call('GET', '/');
+check('Startseite (Frontend) wird ausgeliefert', $res[0] === 200 && str_contains($res[2], '<title>Webdesigner CRM</title>'), substr($res[2], 0, 100));
+$headers = get_headers($base . '/', true);
+check('Startseite mit Content-Security-Policy', str_contains((string) ($headers['Content-Security-Policy'] ?? ''), "script-src 'self'"), $headers);
+$res = call('GET', '/assets/app.js');
+check('Frontend-Skript abrufbar', $res[0] === 200 && str_contains($res[2], 'use strict'));
+$res = call('GET', '/assets/app.css');
+check('Frontend-Styles abrufbar', $res[0] === 200 && str_contains($res[2], '--accent'));
 expect('API ohne Token → 401', call('GET', '/api/clients'), 401);
 expect('Ungültiges Token → 401', call('GET', '/api/clients', null, 'abc.def.ghi'), 401);
 expect('Unbekannte Route → 404', call('GET', '/api/gibtsnicht', null, null), 404);

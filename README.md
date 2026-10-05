@@ -1,7 +1,14 @@
 # Kundenverwaltung – Backend für Webdesigner (PHP + SQLite)
 
-REST-API zur Kunden-, Projekt-, Aufgaben- und Rechnungsverwaltung für Webdesigner, Freelancer und kleine Agenturen.
+REST-API **und Weboberfläche** zur Kunden-, Projekt-, Aufgaben- und Rechnungsverwaltung für Webdesigner, Freelancer und kleine Agenturen.
 Reines PHP 8.1+ mit SQLite (PDO) – **keine Composer-Abhängigkeiten**, läuft auf jedem Standard-Webspace.
+
+## Weboberfläche
+
+Nach dem Start öffnest du `http://localhost:4000` im Browser und meldest dich an (nach `bin/seed.php`: `admin@example.com` / `admin1234`).
+Die Oberfläche (`public/assets/`) ist reines HTML/CSS/JavaScript ohne Build-Schritt und ohne externe Ressourcen (Systemschriften, keine CDNs).
+Sie enthält Dashboard, Kunden (mit Ansprechpartnern, Notizen, Verträgen, Dokument-Upload), Projekte mit Kanban-Board, Zeiterfassung,
+Rechnungen mit Zahlungen und – für Admins – die Teamverwaltung.
 
 ## Features
 
@@ -42,7 +49,7 @@ Startet einen Server mit frischer Temp-Datenbank und prüft die komplette API pe
 
 ## Endpunkte
 
-Alle Endpunkte (außer `/health`, `/uploads/*`, `/api/auth/register|login`) benötigen `Authorization: Bearer <token>`.
+Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`) benötigen `Authorization: Bearer <token>`.
 
 | Bereich       | Endpunkt |
 |---------------|----------|
@@ -65,6 +72,7 @@ Fehler kommen als `{ "error": "…", "details": … }` mit passendem HTTP-Status
 
 ```
 public/index.php        Einstiegspunkt (Document Root zeigt auf public/)
+public/assets/          Weboberfläche (index.html, app.js, app.css)
 src/App.php             Routen, CORS, Security-Header, Fehlerbehandlung
 src/Controllers/        ein Controller je Bereich
 src/Http/               Request, Response, Router, ApiError
