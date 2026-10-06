@@ -77,7 +77,7 @@ final class SettingsService
                 $f('LICENSE_CACHE_HOURS', 'Prüfergebnis zwischenspeichern (Stunden)', 'int', ['min' => 1, 'max' => 720, 'default' => '24']),
                 $f('LICENSE_OFFLINE_DAYS', 'Weiterlaufen ohne Server (Tage)', 'int', ['min' => 0, 'max' => 90, 'default' => '7']),
                 $f('LICENSE_DOMAIN_CHANGES', 'Domainwechsel durch Kunden (Anzahl)', 'int', ['min' => 0, 'max' => 100, 'default' => '2']),
-                $f('UPDATE_CHANNEL', 'Update-Kanal dieser Installation', 'select', ['options' => [['stable', 'Stabil (empfohlen)'], ['beta', 'Beta (neue Versionen früher, weniger getestet)']], 'default' => 'stable', 'help' => 'Betrifft nur die lizenzierte Produktversion.']),
+                $f('UPDATE_CHANNEL', 'Update-Kanal dieser Installation', 'select', ['options' => [['stable', 'Stabil (empfohlen)'], ['beta', 'Beta (neue Versionen früher, weniger getestet)']], 'default' => 'stable', 'help' => 'Betrifft nur Installationen mit Update-Server (ausgelieferte Produktversion).']),
                 $f('LICENSE_ALLOW_DEV', 'Entwicklungsadressen erlauben (localhost, *.test)', 'bool', ['default' => 'true']),
             ]],
             ['id' => 'backup', 'title' => 'Datensicherung', 'fields' => [

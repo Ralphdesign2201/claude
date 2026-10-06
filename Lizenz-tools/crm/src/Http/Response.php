@@ -33,6 +33,12 @@ final class Response
     }
 
     /** @param array<string,string> $headers */
+    public static function html(string $body, int $status = 200, array $headers = []): self
+    {
+        return new self($status, $body, $headers + ['Content-Type' => 'text/html; charset=utf-8', 'Content-Length' => (string) strlen($body)], null, true);
+    }
+
+    /** @param array<string,string> $headers */
     public static function file(string $path, array $headers): self
     {
         return new self(200, null, $headers, $path);

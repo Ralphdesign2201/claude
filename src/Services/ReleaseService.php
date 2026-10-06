@@ -38,7 +38,7 @@ final class ReleaseService
      *
      * @return array<string,mixed>
      */
-    public static function create(string $tmpFile, string $channel, ?string $notes, bool $published): array
+    public static function create(string $tmpFile, string $channel, ?string $notes, bool $published, string $access = 'licensed', ?string $minFrom = null): array
     {
         if (!class_exists(ZipArchive::class)) {
             throw new ApiError(500, 'Die PHP-Erweiterung „zip“ fehlt.');
@@ -47,6 +47,13 @@ final class ReleaseService
         if ($size < 100 || $size > self::MAX_BYTES) {
             throw ApiError::badRequest('Das Paket muss zwischen 100 Byte und 50 MB groß sein.');
         }
+        if (!in_array($access, ['public', 'licensed'], true)) {
+            throw ApiError::badRequest('Zugang muss „public“ oder „licensed“ sein.');
+        }
+        if ($minFrom !== null && $minFrom !== '' && !self::validVersion($minFrom)) {
+            throw ApiError::badRequest('Die Mindestversion ist ungültig (erwartet z. B. 0.1.0).');
+        }
+        $minFrom = $minFrom === '' ? null : $minFrom;
         $manifest = self::readManifest($tmpFile);
         $product = $manifest['product'];
         $version = $manifest['version'];
@@ -65,7 +72,7 @@ final class ReleaseService
         $id = Db::insert('Release', [
             'product' => $product, 'version' => $version, 'channel' => $channel, 'notes' => $notes, 'fileName' => $stored, 'size' => $size,
             'sha256' => $sha, 'signature' => LicenseService::signRaw(self::message($product, $version, $sha)),
-            'minPhp' => $manifest['minPhp'], 'published' => (int) $published, 'releasedAt' => Dates::now(),
+            'minPhp' => $manifest['minPhp'], 'published' => (int) $published, 'releasedAt' => Dates::now(), 'access' => $access, 'minFrom' => $minFrom,
         ]);
 
         return Db::require('Release', $id, 'Release nicht gefunden');
@@ -113,16 +120,63 @@ final class ReleaseService
     /** Neueste veröffentlichte Version eines Produkts im Kanal ('beta' schließt stabile ein). @return array<string,mixed>|null */
     public static function latest(string $product, string $channel): ?array
     {
+        return self::visible($product, $channel, true)[0] ?? null;
+    }
+
+    /**
+     * Veröffentlichte Versionen, neueste zuerst.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public static function visible(string $product, string $channel, bool $licensed): array
+    {
         $rows = Db::all(
-            'SELECT * FROM "Release" WHERE "product" = ? AND "published" = 1' . ($channel === 'beta' ? '' : ' AND "channel" = \'stable\''),
+            'SELECT * FROM "Release" WHERE "product" = ? AND "published" = 1' . ($channel === 'beta' ? '' : ' AND "channel" = \'stable\'') . ($licensed ? '' : ' AND "access" = \'public\''),
             [$product],
         );
         usort($rows, static fn ($a, $b) => version_compare($b['version'], $a['version']));
-        return $rows[0] ?? null;
+
+        return $rows;
+    }
+
+    /**
+     * Update-Plan für eine Installation – egal, wie viele Versionen sie verpasst hat.
+     *
+     * Jedes Paket ist ein vollständiger Stand (aller Code + alle Datenbank-Migrationen), deshalb kann eine Installation direkt auf die
+     * neueste Version springen; die Migrationen holen alles Verpasste nach. Nur wenn eine Version „minFrom“ verlangt (Zwischenschritt
+     * bei einem Umbau), wird zuerst die höchste erreichbare Version eingespielt und danach erneut geprüft.
+     *
+     * @param callable(array<string,mixed>):bool $allowed darf diese Lizenz die Version installieren (Update-Anspruch)?
+     * @return array{latest:?array<string,mixed>,target:?array<string,mixed>,changes:list<array<string,mixed>>,blocked:bool}
+     */
+    public static function plan(string $product, string $channel, ?string $installed, bool $licensed, callable $allowed): array
+    {
+        $newer = array_values(array_filter(
+            self::visible($product, $channel, $licensed),
+            static fn ($r) => $installed === null || version_compare($r['version'], $installed, '>'),
+        ));
+        $target = null;
+        foreach ($newer as $r) { // neueste zuerst
+            if (!$allowed($r)) {
+                continue;
+            }
+            if ($installed !== null && ($r['minFrom'] ?? null) !== null && version_compare($installed, $r['minFrom'], '<')) {
+                continue; // dafür fehlt ein Zwischenschritt; eine ältere, erreichbare Version kommt zuerst
+            }
+            $target = $r;
+            break;
+        }
+        $latest = $newer[0] ?? null;
+        $changes = [];
+        foreach (array_reverse($newer) as $r) { // aufsteigend: was ist alles neu seit der installierten Version
+            $changes[] = ['version' => $r['version'], 'releasedAt' => $r['releasedAt'], 'channel' => $r['channel'], 'notes' => $r['notes'] === null ? null : mb_substr((string) $r['notes'], 0, 3000)];
+        }
+
+        return ['latest' => $latest, 'target' => $target, 'changes' => array_slice($changes, -30), 'blocked' => $latest !== null && $target === null];
     }
 
     /** Kurzlebiges Download-Token, gebunden an Lizenz und Version. */
-    public static function token(string $licenseId, string $releaseId): array
+    public static function token(string $licenseId, string $releaseId): array // $licenseId = '-' für öffentliche Releases
     {
         $exp = time() + self::TOKEN_SECONDS;
         $body = rtrim(strtr(base64_encode(json_encode(['l' => $licenseId, 'r' => $releaseId, 'e' => $exp])), '+/', '-_'), '=');

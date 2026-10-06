@@ -219,6 +219,21 @@ Backups bleiben auch unter MySQL portable SQLite-Dateien und lassen sich in beid
 Ohne Oberfläche geht es auch per Umgebung: `DB_DRIVER=mysql`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, danach `php bin/migrate.php` – dann ist die Datenbank allerdings „vom Server festgelegt“ und in der Oberfläche nicht umschaltbar. Daten übernimmst du in dem Fall über einen vorherigen Wechsel in der Oberfläche oder ein Backup/Restore.
 Die Tests laufen gegen beide: `php tests/run.php` und `TEST_DB=mysql php tests/run.php` (MySQL-Zugang über `TEST_MYSQL_HOST/PORT/USER/PASSWORD`).
 
+## Rechtstexte und Betriebs-Check
+
+Unter **System → Rechtstexte** (nur Admin) erzeugst du Impressum, Datenschutzerklärung und AGB aus deinen Angaben:
+
+* **Impressum** nach § 5 DDG (Rechtsform, Vertretung, Register, USt-IdNr., Streitbeilegung …).
+* **Datenschutzerklärung** nach DSGVO: baut sich aus dem, was das System tatsächlich verarbeitet (Hosting/Logfiles, Kundenportal, Registrierung,
+  Support, Rechnungen, Bestellungen, Lizenzen, E-Mail) plus deinen Angaben (Hoster, Newsletter, Analyse, Schriftarten, Zahlungsdienste, Drittländer).
+* **AGB** für Webdesign-Leistungen mit Modulen (Hosting/Wartung, Abo, Lizenzen, Verbraucher-Widerruf).
+* Jeder Text lässt sich **ergänzen** (eigener Abschnitt am Ende) oder **komplett selbst schreiben**; live-Vorschau, Veröffentlichen/Zurückziehen.
+* Öffentlich erreichbar unter `/impressum`, `/datenschutz`, `/agb`; das Kundenportal verlinkt sie bei der Registrierung automatisch, wenn kein eigener Link eingetragen ist.
+
+Das **Dashboard** zeigt rote (muss behoben werden) und gelbe (empfohlen) Hinweise: fehlende/unveröffentlichte Rechtstexte, fehlende Firmen- und Steuerangaben,
+kein HTTPS, E-Mail nicht eingerichtet, Cron läuft nicht, Backup alt/unverschlüsselt, Update verfügbar, Lizenz ungültig, unbeantwortete Tickets.
+Die Texte sind sorgfältige Vorlagen, **keine Rechtsberatung** – bitte bei Unsicherheit prüfen lassen.
+
 ## Lizenz-Tools: Produkt, Support-Anspruch und Updates
 
 Das CRM selbst ist das erste lizenzierte Produkt. Ordner **`Lizenz-tools/`** (siehe dort die README): `build-product.php` baut die auslieferbare, lizenzgeschützte Fassung (`Lizenz-tools/crm/`), `build-release.php` baut Update-Pakete.
@@ -292,7 +307,8 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Kundenkonten  | Portal: `GET /api/portal/config`, `POST /api/portal/register`, `/verify-info`, `/verify`, `/login`, `/logout`, `/forgot`, `/reset`, `/password`; Verwaltung: `POST /api/portal-accounts/:id/active`, `/reset`, `DELETE /api/portal-accounts/:id` |
 | Lizenzen      | `GET/POST /api/licenses`, `GET/PATCH/DELETE /api/licenses/:id`, `POST /api/licenses/:id/regenerate`, `POST /api/licenses/:id/send`; öffentlich: `POST /api/license/verify`, `GET /api/license/public-key`, `GET /license/client.php`; Portal: `GET /api/portal/licenses`, `POST /api/portal/licenses/:id/domain` |
 | Support       | Team: `GET/POST /api/tickets`, `GET /api/tickets/stats|meta`, `GET/PATCH/DELETE /api/tickets/:id`, `POST /api/tickets/:id/messages` (multipart), `POST /api/tickets/bulk`, `GET /api/tickets/attachments/:id`, `/api/canned`, `/api/faq`; Portal: `GET/POST /api/portal/tickets`, `GET /api/portal/tickets/:id`, `POST …/messages|close|reopen|rating`, `GET /api/portal/attachments/:id`, `GET /api/portal/faq` |
-| Lizenz-Updates | Software: `POST /api/license/update-check`, `POST /api/license/download`; Team (Admin): `GET/POST /api/releases`, `PATCH/DELETE /api/releases/:id`, `GET /api/releases/:id/file`, `GET /api/license-entitlements`; Produkt (Admin): `GET /api/system/status`, `POST /api/system/license/refresh|key`, `POST /api/system/update/check|install` |
+| Lizenz-Updates | Software: `POST /api/license/update-check`, `POST /api/license/update-public` (ohne Lizenz, nur öffentliche Releases), `POST /api/license/download`; Team (Admin): `GET/POST /api/releases`, `PATCH/DELETE /api/releases/:id`, `GET /api/releases/:id/file`, `GET /api/license-entitlements`; Produkt (Admin): `GET /api/system/status`, `POST /api/system/license/refresh|key`, `POST /api/system/update/check|install` |
+| Rechtstexte & Check | Admin: `GET /api/legal`, `PUT /api/legal/:type`, `POST /api/legal/:type/preview` (IMPRESSUM, DATENSCHUTZ, AGB), `GET /api/health`; öffentlich: `GET /impressum`, `/datenschutz`, `/agb`; Kunde im Team: `GET /api/clients/:id/tickets` |
 | Einstellungen | `GET/PUT /api/settings/all`, `POST /api/settings/test-mail`, `POST /api/settings/database/test`, `POST /api/settings/database/switch` (nur Admin) |
 | Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
 | Einstellungen | `GET /api/settings` (Mail eingerichtet? Firmendaten gesetzt?) |

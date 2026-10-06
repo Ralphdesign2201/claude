@@ -22,6 +22,7 @@ final class SystemController
             'license' => ProductLicense::publicState(),
             'update' => UpdateService::lastState(),
             'history' => UpdateService::history(),
+            'updates' => ['configured' => Product::server() !== '' && Product::publicKeys() !== [], 'licensed' => Product::enforced() && ProductLicense::key() !== ''],
             'channel' => \App\Support\Env::get('UPDATE_CHANNEL', 'stable') === 'beta' ? 'beta' : 'stable',
         ]);
     }
@@ -53,7 +54,7 @@ final class SystemController
         } catch (RuntimeException $e) {
             throw new ApiError(502, $e->getMessage());
         }
-        unset($info['download']);
+        unset($info['download'], $info['target']['signature']);
 
         return Response::json($info);
     }
@@ -62,7 +63,7 @@ final class SystemController
     {
         set_time_limit(300);
         try {
-            return Response::json(UpdateService::install());
+            return Response::json(UpdateService::installAll());
         } catch (RuntimeException $e) {
             throw new ApiError(409, $e->getMessage());
         }

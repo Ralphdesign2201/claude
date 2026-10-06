@@ -17,12 +17,17 @@ try {
     if (isset($opts['rollback'])) {
         echo UpdateService::rollback((string) $opts['rollback']) . " Datei(en) zurückgespielt.\n";
     } elseif (isset($opts['install'])) {
-        $r = UpdateService::install();
-        echo "Update {$r['from']} → {$r['to']} eingespielt ({$r['files']} Dateien, " . count($r['migrations']) . " Migration(en)). Sicherung: backups/{$r['backup']}\n";
+        $r = UpdateService::installAll();
+        foreach ($r['steps'] as $st) {
+            echo "Update {$st['from']} → {$st['to']} eingespielt ({$st['files']} Dateien, " . count($st['migrations']) . " Migration(en)). Sicherung: backups/{$st['backup']}\n";
+        }
     } elseif (isset($opts['check'])) {
         $r = UpdateService::check();
         echo 'Installiert: ' . $r['current'] . "\n";
-        echo $r['latest'] === null ? "Es gibt kein neueres Update.\n" : 'Neu: ' . $r['latest']['version'] . ($r['entitled'] ? " (für deine Lizenz verfügbar)\n" : " (nicht im Update-Zeitraum deiner Lizenz)\n");
+        echo $r['latest'] === null ? "Es gibt kein neueres Update.\n" : 'Neu: ' . $r['latest']['version'] . ($r['entitled'] ? " (verfügbar" . ($r['licensed'] ? ' für deine Lizenz' : '') . ")\n" : " (nicht im Update-Zeitraum deiner Lizenz)\n");
+        foreach ($r['changes'] as $c) {
+            echo '  ' . $c['version'] . ($c['notes'] ? ': ' . str_replace("\n", "\n      ", trim((string) $c['notes'])) : '') . "\n";
+        }
     } else {
         echo 'Webdesigner CRM ' . Product::version() . "\nAufruf: php bin/update.php --check | --install | --rollback=<Datei>\n";
     }

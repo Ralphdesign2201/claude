@@ -166,7 +166,7 @@ $signedCall = static function (int $port, array $fields, string $path = '/api/li
 };
 
 $lic = $issue();
-[$r, $p, $ok] = $signedCall($vp, ['key' => $lic['licenseKey'], 'domain' => 'kunde.example.com', 'version' => '1.0.0']);
+[$r, $p, $ok] = $signedCall($vp, ['key' => $lic['licenseKey'], 'domain' => 'kunde.example.com', 'version' => '0.1.0-beta']);
 check('Gültige Antwort enthält Paket, Funktionen, Kennung und Schlüsselkennung (v2, signiert)', $ok && $p['v'] === 2 && $p['valid'] === true && $p['plan'] === 'pro' && $p['features'] === ['recurring', 'shop', 'support'] && $p['slug'] === 'crm' && $p['kid'] === $pubKey['kid'], $p);
 check('Antwort ohne Cache: no-store', ($r[3]['cache-control'] ?? '') === 'no-store');
 $lic2 = $issue(['plan' => 'starter', 'domain' => 'zwei.example.com']);
@@ -178,7 +178,7 @@ check('„*“ schaltet alle Funktionen frei', count($signedCall($vp, ['key' => 
 expect('Unbekanntes Paket → 400', call($vp, 'POST', '/api/licenses', ['clientId' => $client, 'productName' => 'X', 'domain' => 'x.example.com', 'plan' => 'gold'], $A), 400);
 expect('Ungültige Produkt-Kennung → 400', call($vp, 'POST', '/api/licenses', ['clientId' => $client, 'productName' => 'X', 'domain' => 'x.example.com', 'slug' => 'Böse Kennung!'], $A), 400);
 $res = call($vp, 'GET', '/api/licenses/' . $lic['id'], null, $A);
-check('Lizenz-Detail zeigt Funktionen, Support/Update-Status und die Domain, von der geprüft wurde', $res[1]['resolvedFeatures'] === ['recurring', 'shop', 'support'] && $res[1]['supportActive'] === true && $res[1]['hosts'][0]['domain'] === 'kunde.example.com' && $res[1]['hosts'][0]['version'] === '1.0.0', $res[2]);
+check('Lizenz-Detail zeigt Funktionen, Support/Update-Status und die Domain, von der geprüft wurde', $res[1]['resolvedFeatures'] === ['recurring', 'shop', 'support'] && $res[1]['supportActive'] === true && $res[1]['hosts'][0]['domain'] === 'kunde.example.com' && $res[1]['hosts'][0]['version'] === '0.1.0-beta', $res[2]);
 
 echo "API-Sicherheit\n";
 $fields = ['key' => $lic['licenseKey'], 'domain' => 'kunde.example.com', 'nonce' => 'replay-' . bin2hex(random_bytes(6)), 'ts' => time()];
@@ -270,7 +270,7 @@ foreach (['/api/products' => 'shop', '/api/orders' => 'shop', '/api/recurring' =
 }
 expect('Kernfunktionen (Kunden, Rechnungen, Projekte) bleiben frei', $P('GET', '/api/invoices', null, $T), 200);
 $res = $P('GET', '/api/system/status', null, $T);
-check('Status: Zustand, Version und Hinweis auf Support/Updates', $res[1]['license']['valid'] === true && $res[1]['license']['version'] === '1.0.0' && $res[1]['license']['supportActive'] === true && $res[1]['license']['updatesActive'] === true, $res[2]);
+check('Status: Zustand, Version und Hinweis auf Support/Updates', $res[1]['license']['valid'] === true && $res[1]['license']['version'] === '0.1.0-beta' && $res[1]['license']['supportActive'] === true && $res[1]['license']['updatesActive'] === true, $res[2]);
 
 // Paketwechsel beim Hersteller wirkt nach der nächsten Prüfung
 call($vp, 'PATCH', '/api/licenses/' . $mine['id'], ['plan' => 'agency'], $A);
@@ -354,7 +354,7 @@ $pEnv = $prodEnv;
 [$code, $out] = cli($prod, 'update.php', ['--check'], $pEnv);
 check('Unveröffentlichte Version wird nicht angeboten', $code === 0 && str_contains($out, 'kein neueres Update'), $out);
 call($vp, 'PATCH', '/api/releases/' . $rel1['id'], ['published' => true], $A);
-$tk = static fn (array $f): array => $signedCall($vp, $f + ['key' => $mine['licenseKey'], 'domain' => 'kunde.example.com', 'product' => 'crm', 'version' => '1.0.0'], '/api/license/update-check');
+$tk = static fn (array $f): array => $signedCall($vp, $f + ['key' => $mine['licenseKey'], 'domain' => 'kunde.example.com', 'product' => 'crm', 'version' => '0.1.0-beta'], '/api/license/update-check');
 [$r, $p, $ok] = $tk([]);
 check('Update-Prüfung: signierte Antwort mit neuer Version, Anspruch und Download-Token', $ok && $p['type'] === 'update' && $p['valid'] && $p['latest']['version'] === '9.9.9' && $p['entitled'] === true && isset($p['download']['token']), $p);
 [$r, $p] = $tk(['product' => 'anderes-tool']);
@@ -382,7 +382,7 @@ $origSig = (string) $vdb->query("SELECT signature FROM \"Release\" WHERE id = '{
 $vdb->exec("UPDATE \"Release\" SET signature = '" . substr($origSig, 0, -4) . "AAAA' WHERE id = '{$rel1['id']}'");
 $before = file_get_contents("$prod/src/Support/Dates.php");
 [$code, $out] = cli($prod, 'update.php', ['--install'], $pEnv);
-check('Gefälschte Signatur: Update wird abgelehnt, nichts verändert', $code === 1 && str_contains($out, 'Signatur') && trim((string) file_get_contents("$prod/VERSION")) === '1.0.0' && file_get_contents("$prod/src/Support/Dates.php") === $before, $out);
+check('Gefälschte Signatur: Update wird abgelehnt, nichts verändert', $code === 1 && str_contains($out, 'Signatur') && trim((string) file_get_contents("$prod/VERSION")) === '0.1.0-beta' && file_get_contents("$prod/src/Support/Dates.php") === $before, $out);
 $vdb->exec("UPDATE \"Release\" SET signature = '$origSig' WHERE id = '{$rel1['id']}'");
 
 // Sabotage 2: Paketdatei auf dem Server verändert
@@ -391,7 +391,7 @@ $storedPath = "$tmp/vendor-up/releases/$stored";
 $orig = (string) file_get_contents($storedPath);
 file_put_contents($storedPath, $orig . 'MANIPULIERT');
 [$code, $out] = cli($prod, 'update.php', ['--install'], $pEnv);
-check('Veränderte Paketdatei: Prüfsumme schlägt an, nichts verändert', $code === 1 && str_contains($out, 'Prüfsumme') && trim((string) file_get_contents("$prod/VERSION")) === '1.0.0', $out);
+check('Veränderte Paketdatei: Prüfsumme schlägt an, nichts verändert', $code === 1 && str_contains($out, 'Prüfsumme') && trim((string) file_get_contents("$prod/VERSION")) === '0.1.0-beta', $out);
 file_put_contents($storedPath, $orig);
 
 // Sabotage 3: Gefälschter Update-Server (gültiges JSON, falsche Signatur)
@@ -409,7 +409,7 @@ file_put_contents("$fakeProd/database/.keep", '');
 $fakeEnv = ['SETTINGS_FILE' => "$tmp/fake-settings.json", 'DATABASE_PATH' => "$tmp/fake.db", 'PRODUCT_LICENSE_KEY' => $mine['licenseKey'], 'APP_URL' => 'https://kunde.example.com', 'JWT_SECRET' => 'fake-secret-fake-secret-1234', 'UPLOAD_DIR' => "$tmp/fake-up", 'BACKUP_DIR' => "$tmp/fake-bk"] + $cleanEnv;
 cli($fakeProd, 'migrate.php', [], $fakeEnv);
 [$code, $out] = cli($fakeProd, 'update.php', ['--install'], $fakeEnv);
-check('Gefälschter Update-Server (falsche Signatur) wird erkannt, nichts installiert', $code === 1 && str_contains($out, 'gültige Antwort') && trim((string) file_get_contents("$fakeProd/VERSION")) === '1.0.0', $out);
+check('Gefälschter Update-Server (falsche Signatur) wird erkannt, nichts installiert', $code === 1 && str_contains($out, 'gültige Antwort') && trim((string) file_get_contents("$fakeProd/VERSION")) === '0.1.0-beta', $out);
 
 // Der echte Update-Lauf – vorher eine Datei „kaputt machen“ und eine alte Datei hinzufügen
 file_put_contents("$prod/src/Support/Dates.php", $before . "\n// kaputt\n");
@@ -421,10 +421,10 @@ $settingsBefore = file_get_contents("$tmp/product-settings.json");
 $productJsonBefore = file_get_contents("$prod/product.json");
 $clientsBefore = $P('GET', '/api/clients?pageSize=1', null, $T)[1]['meta']['total'];
 [$code, $out] = cli($prod, 'update.php', ['--install'], $pEnv);
-check('Update wird eingespielt (CLI meldet 1.0.0 → 9.9.9 und die Sicherung)', $code === 0 && str_contains($out, '1.0.0 → 9.9.9') && str_contains($out, 'code-vor-update'), $out);
+check('Update wird eingespielt (CLI meldet 0.1.0-beta → 9.9.9 und die Sicherung)', $code === 0 && str_contains($out, '0.1.0-beta → 9.9.9') && str_contains($out, 'code-vor-update'), $out);
 check('VERSION ist 9.9.9, manipulierte Datei wurde repariert, veraltete Datei entfernt', trim((string) file_get_contents("$prod/VERSION")) === '9.9.9' && file_get_contents("$prod/src/Support/Dates.php") === $before && !is_file("$prod/src/Support/AltlastDieEsNichtMehrGibt.php"));
 check('Einstellungen, product.json, Datenbank und Lizenzschlüssel bleiben unangetastet', file_get_contents("$tmp/product-settings.json") === $settingsBefore && file_get_contents("$prod/product.json") === $productJsonBefore && is_file("$tmp/product.db") && $P('GET', '/api/clients?pageSize=1', null, $T)[1]['meta']['total'] === $clientsBefore);
-$backups = glob("$tmp/product-bk/code-vor-update-1.0.0-*.zip") ?: [];
+$backups = glob("$tmp/product-bk/code-vor-update-0.1.0-beta-*.zip") ?: [];
 check('Code-Sicherung der alten Version liegt im Backup-Ordner (und ein Daten-Backup)', count($backups) === 1 && count(glob("$tmp/product-bk/crm-backup-*.zip") ?: []) >= 1, $backups);
 $res = $P('GET', '/api/system/status', null, $T);
 check('Produkt läuft nach dem Update; Version und Update-Verlauf stimmen', $res[0] === 200 && $res[1]['license']['version'] === '9.9.9' && $res[1]['history'][0]['to'] === '9.9.9', $res[2]);
@@ -435,7 +435,7 @@ check('Download-Zähler beim Release steigt', call($vp, 'GET', '/api/releases', 
 // Rücknahme per Kommandozeile
 file_put_contents("$prod/src/Support/Dates.php", "<?php // vom Update ersetzt\n");
 [$code, $out] = cli($prod, 'update.php', ['--rollback=' . $backups[0]], $pEnv);
-check('Rücksicherung aus der Code-Sicherung (--rollback): Stand von vor dem Update', $code === 0 && trim((string) file_get_contents("$prod/VERSION")) === '1.0.0' && file_get_contents("$prod/src/Support/Dates.php") === $before . "\n// kaputt\n", $out);
+check('Rücksicherung aus der Code-Sicherung (--rollback): Stand von vor dem Update', $code === 0 && trim((string) file_get_contents("$prod/VERSION")) === '0.1.0-beta' && file_get_contents("$prod/src/Support/Dates.php") === $before . "\n// kaputt\n", $out);
 
 // Fehlschlagende Migration: automatische Rücknahme
 $z = new ZipArchive();
@@ -468,7 +468,7 @@ $beforeFiles = file_get_contents("$prod/src/Support/Dates.php");
 file_put_contents("$prod/src/Support/Dates.php", $before); // wieder sauber, damit die Rücknahme unten eindeutig prüfbar ist
 $beforeFiles = $before;
 [$code, $out] = cli($prod, 'update.php', ['--install'], $pEnv);
-check('Fehlerhafte Migration: Update wird zurückgenommen (Version und Dateien wie vorher)', $code === 1 && str_contains($out, 'zurückgenommen') && trim((string) file_get_contents("$prod/VERSION")) === '1.0.0' && !is_file("$prod/database/migrations/999_kaputt.sql") && file_get_contents("$prod/src/Support/Dates.php") === $beforeFiles, $out);
+check('Fehlerhafte Migration: Update wird zurückgenommen (Version und Dateien wie vorher)', $code === 1 && str_contains($out, 'zurückgenommen') && trim((string) file_get_contents("$prod/VERSION")) === '0.1.0-beta' && !is_file("$prod/database/migrations/999_kaputt.sql") && file_get_contents("$prod/src/Support/Dates.php") === $beforeFiles, $out);
 check('… die Anwendung läuft danach weiter', $P('GET', '/api/settings', null, $T)[0] === 200);
 call($vp, 'DELETE', '/api/releases/' . $r2[1]['id'], null, $A);
 
@@ -477,7 +477,7 @@ call($vp, 'PATCH', '/api/releases/' . $rel1['id'], ['published' => true], $A);
 call($vp, 'PATCH', '/api/licenses/' . $mine['id'], ['updatesUntil' => gmdate('Y-m-d\TH:i:s.000\Z', time() - 3600)], $A);
 $P('POST', '/api/system/license/refresh', [], $T);
 [$code, $out] = cli($prod, 'update.php', ['--install'], $pEnv);
-check('Update-Zeitraum vor Erscheinen der Version abgelaufen: kein Download, klare Meldung', $code === 1 && str_contains($out, 'nach dem Ende deines Update-Zeitraums') && trim((string) file_get_contents("$prod/VERSION")) === '1.0.0', $out);
+check('Update-Zeitraum vor Erscheinen der Version abgelaufen: kein Download, klare Meldung', $code === 1 && str_contains($out, 'nach dem Ende deines Update-Zeitraums') && trim((string) file_get_contents("$prod/VERSION")) === '0.1.0-beta', $out);
 [$r, $p] = $tk([]);
 check('Der Server gibt in diesem Fall kein Download-Token heraus', $p['entitled'] === false && !isset($p['download']) && $p['latest']['version'] === '9.9.9', $p);
 // Version erschien VOR Ablauf: weiter erlaubt
@@ -493,6 +493,63 @@ call($vp, 'PATCH', '/api/releases/' . $rel1['id'], ['channel' => 'beta'], $A);
 check('Beta-Versionen bekommt nur, wer den Beta-Kanal wählt', $tk([])[1]['latest'] === null && $tk(['channel' => 'beta'])[1]['latest']['version'] === '9.9.9');
 call($vp, 'DELETE', '/api/releases/' . $rel1['id'], null, $A);
 check('Gelöschte Version ist weg (inkl. Datei)', !is_file($storedPath) && $tk([])[1]['latest'] === null);
+
+/* ---------- Öffentliche Releases (Beta ohne Lizenz) und verpasste Versionen ---------- */
+echo "Beta ohne Lizenz, verpasste Versionen, Zwischenschritte\n";
+$upX = static function (string $version, array $fields) use ($build, $vp, $A, $root): array {
+    $build($version);
+    $path = "$root/Lizenz-tools/releases/crm-$version.zip";
+    [$body, $ct] = multipart($fields + ['channel' => 'stable', 'notes' => "• Neu in $version"], ['file' => [basename($path), (string) file_get_contents($path)]]);
+    return call($vp, 'POST', '/api/releases', $body, $A, [$ct]);
+};
+$r1 = $upX('9.9.1', ['access' => 'public', 'published' => 'true']);
+$r2 = $upX('9.9.2', ['access' => 'public', 'published' => 'true']);
+$r3 = $upX('9.9.3', ['access' => 'public', 'published' => 'false', 'minFrom' => '9.9.2']);
+check('Releases mit Zugang „public“ und Mindestversion werden angelegt', $r1[0] === 201 && $r1[1]['access'] === 'public' && $r3[1]['minFrom'] === '9.9.2', [$r1[2], $r3[2]]);
+expect('Ungültige Mindestversion → 400', $upX('9.9.8', ['access' => 'public', 'minFrom' => 'abc']), 400);
+@unlink("$root/Lizenz-tools/releases/crm-9.9.8.zip");
+[$r, $p, $ok] = $signedCall($vp, ['domain' => 'beta.example.com', 'product' => 'crm', 'version' => '0.1.0-beta'], '/api/license/update-public');
+check('Öffentliche Prüfung ohne Schlüssel: signiert, neueste ist 9.9.2 (Entwurf 9.9.3 unsichtbar), 2 Änderungen', $ok && $p['valid'] && $p['target']['version'] === '9.9.2' && $p['latest']['version'] === '9.9.2' && count($p['changes']) === 2 && $p['changes'][0]['version'] === '9.9.1' && isset($p['download']), $p);
+$licOnly = $upX('9.9.4', ['access' => 'licensed', 'published' => 'true']);
+[$r, $p] = $signedCall($vp, ['domain' => 'beta.example.com', 'product' => 'crm', 'version' => '0.1.0-beta'], '/api/license/update-public');
+check('Lizenzpflichtiges Release erscheint nicht in der öffentlichen Prüfung', $p['latest']['version'] === '9.9.2', $p);
+$pubTok = $p['download']['token'];
+$res = call($vp, 'POST', '/api/license/download', ['token' => $pubTok]);
+check('Öffentlicher Download ohne Lizenz: ZIP mit stimmiger Prüfsumme', $res[0] === 200 && hash('sha256', $res[2]) === $r2[1]['sha256'], $res[0]);
+[$r, $p] = $signedCall($vp, ['domain' => 'beta.example.com', 'product' => 'crm', 'version' => '9.9.2'], '/api/license/update-public');
+check('Schon aktuell (öffentlich): nichts angeboten, aber keine Fehlermeldung', $p['valid'] && $p['latest'] === null && $p['target'] === null && $p['changes'] === []);
+$licRes = $signedCall($vp, ['key' => $mine['licenseKey'], 'domain' => 'kunde.example.com', 'product' => 'crm', 'version' => '0.1.0-beta'], '/api/license/update-check');
+check('Mit Lizenz: auch lizenzpflichtige Version, alle 4 Änderungen seit der installierten', $licRes[1]['target']['version'] === '9.9.4' && count($licRes[1]['changes']) === 3 && $licRes[1]['entitled'] === true, $licRes[1]);
+
+// Installation ohne Lizenz: erst überspringt sie 9.9.1 (ein Schritt), dann Mindestversion erfüllt
+$pubDir = "$tmp/product-public";
+copyProject($root, $pubDir);
+file_put_contents("$pubDir/product.json", json_encode(['product' => 'crm', 'server' => "http://127.0.0.1:$vp", 'publicKeys' => [$pubKey['publicKey']], 'enforce' => false]));
+$pubEnv = $cleanEnv + ['DATABASE_PATH' => "$tmp/pub.db", 'SETTINGS_FILE' => "$tmp/pub-settings.json", 'JWT_SECRET' => 'public-secret-public-secret-001', 'UPLOAD_DIR' => "$tmp/pub-up", 'BACKUP_DIR' => "$tmp/pub-bk", 'APP_URL' => 'https://beta.example.com', 'LICENSE_ALLOW_DEV' => 'true'];
+cli($pubDir, 'migrate.php', [], $pubEnv);
+[$code, $out] = cli($pubDir, 'update.php', ['--check'], $pubEnv);
+check('Beta-Installation (ohne Lizenz): „--check“ listet die Änderungen seit der installierten Version', $code === 0 && str_contains($out, '9.9.2') && str_contains($out, 'Neu in 9.9.1') && str_contains($out, 'Neu in 9.9.2'), $out);
+[$code, $out] = cli($pubDir, 'update.php', ['--install'], $pubEnv);
+check('Verpasste Version wird übersprungen: ein einziger Schritt 0.1.0-beta → 9.9.2', $code === 0 && substr_count($out, 'eingespielt') === 1 && str_contains($out, '0.1.0-beta → 9.9.2') && trim((string) file_get_contents("$pubDir/VERSION")) === '9.9.2', $out);
+check('Ohne Lizenz: es wird kein Lizenzschlüssel gesendet oder verlangt, Datenbank bleibt intakt', is_file("$tmp/pub.db"));
+call($vp, 'PATCH', '/api/releases/' . $r3[1]['id'], ['published' => true], $A);
+[$code, $out] = cli($pubDir, 'update.php', ['--install'], $pubEnv);
+check('Mindestversion erfüllt: direkt 9.9.2 → 9.9.3', $code === 0 && str_contains($out, '9.9.2 → 9.9.3') && trim((string) file_get_contents("$pubDir/VERSION")) === '9.9.3', $out);
+[$code, $out] = cli($pubDir, 'update.php', ['--install'], $pubEnv);
+check('Danach: nichts mehr zu tun', $code === 1 && str_contains($out, 'neuesten Stand'), $out);
+
+// Zwischenschritt-Kette: eine frische Installation hinkt weit hinterher
+$hopDir = "$tmp/product-hop";
+copyProject($root, $hopDir);
+file_put_contents("$hopDir/product.json", json_encode(['product' => 'crm', 'server' => "http://127.0.0.1:$vp", 'publicKeys' => [$pubKey['publicKey']], 'enforce' => false]));
+$hopEnv = $pubEnv + ['DATABASE_PATH' => "$tmp/hop.db", 'SETTINGS_FILE' => "$tmp/hop-settings.json", 'UPLOAD_DIR' => "$tmp/hop-up", 'BACKUP_DIR' => "$tmp/hop-bk"];
+$hopEnv = array_merge($pubEnv, ['DATABASE_PATH' => "$tmp/hop.db", 'SETTINGS_FILE' => "$tmp/hop-settings.json", 'UPLOAD_DIR' => "$tmp/hop-up", 'BACKUP_DIR' => "$tmp/hop-bk"]);
+cli($hopDir, 'migrate.php', [], $hopEnv);
+[$code, $out] = cli($hopDir, 'update.php', ['--install'], $hopEnv);
+check('Version mit Mindestversion: erst Zwischenstand 9.9.2, dann automatisch 9.9.3 (zwei Schritte in einem Aufruf)', $code === 0 && substr_count($out, 'eingespielt') === 2 && str_contains($out, '0.1.0-beta → 9.9.2') && str_contains($out, '9.9.2 → 9.9.3') && trim((string) file_get_contents("$hopDir/VERSION")) === '9.9.3', $out);
+foreach ([$r1, $r2, $r3, $licOnly] as $rr) {
+    call($vp, 'DELETE', '/api/releases/' . $rr[1]['id'], null, $A);
+}
 
 /* ---------- Installer des Produkts ---------- */
 echo "Installer der Produktversion\n";

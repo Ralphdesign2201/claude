@@ -57,6 +57,30 @@ mit dem eingebauten öffentlichen Schlüssel, erlaubt nur Dateien in `src/`, `pu
 (nie `.env`, Datenbank, Uploads, Einstellungen, `product.json`), sichert den alten Code und macht bei jedem Fehler alles rückgängig.
 Rücksicherung von Hand: `php bin/update.php --rollback=backups/code-vor-update-<Version>-<Zeit>.zip`.
 
+### Verpasste Updates
+
+Kunden pflegen ihre Installation unterschiedlich – manche überspringen Versionen. Das ist abgesichert:
+
+* **Jedes Paket ist ein vollständiger Stand** (aller Code + alle Datenbank-Migrationen). Wer 0.1.0 hat und 0.4.0 installiert, überspringt 0.2/0.3 –
+  die Migrationen holen alles Verpasste in der richtigen Reihenfolge nach. Ein Klick (oder ein `php bin/update.php --install`) genügt immer.
+* **Mindestversion (`minFrom`)**: Nur wenn du einmal etwas baust, das zwingend einen Zwischenstand braucht, trägst du beim Hochladen eine
+  Mindestversion ein. Ältere Installationen bekommen dann zuerst die höchste direkt erreichbare Version und danach automatisch (im selben Aufruf) die neueste.
+* **Gesamtes Änderungsprotokoll**: Vor dem Installieren sieht der Kunde die Änderungen **aller** Versionen seit seiner eigenen.
+* Die Update-Prüfung läuft einmal täglich im Cron und erscheint als gelber Hinweis im Dashboard.
+
+### Öffentliche Releases (Beta ohne Lizenz)
+
+Beim Hochladen eines Releases legst du fest, **wer es laden darf**: „Nur Kunden mit Update-Anspruch“ (Standard) oder „Jeder – auch ohne Lizenz“.
+Öffentliche Releases lädt auch eine Installation ohne Lizenzschlüssel (`POST /api/license/update-public`, Antwort ebenfalls signiert, Paket mit Prüfsumme und Signatur).
+So baust du die erste Beta ohne Lizenzpflicht und lieferst später Updates:
+
+```
+php Lizenz-tools/build-product.php crm --no-license --server=https://lizenz.deine-domain.de --key-file=database/license.key
+```
+
+Ergebnis: `Lizenz-tools/dist/crm-<Version>-ohne-lizenz.zip`. Danach pro neuer Version: `VERSION` hochzählen → `build-release.php crm` → hochladen mit Zugang **Jeder**.
+Wichtig: Der Update-Server (`server`) und der öffentliche Schlüssel stehen in `product.json` der ausgelieferten Fassung – bitte gleich beim ersten Bauen angeben.
+
 ## Sicherheit der Schnittstelle
 
 * Antworten des Lizenzservers sind mit **Ed25519** signiert (inkl. Zufallswert, Domain, Zeit) – eine gefälschte „gültig“-Antwort wird abgelehnt.

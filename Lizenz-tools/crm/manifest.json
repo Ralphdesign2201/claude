@@ -1,7 +1,7 @@
 {
     "product": "crm",
-    "version": "1.0.0",
-    "builtAt": "2026-10-06T03:04:52Z",
+    "version": "0.1.0-beta",
+    "builtAt": "2026-10-06T03:32:35Z",
     "minPhp": "8.1",
     "files": [
         {
@@ -14,11 +14,11 @@
         },
         {
             "path": "README.md",
-            "sha256": "d942a78720c83a74c3e3ca3ad5aed6459f002b2aaf972b93b3cd9785cd6f1eb4"
+            "sha256": "57584f9d70cfe948e1bdb37a2dcd194cfa184ee7a9369232296ea5b3fe91e6b4"
         },
         {
             "path": "VERSION",
-            "sha256": "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03"
+            "sha256": "614881811944402d616fc9b4d024a68da307ef16f6ae3ec9db1be313c6d72750"
         },
         {
             "path": "bin/.htaccess",
@@ -30,7 +30,7 @@
         },
         {
             "path": "bin/cron.php",
-            "sha256": "aa3f5733fe4e35a14b8102cb24fb25cfbc36b9e76e55af360d55588fbcdba1b4"
+            "sha256": "23eef9e9a640a3504e8827112adff0c46c8d651ad11d24f20e8bf9a5dc1eead4"
         },
         {
             "path": "bin/migrate.php",
@@ -50,7 +50,7 @@
         },
         {
             "path": "bin/update.php",
-            "sha256": "b158b448d716647425ae53d6b690da51a91d5dc00e69e1e02f277ef19370cd1f"
+            "sha256": "6922fd2a5c6fe3b4e79d097cf63f8662b60e8a565df1f6be9042973837c97a59"
         },
         {
             "path": "composer.json",
@@ -89,6 +89,10 @@
             "sha256": "abc8509c78c10dea78e3fe670398b2fda23566bdbdc2fa9ae3b8ab9ebb65eb55"
         },
         {
+            "path": "database/migrations/009_legal_updates.sql",
+            "sha256": "a33b1f59a3b98acd36d3b51934216e265e6c0cf70e75b7ae7a7b3497ff95e6b5"
+        },
+        {
             "path": "examples/.htaccess",
             "sha256": "099f3c5713339a6264719a99c62db5e58d9103879aba1c1217c24099bbea38b8"
         },
@@ -106,11 +110,11 @@
         },
         {
             "path": "public/assets/app.css",
-            "sha256": "548c52dfbb49d2fa784b46ea95dea31ec6a16aabd81225246ca6fbf8f7daa082"
+            "sha256": "c92d941796e43fdb35af61e6b292618eb83e8ba3704cc25326e7f03c4c52f297"
         },
         {
             "path": "public/assets/app.js",
-            "sha256": "f2af7716e72fbcd4a88af47e3bd7343de5a75b11067223be642b6054211e54dc"
+            "sha256": "587907d7401c480fae7820926a7f17dc0e342f3c049e6a1fc933badec657262b"
         },
         {
             "path": "public/assets/index.html",
@@ -134,7 +138,7 @@
         },
         {
             "path": "src/App.php",
-            "sha256": "0cd725abc07631dc90a5dfde2c3334d53d957fcdcc33afbea6a8866b39ac776d"
+            "sha256": "44daa0789b87e191ae9b5ab48d6dbb330cf50aedce572e0c9d2bdcf332cf0b9b"
         },
         {
             "path": "src/Controllers/AuthController.php",
@@ -162,7 +166,7 @@
         },
         {
             "path": "src/Controllers/CronController.php",
-            "sha256": "7c4ecc30416e9cfb5e4b18dcd87b452268e127d6053be0bd6e36c637d3693c78"
+            "sha256": "ffe77db1cc616871aced41aa019265c391473a05d098f368f38f51ff7a29404a"
         },
         {
             "path": "src/Controllers/DashboardController.php",
@@ -177,8 +181,12 @@
             "sha256": "10e7c00cf4477b68b3ef44f40a083140aba15d7454056baa7dc5e8284c43f732"
         },
         {
+            "path": "src/Controllers/LegalController.php",
+            "sha256": "aa35ee9e37a470edbf80593d81de7af7c00906930c31957e3a92a81aacfd8f19"
+        },
+        {
             "path": "src/Controllers/LicenseApiController.php",
-            "sha256": "4b968a59129b1534a6a855509d6975281ee6daf0a3a662b159c93540cb120ad8"
+            "sha256": "38e13dc1461103b51ae6318e6b72ab79f415615922f6a40b114ec85df1552016"
         },
         {
             "path": "src/Controllers/LicensesController.php",
@@ -194,7 +202,7 @@
         },
         {
             "path": "src/Controllers/PortalAuthController.php",
-            "sha256": "767bd153d05f5b9fb315176ada2262c2710d8afbba2f0f4fa0bbf59fa08a2a93"
+            "sha256": "0141dcb448de4377d3aad63c57b95aa5bd50b52bca082f6d22a8254fcfb6195c"
         },
         {
             "path": "src/Controllers/PortalController.php",
@@ -218,7 +226,7 @@
         },
         {
             "path": "src/Controllers/ReleasesController.php",
-            "sha256": "839b28818e0a16f4d63fa0d98ef4bf63266a30ef030f62affff1b7c579848121"
+            "sha256": "172386041d9346570bdeecdeb8ed9e30118a00cfad1dea6ffa5a4f192a818311"
         },
         {
             "path": "src/Controllers/RemindersController.php",
@@ -230,7 +238,7 @@
         },
         {
             "path": "src/Controllers/SystemController.php",
-            "sha256": "3c5d9b7ca08319115fdae02400f568ceee7f13732d1b9bef24bc3b605007f7a3"
+            "sha256": "5e14805ea59e67e4fa72c6630dd51d17552f82701b064900a72b901bc6624191"
         },
         {
             "path": "src/Controllers/TasksController.php",
@@ -238,7 +246,7 @@
         },
         {
             "path": "src/Controllers/TicketsController.php",
-            "sha256": "6f483792f98a8078f222888d4d5a098a6e7ee708b496daab406407526976bcd3"
+            "sha256": "09f65352819ee8918eaa12e6f18bfba495773560144b0cb0c13b29ee41919f24"
         },
         {
             "path": "src/Controllers/TimeEntriesController.php",
@@ -258,7 +266,7 @@
         },
         {
             "path": "src/Http/Response.php",
-            "sha256": "671b8bdf481746e4dc43499c6e5219d3cdd02425b93f04529fad9bdb92db701f"
+            "sha256": "c4954f00c5cdafe98bd35b6b7186c31e69477444375595576474baef5ebb8b61"
         },
         {
             "path": "src/Http/Router.php",
@@ -309,8 +317,16 @@
             "sha256": "526514c3d4793e9261ff38793532804f9ab6dfdb48b700e94fb4a98e6e5efb96"
         },
         {
+            "path": "src/Services/HealthService.php",
+            "sha256": "c81821f936a52e72a631354ee22b54f7fcfd3e2fc0b2f3e3be9446bfee6d15e1"
+        },
+        {
             "path": "src/Services/InvoiceService.php",
             "sha256": "e783dbb5074c2da000b23529089efda4c78496cdc037726ee9ffea3aa7152d5b"
+        },
+        {
+            "path": "src/Services/LegalService.php",
+            "sha256": "89b2e1cd6cd0941b5cd90ea8d128b02fee5eeb38c21ff20ebec75fc460eac95f"
         },
         {
             "path": "src/Services/LicenseService.php",
@@ -346,11 +362,11 @@
         },
         {
             "path": "src/Services/ReleaseService.php",
-            "sha256": "a02f9b2c5431be2e4248fc7f888580a56d9bed979ace4618b9057cb1f05c7547"
+            "sha256": "9ffdf374d68c9145b2c2faf738bde31fcaa3a94a0cf98de15d6441e449552c97"
         },
         {
             "path": "src/Services/SettingsService.php",
-            "sha256": "1ba1a0ec7e96fc32888159ba8f161133f0705962b9585584e42cfd05316ffc9a"
+            "sha256": "2a3f1651a86797ce0750fe05161415ccf90020ad0739eed3163205aa04a5eb13"
         },
         {
             "path": "src/Services/TicketService.php",
@@ -358,7 +374,7 @@
         },
         {
             "path": "src/Services/UpdateService.php",
-            "sha256": "9ccd74d6f2b6885c20d1a54bf3b7b4b50ec00ce78e8c2c05b02139bce1dc5fbd"
+            "sha256": "8d15b239396629e721d06794395ac39b2550d11050f6b3591f8c887eddd74ada"
         },
         {
             "path": "src/Support/Activity.php",
@@ -378,7 +394,7 @@
         },
         {
             "path": "src/Support/Db.php",
-            "sha256": "830da1cddbee3dd500c6f112f9315ac1e6c98232bb478dce4932ad2e5f78df92"
+            "sha256": "a5bd5eef103d0045d1094d2debfc69edd402c083db2597b26124d0bba4de4d2d"
         },
         {
             "path": "src/Support/Env.php",

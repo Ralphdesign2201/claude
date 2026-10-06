@@ -26,11 +26,11 @@ final class LicenseApiController
      *
      * @return array{key:string,domain:string,nonce:string,version:?string,body:array<string,mixed>}
      */
-    private static function guard(Request $r, array $extra = []): array
+    private static function guard(Request $r, array $extra = [], bool $needKey = true): array
     {
         self::requireHttps($r);
         $data = Validator::validate($r->body(), [
-            'key' => ['required' => true, 'min' => 1, 'max' => 64],
+            'key' => ['required' => $needKey, 'min' => 1, 'max' => 64, 'emptyOk' => !$needKey],
             'domain' => ['required' => true, 'min' => 1, 'max' => 300],
             'nonce' => ['required' => true, 'min' => 8, 'max' => 128],
             'ts' => ['type' => 'int'],
@@ -68,7 +68,7 @@ final class LicenseApiController
         }
         $data['version'] = ($data['version'] ?? '') === '' ? null : $data['version'];
 
-        return ['key' => $data['key'], 'domain' => $data['domain'], 'nonce' => $data['nonce'], 'version' => $data['version'], 'body' => $data];
+        return ['key' => (string) ($data['key'] ?? ''), 'domain' => $data['domain'], 'nonce' => $data['nonce'], 'version' => $data['version'], 'body' => $data];
     }
 
     private static function requireHttps(Request $r): void
@@ -109,7 +109,8 @@ final class LicenseApiController
 
     /**
      * POST /api/license/update-check  { key, domain, nonce, ts, version, product, channel }
-     * Antwort signiert: die neueste Version, ob die Lizenz Anspruch darauf hat, und ein kurzlebiges Download-Token.
+     * Antwort signiert: neueste Version, der nächste Installationsschritt (target; bei verpassten Versionen direkt der größte Sprung),
+     * alle Änderungen seit der installierten Version und ein kurzlebiges Download-Token.
      */
     public static function updateCheck(Request $r): Response
     {
@@ -125,27 +126,66 @@ final class LicenseApiController
         if ($reason === 'unknown') {
             RateLimit::hit('licfail:' . $r->ip(), self::WINDOW);
         }
-        $payload = [
-            'v' => 2, 'type' => 'update', 'kid' => LicenseService::keyId(), 'valid' => $reason === null, 'reason' => $reason, 'domain' => $domain,
-            'product' => $product, 'issuedAt' => Dates::now(), 'nonce' => mb_substr($q['nonce'], 0, 128), 'latest' => null, 'entitled' => false, 'updatesUntil' => null,
-        ];
+        $payload = self::updateBase('update', $reason === null, $reason, $domain, $product, $q['nonce']);
         if ($reason === null) {
             LicenseService::noteHost($license['id'], $domain ?? '', $q['version']);
-            $latest = ReleaseService::latest($product, (string) ($q['body']['channel'] ?? 'stable') ?: 'stable');
             $payload['updatesUntil'] = $license['updatesUntil'];
-            if ($latest !== null && ($q['version'] === null || version_compare($latest['version'], $q['version'], '>'))) {
-                $payload['latest'] = [
-                    'version' => $latest['version'], 'releasedAt' => $latest['releasedAt'], 'notes' => $latest['notes'], 'sha256' => $latest['sha256'],
-                    'size' => (int) $latest['size'], 'minPhp' => $latest['minPhp'], 'signature' => $latest['signature'], 'channel' => $latest['channel'],
-                ];
-                $payload['entitled'] = Entitlements::updatesActive($license, $latest['releasedAt']);
-                if ($payload['entitled']) {
-                    $payload += ['download' => ReleaseService::token($license['id'], $latest['id'])];
-                }
-            }
+            $plan = ReleaseService::plan(
+                $product, (string) ($q['body']['channel'] ?? 'stable') ?: 'stable', $q['version'], true,
+                static fn ($rel) => $rel['access'] === 'public' || Entitlements::updatesActive($license, $rel['releasedAt']),
+            );
+            $payload = self::withPlan($payload, $plan, $license['id']);
         }
 
         return self::reply($r, LicenseService::sign($payload));
+    }
+
+    /**
+     * POST /api/license/update-public  { domain, nonce, ts, version, product, channel }
+     * Wie update-check, aber ohne Lizenz: liefert nur Releases, die als „öffentlich“ markiert sind (z. B. die Beta-Version).
+     */
+    public static function updatePublic(Request $r): Response
+    {
+        $q = self::guard($r, ['product' => ['required' => true, 'min' => 1, 'max' => 40], 'channel' => ['enum' => ['stable', 'beta'], 'emptyOk' => true]], false);
+        $product = (string) $q['body']['product'];
+        $domain = LicenseService::normalizeDomain($q['domain']) ?? mb_substr(strtolower($q['domain']), 0, 253);
+        $payload = self::updateBase('update', true, null, $domain, $product, $q['nonce']);
+        $plan = ReleaseService::plan($product, (string) ($q['body']['channel'] ?? 'stable') ?: 'stable', $q['version'], false, static fn () => true);
+
+        return self::reply($r, LicenseService::sign(self::withPlan($payload, $plan, '-')));
+    }
+
+    /** @return array<string,mixed> */
+    private static function updateBase(string $type, bool $valid, ?string $reason, ?string $domain, string $product, string $nonce): array
+    {
+        return [
+            'v' => 2, 'type' => $type, 'kid' => LicenseService::keyId(), 'valid' => $valid, 'reason' => $reason, 'domain' => $domain,
+            'product' => $product, 'issuedAt' => Dates::now(), 'nonce' => mb_substr($nonce, 0, 128), 'latest' => null, 'target' => null, 'changes' => [], 'entitled' => false, 'updatesUntil' => null,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @param array{latest:?array<string,mixed>,target:?array<string,mixed>,changes:list<array<string,mixed>>,blocked:bool} $plan
+     * @return array<string,mixed>
+     */
+    private static function withPlan(array $payload, array $plan, string $licenseId): array
+    {
+        $info = static fn (array $rel): array => [
+            'version' => $rel['version'], 'releasedAt' => $rel['releasedAt'], 'notes' => $rel['notes'], 'sha256' => $rel['sha256'],
+            'size' => (int) $rel['size'], 'minPhp' => $rel['minPhp'], 'signature' => $rel['signature'], 'channel' => $rel['channel'], 'access' => $rel['access'],
+        ];
+        $payload['changes'] = $plan['changes'];
+        if ($plan['latest'] !== null) {
+            $payload['latest'] = $info($plan['latest']);
+        }
+        if ($plan['target'] !== null) {
+            $payload['target'] = $info($plan['target']);
+            $payload['entitled'] = true;
+            $payload['download'] = ReleaseService::token($licenseId, $plan['target']['id']);
+        }
+
+        return $payload;
     }
 
     /** POST /api/license/download { token } – liefert das Paket, solange Token, Lizenz und Update-Anspruch gültig sind. */
@@ -157,9 +197,14 @@ final class LicenseApiController
         }
         $d = Validator::validate($r->body(), ['token' => ['required' => true, 'min' => 20, 'max' => 400]]);
         $t = ReleaseService::checkToken($d['token']) ?? throw ApiError::forbidden('Das Download-Token ist ungültig oder abgelaufen.');
-        $license = Db::find('License', $t['l']);
         $release = Db::find('Release', $t['r']);
-        if ($license === null || $release === null || !$release['published'] || LicenseService::effectiveStatus($license) !== 'ACTIVE' || !Entitlements::updatesActive($license, $release['releasedAt'])) {
+        if ($release !== null && $release['published'] && $release['access'] === 'public') {
+            $allowed = true; // öffentliche Version: kein Lizenzschlüssel nötig
+        } else {
+            $license = $t['l'] === '-' ? null : Db::find('License', $t['l']);
+            $allowed = $license !== null && $release !== null && $release['published'] && LicenseService::effectiveStatus($license) === 'ACTIVE' && Entitlements::updatesActive($license, $release['releasedAt']);
+        }
+        if (!$allowed || $release === null) {
             throw ApiError::forbidden('Für diese Lizenz ist dieser Download nicht (mehr) erlaubt.');
         }
         Db::run('UPDATE "Release" SET "downloads" = "downloads" + 1 WHERE "id" = ?', [$release['id']]);

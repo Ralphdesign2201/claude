@@ -99,6 +99,18 @@ final class TicketsController
         return Response::json(Pagination::wrap($rows, $total, $p['page'], $p['pageSize']));
     }
 
+    /** Alle Tickets eines Kunden samt Nachrichten (für die Kundenansicht). */
+    public static function forClient(Request $r): Response
+    {
+        Db::require('Client', $r->param('id'), 'Kunde nicht gefunden');
+        if (!\App\Services\ProductLicense::feature('support')) {
+            return Response::json([]);
+        }
+        $ids = Db::all('SELECT "id" FROM "Ticket" WHERE "clientId" = ? ORDER BY "lastActivityAt" DESC LIMIT 30', [$r->param('id')]);
+
+        return Response::json(array_map(static fn ($t) => TicketService::detail($t['id'], true), $ids));
+    }
+
     public static function show(Request $r): Response
     {
         $id = $r->param('id');

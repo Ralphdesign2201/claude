@@ -194,6 +194,7 @@ final class App
 
         $r->add('POST', '/api/license/verify', [LicenseApiController::class, 'verify'], $pub);
         $r->add('POST', '/api/license/update-check', [LicenseApiController::class, 'updateCheck'], $pub);
+        $r->add('POST', '/api/license/update-public', [LicenseApiController::class, 'updatePublic'], $pub);
         $r->add('POST', '/api/license/download', [LicenseApiController::class, 'download'], $pub);
         $r->add('GET', '/api/releases', [ReleasesController::class, 'index'], $admin);
         $r->add('POST', '/api/releases', [ReleasesController::class, 'create'], $admin);

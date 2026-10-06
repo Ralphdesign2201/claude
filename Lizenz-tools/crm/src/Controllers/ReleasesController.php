@@ -16,7 +16,7 @@ final class ReleasesController
 {
     public static function index(Request $r): Response
     {
-        $rows = Db::all('SELECT "id", "product", "version", "channel", "notes", "size", "sha256", "minPhp", "published", "downloads", "releasedAt" FROM "Release"');
+        $rows = Db::all('SELECT "id", "product", "version", "channel", "notes", "size", "sha256", "minPhp", "access", "minFrom", "published", "downloads", "releasedAt" FROM "Release"');
         usort($rows, static fn ($a, $b) => strcmp($a['product'], $b['product']) ?: version_compare($b['version'], $a['version']));
 
         return Response::json(array_map(static fn ($x) => $x + ['isPublished' => (bool) $x['published']], $rows));
@@ -31,7 +31,9 @@ final class ReleasesController
         $b = TicketsController::form($r);
         $channel = TicketsController::enum($b, 'channel', ['stable', 'beta'], 'stable');
         $notes = TicketsController::text($b, 'notes', 10000);
-        $release = ReleaseService::create($file['tmp_name'], $channel, $notes, TicketsController::flag($b, 'published'));
+        $access = TicketsController::enum($b, 'access', ['public', 'licensed'], 'licensed');
+        $minFrom = TicketsController::text($b, 'minFrom', 30);
+        $release = ReleaseService::create($file['tmp_name'], $channel, $notes, TicketsController::flag($b, 'published'), $access, $minFrom);
 
         return Response::json(self::view($release), 201);
     }
@@ -40,7 +42,14 @@ final class ReleasesController
     {
         $d = Validator::validate($r->body(), [
             'notes' => ['max' => 10000, 'emptyOk' => true], 'channel' => ['enum' => ['stable', 'beta']], 'published' => ['type' => 'bool'],
+            'access' => ['enum' => ['public', 'licensed']], 'minFrom' => ['max' => 30, 'emptyOk' => true],
         ], partial: true);
+        if (isset($d['minFrom'])) {
+            if ($d['minFrom'] !== '' && !ReleaseService::validVersion($d['minFrom'])) {
+                throw ApiError::badRequest('Die Mindestversion ist ungültig (erwartet z. B. 0.1.0).');
+            }
+            $d['minFrom'] = $d['minFrom'] === '' ? null : $d['minFrom'];
+        }
         if (isset($d['published'])) {
             $d['published'] = (int) $d['published'];
         }

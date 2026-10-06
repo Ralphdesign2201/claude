@@ -19,6 +19,7 @@ use App\Controllers\NotesController;
 use App\Controllers\OrdersController;
 use App\Controllers\PortalAuthController;
 use App\Controllers\PortalController;
+use App\Controllers\LegalController;
 use App\Controllers\ReleasesController;
 use App\Controllers\PortalSupportController;
 use App\Controllers\TicketsController;
@@ -95,6 +96,9 @@ final class App
             'Cache-Control' => 'no-cache',
             'Content-Security-Policy' => "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
         ]), $pub);
+        foreach (\App\Services\LegalService::PATHS as $legalPath) {
+            $r->add('GET', $legalPath, [LegalController::class, 'page'], $pub);
+        }
         $r->add('GET', '/health', static fn () => Response::json(['status' => 'ok']), $pub);
         $r->add('GET', '/uploads/:name', [DocumentsController::class, 'serve'], $pub);
 
@@ -108,6 +112,7 @@ final class App
         $r->add('PATCH', '/api/clients/:id', [ClientsController::class, 'update']);
         $r->add('DELETE', '/api/clients/:id', [ClientsController::class, 'delete']);
         $r->add('GET', '/api/clients/:id/portal', [PortalController::class, 'status']);
+        $r->add('GET', '/api/clients/:id/tickets', [TicketsController::class, 'forClient']);
         $r->add('POST', '/api/clients/:id/portal', [PortalController::class, 'issue']);
         $r->add('DELETE', '/api/clients/:id/portal', [PortalController::class, 'revoke']);
         $r->add('POST', '/api/clients/:id/contacts', [ClientsController::class, 'createContact']);
@@ -189,6 +194,7 @@ final class App
 
         $r->add('POST', '/api/license/verify', [LicenseApiController::class, 'verify'], $pub);
         $r->add('POST', '/api/license/update-check', [LicenseApiController::class, 'updateCheck'], $pub);
+        $r->add('POST', '/api/license/update-public', [LicenseApiController::class, 'updatePublic'], $pub);
         $r->add('POST', '/api/license/download', [LicenseApiController::class, 'download'], $pub);
         $r->add('GET', '/api/releases', [ReleasesController::class, 'index'], $admin);
         $r->add('POST', '/api/releases', [ReleasesController::class, 'create'], $admin);
@@ -258,6 +264,11 @@ final class App
         $r->add('POST', '/api/portal/tickets/:id/rating', [PortalSupportController::class, 'rate'], $pub);
         $r->add('GET', '/api/portal/attachments/:attId', [PortalSupportController::class, 'attachment'], $pub);
         $r->add('GET', '/api/portal/faq', [PortalSupportController::class, 'faq'], $pub);
+
+        $r->add('GET', '/api/legal', [LegalController::class, 'index'], $admin);
+        $r->add('PUT', '/api/legal/:type', [LegalController::class, 'save'], $admin);
+        $r->add('POST', '/api/legal/:type/preview', [LegalController::class, 'preview'], $admin);
+        $r->add('GET', '/api/health', [LegalController::class, 'health'], $admin);
 
         $r->add('GET', '/api/system/status', [SystemController::class, 'status'], $admin);
         $r->add('POST', '/api/system/license/refresh', [SystemController::class, 'refresh'], $admin);

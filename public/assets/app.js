@@ -200,6 +200,8 @@
           return '<button data-act="nav" data-v="' + x[0] + '"' + (cur(x[0]) ? ' aria-current="page"' : '') + (open ? '' : ' tabindex="-1"') + '>' + esc(x[1]) + (cnt > 0 ? '<span class="count" aria-label="' + cnt + ' neue">' + cnt + '</span>' : '') + '</button>';
         }).join('') + '</div></div></div>';
     }).join('');
+    var side = $('#nav').closest('.side'), openG = $('#nav').querySelector('.nav-group.open');
+    if (side && openG && side.scrollWidth > side.clientWidth + 4) side.scrollLeft += openG.getBoundingClientRect().left - side.getBoundingClientRect().left - 8; // Handy: Menüzeile scrollt zur geöffneten Gruppe
   }
   /** Zählt offene Bestellungen für das Menü, ohne die Ansicht zu blockieren. */
   function refreshBadge() {
@@ -617,8 +619,16 @@
 
   function systemCard(sys) {
     var l = sys.license;
-    if (!l.enforced) return '<section class="card stack" id="sec-system"><h2>Version</h2><p style="margin:0">Webdesigner CRM <b>' + esc(l.version) + '</b> – Server-/Entwicklungsinstallation ohne Produktlizenz.</p></section>';
     var up = sys.update || {};
+    var updBlock = function (enabled) {
+      return '<h3 style="margin:8px 0 0;font-size:14px">Updates</h3><div class="row" style="align-items:center"><button class="btn primary" data-act="upd-check"' + (enabled ? '' : ' disabled') + '>Nach Updates suchen</button><span class="sub">Eingespielt wird erst nach Sicherung, Signatur- und Prüfsummenprüfung – bei Fehlern automatisch zurückgenommen. Hast du mehrere Versionen verpasst, wird alles in einem Schritt nachgeholt.' + (up.checkedAt ? ' Zuletzt gesucht: ' + ftime(up.checkedAt) + '.' : '') + '</span></div><div id="upd-result"></div>' +
+        (sys.history.length ? '<div class="sub"><b>Bisherige Updates:</b> ' + sys.history.slice(0, 5).map(function (h) { return esc(h.from) + ' → ' + esc(h.to) + ' (' + fdate(h.at) + ')'; }).join(' · ') + '</div>' : '');
+    };
+    if (!l.enforced) {
+      var canUpd = sys.updates && sys.updates.configured;
+      return '<section class="card stack" id="sec-system"><h2>Version &amp; Updates</h2><p style="margin:0">Webdesigner CRM <b>' + esc(l.version) + '</b>' + (canUpd ? '' : ' – Server-/Entwicklungsinstallation ohne Update-Server.') + '</p>' +
+        (canUpd ? updBlock(true) : '<div class="sub">Für Updates wird in <span class="mono">product.json</span> der Update-Server eingetragen (macht der Hersteller beim Bauen des Pakets).</div>') + '</section>';
+    }
     return '<section class="card stack" id="sec-system"><h2>Lizenz &amp; Updates</h2>' +
       '<div class="row" style="align-items:center">' + (l.valid ? '<span class="pill good">Lizenz gültig</span>' : '<span class="pill bad">Lizenz ungültig</span>') + (l.mode === 'grace' ? ' <span class="pill warn">Server nicht erreichbar – Kulanzfrist</span>' : '') + '</div>' +
       (l.message ? '<div class="note ' + (l.valid ? 'ok' : 'err') + '">' + esc(l.message) + '</div>' : '') +
@@ -629,8 +639,7 @@
       '<dt>Updates</dt><dd>' + (l.valid ? (l.updatesUntil ? 'für Versionen bis ' + fdate(l.updatesUntil) : 'unbegrenzt') + ' ' + (l.updatesActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') : '–') + '</dd>' +
       '<dt>Zuletzt geprüft</dt><dd>' + (l.checkedAt ? ftime(l.checkedAt) : '–') + '</dd></dl>' +
       '<div class="row"><button class="btn" data-act="lic-refresh">Jetzt prüfen</button><button class="btn" data-act="lic-key">Lizenzschlüssel ändern</button>' + (l.valid && l.supportActive ? '<a class="btn" href="' + esc(l.server) + '/portal" target="_blank" rel="noopener">Support beim Hersteller</a>' : '') + '</div>' +
-      '<h3 style="margin:8px 0 0;font-size:14px">Updates</h3><div class="row" style="align-items:center"><button class="btn primary" data-act="upd-check"' + (l.valid ? '' : ' disabled') + '>Nach Updates suchen</button><span class="sub">Eingespielt wird erst nach Sicherung, Signatur- und Prüfsummenprüfung – bei Fehlern automatisch zurückgenommen.' + (up.checkedAt ? ' Zuletzt gesucht: ' + ftime(up.checkedAt) + '.' : '') + '</span></div><div id="upd-result"></div>' +
-      (sys.history.length ? '<div class="sub"><b>Bisherige Updates:</b> ' + sys.history.slice(0, 5).map(function (h) { return esc(h.from) + ' → ' + esc(h.to) + ' (' + fdate(h.at) + ')'; }).join(' · ') + '</div>' : '') + '</section>';
+      updBlock(l.valid) + '</section>';
   }
   function licenseKeyDialog() {
     modal('Lizenzschlüssel ändern', '<div class="form">' + field('lk-key', 'Neuer Lizenzschlüssel', '', 'text', { full: true, attrs: 'autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"' }) + '</div><div class="sub">Er wird geprüft, bevor er gespeichert wird. Die Lizenz muss für diese Domain (' + esc(location.hostname) + ') gelten.</div>', 'Prüfen und speichern', function (f) {
@@ -643,8 +652,10 @@
     api('POST', '/api/system/update/check', {}).then(function (r) {
       btn.disabled = false;
       if (!r.latest) { box.innerHTML = '<div class="note ok">Du hast die neueste Version (' + esc(r.current) + ').</div>'; return; }
+      var log = (r.changes || []).slice().reverse().map(function (c) { return '<div style="margin:8px 0 0"><b>' + esc(c.version) + '</b> <span class="sub">' + fdate(c.releasedAt) + (c.channel === 'beta' ? ' · Beta' : '') + '</span>' + (c.notes ? '<div style="white-space:pre-wrap">' + esc(c.notes) + '</div>' : '') + '</div>'; }).join('');
+      var steps = r.target && r.target.version !== r.latest.version ? '<div class="sub" style="margin-top:6px">Die Installation läuft in mehreren Schritten (zuerst ' + esc(r.target.version) + '), weil die neueste Version eine Zwischenversion voraussetzt.</div>' : '';
       box.innerHTML = '<div class="card" style="background:var(--surface-2)"><b>Version ' + esc(r.latest.version) + '</b> ist verfügbar (du hast ' + esc(r.current) + ') <span class="sub">· ' + fdate(r.latest.releasedAt) + ' · ' + fsize(r.latest.size) + (r.latest.channel === 'beta' ? ' · Beta' : '') + '</span>' +
-        (r.latest.notes ? '<div style="white-space:pre-wrap;margin:8px 0">' + esc(r.latest.notes) + '</div>' : '') +
+        ((r.changes || []).length > 1 ? '<div class="sub" style="margin-top:6px">' + r.changes.length + ' Versionen seit deiner – alle Änderungen:</div>' : '') + log + steps + '<div style="height:8px"></div>' +
         (r.entitled ? '<button class="btn primary" data-act="upd-install">Jetzt installieren</button>' : '<div class="note err">Diese Version erschien nach dem Ende deines Update-Zeitraums' + (r.updatesUntil ? ' (' + fdate(r.updatesUntil) + ')' : '') + '. Mit einer Verlängerung bekommst du sie.</div>') + '</div>';
     }).catch(function (err) { btn.disabled = false; box.innerHTML = '<div class="note err">' + esc(err.message) + '</div>'; });
   }
@@ -652,7 +663,7 @@
     confirmDialog('Vor dem Einspielen werden Code und Daten gesichert. Bitte in den nächsten Sekunden nichts bearbeiten. Bei einem Fehler wird automatisch zurückgerollt.', 'Update installieren', function () {
       btn.disabled = true;
       return api('POST', '/api/system/update/install', {}).then(function (r) {
-        toast('Update ' + r.from + ' → ' + r.to + ' eingespielt – die Seite lädt neu …');
+        toast('Update ' + r.from + ' → ' + r.to + ' eingespielt' + (r.steps && r.steps.length > 1 ? ' (' + r.steps.length + ' Schritte)' : '') + ' – die Seite lädt neu …');
         setTimeout(function () { location.reload(); }, 1500);
       }).catch(function (err) { btn.disabled = false; throw err; });
     });
@@ -940,12 +951,14 @@
       return head('Lizenzen', 'Update-Pakete für deine Software. Nur Lizenzen mit gültigem Update-Zeitraum können sie laden.') + ltabs() +
         '<form class="card stack" id="relform" novalidate><h2>Neue Version hochladen</h2><div class="sub">Paket bauen: <span class="mono">php Lizenz-tools/build-release.php crm</span> – es liegt danach unter <span class="mono">Lizenz-tools/releases/</span>. Der Server prüft das Paket und signiert es mit deinem geheimen Lizenzschlüssel.</div>' +
         '<div class="form"><label class="full">Paket (ZIP)<input id="rel-file" type="file" accept=".zip"></label>' + selectField('rel-channel', 'Kanal', [['stable', 'Stabil'], ['beta', 'Beta (nur wer es wünscht)']], 'stable') +
+        selectField('rel-access', 'Wer darf laden?', [['licensed', 'Nur Kunden mit gültigem Update-Anspruch'], ['public', 'Jeder – auch ohne Lizenz (z. B. Beta-Version)']], 'licensed') +
+        '<label for="rel-minfrom">Mindestversion für direktes Update (optional)<input id="rel-minfrom" placeholder="z. B. 0.3.0" autocapitalize="off"><span class="sub" style="font-weight:400">Nur bei Umbauten nötig: ältere Installationen bekommen erst die Zwischenversion. Sonst leer lassen – verpasste Versionen werden automatisch in einem Schritt nachgeholt.</span></label>' +
         '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="rel-pub" type="checkbox" checked> Sofort veröffentlichen</label><label class="full" for="rel-notes">Änderungen (Kunden sehen das vor dem Update)<textarea id="rel-notes" rows="4" placeholder="• Neu: …&#10;• Behoben: …"></textarea></label></div>' +
         '<div><button type="submit" class="btn primary" id="rel-send">Hochladen und signieren</button></div></form>' +
-        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Produkt</th><th>Version</th><th>Kanal</th><th>Status</th><th class="r">Größe</th><th class="r">Downloads</th><th>Datum</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (r) {
-          return '<tr><td class="mono">' + esc(r.product) + '</td><td><b>' + esc(r.version) + '</b>' + (r.notes ? '<div class="sub" style="white-space:pre-wrap;max-width:360px">' + esc(r.notes.length > 140 ? r.notes.slice(0, 140) + '…' : r.notes) + '</div>' : '') + '</td><td>' + (r.channel === 'beta' ? '<span class="pill warn">Beta</span>' : 'Stabil') + '</td><td>' + (r.published ? '<span class="pill good">Veröffentlicht</span>' : '<span class="pill neutral">Entwurf</span>') + '</td><td class="r num">' + fsize(r.size) + '</td><td class="r num">' + r.downloads + '</td><td>' + fdate(r.releasedAt) + '</td>' +
-            '<td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="rel-toggle" data-id="' + esc(r.id) + '" data-pub="' + (r.published ? '1' : '0') + '">' + (r.published ? 'Zurückziehen' : 'Veröffentlichen') + '</button><button class="btn sm ghost" data-act="rel-dl" data-id="' + esc(r.id) + '">Laden</button><button class="btn sm ghost danger" data-act="rel-del" data-id="' + esc(r.id) + '">Löschen</button></div></td></tr>';
-        }).join('') : '<tr><td colspan="8" class="empty">Noch keine Releases.</td></tr>') + '</tbody></table></div></div>' +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Produkt</th><th>Version</th><th>Kanal</th><th>Zugang</th><th>Status</th><th class="r">Größe</th><th class="r">Downloads</th><th>Datum</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (r) {
+          return '<tr><td class="mono">' + esc(r.product) + '</td><td><b>' + esc(r.version) + '</b>' + (r.notes ? '<div class="sub" style="white-space:pre-wrap;max-width:360px">' + esc(r.notes.length > 140 ? r.notes.slice(0, 140) + '…' : r.notes) + '</div>' : '') + '</td><td>' + (r.channel === 'beta' ? '<span class="pill warn">Beta</span>' : 'Stabil') + '</td><td>' + (r.access === 'public' ? '<span class="pill warn">Öffentlich</span>' : 'Lizenz') + (r.minFrom ? '<div class="sub">ab ' + esc(r.minFrom) + '</div>' : '') + '</td><td>' + (r.published ? '<span class="pill good">Veröffentlicht</span>' : '<span class="pill neutral">Entwurf</span>') + '</td><td class="r num">' + fsize(r.size) + '</td><td class="r num">' + r.downloads + '</td><td>' + fdate(r.releasedAt) + '</td>' +
+            '<td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="rel-toggle" data-id="' + esc(r.id) + '" data-pub="' + (r.published ? '1' : '0') + '">' + (r.published ? 'Zurückziehen' : 'Veröffentlichen') + '</button><button class="btn sm ghost" data-act="rel-access" data-id="' + esc(r.id) + '" data-acc="' + esc(r.access) + '">' + (r.access === 'public' ? 'Nur Lizenz' : 'Öffentlich') + '</button><button class="btn sm ghost" data-act="rel-dl" data-id="' + esc(r.id) + '">Laden</button><button class="btn sm ghost danger" data-act="rel-del" data-id="' + esc(r.id) + '">Löschen</button></div></td></tr>';
+        }).join('') : '<tr><td colspan="9" class="empty">Noch keine Releases.</td></tr>') + '</tbody></table></div></div>' +
         '<p class="sub">Die Software prüft jede Version mit dem eingebauten öffentlichen Schlüssel, bevor sie sie einspielt. Ein Update erhält nur, wer bei Erscheinen der Version noch Update-Anspruch hatte.</p>';
     });
   }
@@ -1570,6 +1583,7 @@
       case 'health-go': if (el.dataset.v === 'legal' && el.dataset.tab) ui.legalTab = el.dataset.tab; return go({ tickets: 'support', backups: 'settings', system: 'settings' }[el.dataset.v] || el.dataset.v);
       case 'health-all': ui.healthAll = true; return render();
       case 'rel-toggle': return api('PATCH', '/api/releases/' + id, { published: el.dataset.pub !== '1' }).then(function () { done(el.dataset.pub === '1' ? 'Zurückgezogen' : 'Veröffentlicht'); }).catch(fail);
+      case 'rel-access': return api('PATCH', '/api/releases/' + id, { access: el.dataset.acc === 'public' ? 'licensed' : 'public' }).then(function () { done('Zugang geändert'); }).catch(fail);
       case 'rel-dl': return downloadPdf(el, '/api/releases/' + id + '/file');
       case 'rel-del': return confirmDialog('Die Version wird gelöscht. Wer sie schon geladen hat, behält sie; neue Downloads sind nicht mehr möglich.', 'Löschen', function () { return api('DELETE', '/api/releases/' + id).then(function () { done('Gelöscht'); }); });
       case 'lic-refresh': el.disabled = true; return api('POST', '/api/system/license/refresh', {}).then(function () { done('Lizenz geprüft'); }).catch(function (err) { el.disabled = false; toast(err.message); });
@@ -1681,7 +1695,7 @@
     if (e.target.id !== 'relform') return;
     e.preventDefault();
     var file = $('#rel-file').files[0]; if (!file) return toast('Bitte das Release-Paket (ZIP) auswählen.');
-    var fd = new FormData(); fd.append('file', file); fd.append('channel', $('#rel-channel').value); fd.append('notes', $('#rel-notes').value.trim()); fd.append('published', $('#rel-pub').checked ? 'true' : 'false');
+    var fd = new FormData(); fd.append('file', file); fd.append('channel', $('#rel-channel').value); fd.append('notes', $('#rel-notes').value.trim()); fd.append('published', $('#rel-pub').checked ? 'true' : 'false'); fd.append('access', $('#rel-access').value); fd.append('minFrom', $('#rel-minfrom').value.trim());
     var btn = $('#rel-send'); btn.disabled = true;
     api('POST', '/api/releases', fd, true).then(function (r) { done('Version ' + r.version + ' hochgeladen und signiert'); }).catch(function (err) { btn.disabled = false; toast(err.message); });
   });

@@ -17,6 +17,11 @@ use ZipArchive;
  * signierten Prüfsumme verifiziert, vor dem Einspielen gesichert und bei einem Fehler automatisch zurückgerollt.
  * Daten, Einstellungen, Schlüssel und Uploads werden nie angefasst.
  */
+/** Es gibt nichts (mehr) zu installieren – kein Fehler, wenn zuvor schon Schritte gelaufen sind. */
+class NothingToInstall extends RuntimeException
+{
+}
+
 final class UpdateService
 {
     /** Nur diese Verzeichnisse und Dateien darf ein Update überschreiben. */
@@ -38,57 +43,104 @@ final class UpdateService
         return is_array($d) ? $d : [];
     }
 
-    private static function requireProduct(): void
+    /** Ohne Lizenzschlüssel (z. B. die Beta-Version) gibt es nur öffentliche Releases; mit Schlüssel auch die lizenzierten. */
+    private static function licensed(): bool
     {
-        if (!Product::enforced()) {
-            throw new RuntimeException('Updates gibt es nur in der lizenzierten Produktversion (product.json fehlt).');
-        }
-        if (ProductLicense::key() === '') {
-            throw new RuntimeException('Bitte zuerst den Lizenzschlüssel eintragen.');
+        return Product::enforced() && ProductLicense::key() !== '';
+    }
+
+    private static function requireSource(): void
+    {
+        if (Product::server() === '' || Product::publicKeys() === []) {
+            throw new RuntimeException('Für diese Installation ist kein Update-Server eingetragen (product.json fehlt oder ist leer).');
         }
     }
 
     /**
-     * Fragt den Lizenzserver nach der neuesten Version.
+     * Fragt den Update-Server nach der neuesten Version und dem nächsten Installationsschritt.
      *
-     * @return array{current:string,latest:?array<string,mixed>,entitled:bool,updatesUntil:?string,download:?array<string,mixed>,checkedAt:string}
+     * @return array{current:string,latest:?array<string,mixed>,target:?array<string,mixed>,changes:list<array<string,mixed>>,entitled:bool,updatesUntil:?string,download:?array<string,mixed>,checkedAt:string,licensed:bool}
      */
     public static function check(): array
     {
-        self::requireProduct();
-        $client = ProductLicense::client();
-        $payload = $client->signedRequest('/api/license/update-check', [
-            'product' => Product::slug(), 'channel' => Env::get('UPDATE_CHANNEL', 'stable') === 'beta' ? 'beta' : 'stable',
-        ], 'update');
+        self::requireSource();
+        $licensed = self::licensed();
+        $client = ProductLicense::client($licensed ? null : '');
+        $channel = Env::get('UPDATE_CHANNEL', 'stable') === 'beta' ? 'beta' : 'stable';
+        $payload = $client->signedRequest($licensed ? '/api/license/update-check' : '/api/license/update-public', ['product' => Product::slug(), 'channel' => $channel], 'update');
         if ($payload === null) {
             throw new RuntimeException('Der Update-Server hat keine gültige Antwort geliefert' . ($client->error ? ' (' . $client->error . ')' : '') . '.');
         }
         if (!$payload['valid']) {
             throw new RuntimeException('Die Lizenz wurde abgelehnt: ' . ProductLicense::message($payload['reason']));
         }
+        $target = $payload['target'] ?? ($payload['latest'] !== null && ($payload['entitled'] ?? false) ? $payload['latest'] : null); // ältere Server liefern nur „latest“
         $result = [
-            'current' => Product::version(), 'latest' => $payload['latest'], 'entitled' => (bool) $payload['entitled'],
-            'updatesUntil' => $payload['updatesUntil'], 'download' => $payload['download'] ?? null, 'checkedAt' => Dates::now(),
+            'current' => Product::version(), 'latest' => $payload['latest'], 'target' => $target, 'changes' => is_array($payload['changes'] ?? null) ? $payload['changes'] : [],
+            'entitled' => $target !== null, 'updatesUntil' => $payload['updatesUntil'] ?? null, 'download' => $payload['download'] ?? null, 'checkedAt' => Dates::now(), 'licensed' => $licensed,
         ];
-        @file_put_contents(self::stateFile(), json_encode(['checkedAt' => $result['checkedAt'], 'latest' => $payload['latest'], 'entitled' => $result['entitled'], 'current' => $result['current']]));
+        @file_put_contents(self::stateFile(), json_encode(['checkedAt' => $result['checkedAt'], 'latest' => $payload['latest'], 'entitled' => $result['entitled'], 'current' => $result['current'], 'changes' => $result['changes'], 'licensed' => $licensed]));
 
         return $result;
     }
 
+    /** Für den täglichen Cron-Lauf: höchstens alle 20 Stunden nach Updates fragen (nur Hinweis, installiert wird nichts). Fehler sind hier unerheblich. */
+    public static function checkIfDue(): void
+    {
+        if (Product::server() === '' || Product::publicKeys() === []) {
+            return;
+        }
+        $at = self::lastState()['checkedAt'] ?? null;
+        if (is_string($at) && strtotime($at) > time() - 20 * 3600) {
+            return;
+        }
+        try {
+            self::check();
+        } catch (\Throwable) {
+            // Server nicht erreichbar o. Ä.: beim nächsten Lauf erneut
+        }
+    }
+
     /**
-     * Lädt, prüft und installiert die neueste Version.
+     * Installiert alle verfügbaren Updates nacheinander. Wer mehrere Versionen verpasst hat, springt in der Regel mit einem Schritt
+     * zur neuesten (jedes Paket ist ein vollständiger Stand); nur bei Versionen mit Mindestversion („minFrom“) sind es mehrere Schritte.
+     *
+     * @return array{from:string,to:string,files:int,migrations:list<string>,backup:string,removed:int,steps:list<array<string,mixed>>}
+     */
+    public static function installAll(int $maxSteps = 8): array
+    {
+        $steps = [];
+        for ($i = 0; $i < $maxSteps; $i++) {
+            try {
+                $steps[] = self::install();
+            } catch (NothingToInstall $e) {
+                if ($steps === []) {
+                    throw $e;
+                }
+                break;
+            }
+        }
+        $first = $steps[0];
+        $last = $steps[count($steps) - 1];
+
+        return ['from' => $first['from'], 'to' => $last['to'], 'files' => $last['files'], 'migrations' => array_merge(...array_column($steps, 'migrations')),
+            'backup' => $first['backup'], 'removed' => array_sum(array_column($steps, 'removed')), 'steps' => $steps];
+    }
+
+    /**
+     * Lädt, prüft und installiert den nächsten Schritt (die höchste direkt erreichbare Version).
      *
      * @return array{from:string,to:string,files:int,migrations:list<string>,backup:string,removed:int}
      */
     public static function install(): array
     {
         $info = self::check();
-        $latest = $info['latest'];
-        if ($latest === null) {
-            throw new RuntimeException('Die Software ist bereits auf dem neuesten Stand (' . $info['current'] . ').');
+        $latest = $info['target'];
+        if ($info['latest'] === null) {
+            throw new NothingToInstall('Die Software ist bereits auf dem neuesten Stand (' . $info['current'] . ').');
         }
-        if (!$info['entitled'] || $info['download'] === null) {
-            throw new RuntimeException('Version ' . $latest['version'] . ' erschien nach dem Ende deines Update-Zeitraums' . ($info['updatesUntil'] ? ' (' . substr((string) $info['updatesUntil'], 0, 10) . ')' : '') . '. Mit einer Verlängerung bekommst du sie.');
+        if ($latest === null || $info['download'] === null) {
+            throw new NothingToInstall('Version ' . $info['latest']['version'] . ' erschien nach dem Ende deines Update-Zeitraums' . ($info['updatesUntil'] ? ' (' . substr((string) $info['updatesUntil'], 0, 10) . ')' : '') . '. Mit einer Verlängerung bekommst du sie.');
         }
         $minPhp = $latest['minPhp'] ?: '8.1';
         if (version_compare(PHP_VERSION, $minPhp, '<')) {
@@ -107,7 +159,7 @@ final class UpdateService
         $zipFile = APP_ROOT . '/database/.update-' . bin2hex(random_bytes(5)) . '.zip';
         try {
             // 1. Herunterladen und prüfen – erst danach wird irgendetwas angefasst
-            $client = ProductLicense::client();
+            $client = ProductLicense::client($info['licensed'] ? null : '');
             $data = $client->fetch('/api/license/download', ['token' => $info['download']['token']]);
             if ($data === null || $data === '') {
                 throw new RuntimeException('Das Paket konnte nicht heruntergeladen werden' . ($client->error ? ' (' . $client->error . ')' : '') . '.');

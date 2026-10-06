@@ -7,6 +7,8 @@ declare(strict_types=1);
 // Ergebnis: Lizenz-tools/crm/ (Ordner) und Lizenz-tools/dist/crm-<version>.zip (zum Weitergeben an Kunden).
 // Server-Adresse und öffentlicher Schlüssel werden in Lizenz-tools/vendor.json gemerkt (beides ist nicht geheim).
 // --draft baut ohne Server/Schlüssel (Platzhalter), z. B. zum Ansehen oder Testen.
+// --no-license baut eine Fassung OHNE Lizenzpflicht (z. B. die erste Beta): sie läuft ohne Schlüssel, kann sich aber über den Update-Server
+//   (öffentliche Releases) aktualisieren. Server und öffentlicher Schlüssel sind dafür trotzdem nötig, sonst gibt es keine Updates.
 
 require __DIR__ . '/lib.php';
 
@@ -32,16 +34,19 @@ if (is_string($args['key-file'] ?? null)) {
     $vendor['publicKeys'] = [base64_encode(sodium_crypto_sign_publickey_from_secretkey($secret))];
 }
 $draft = isset($args['draft']);
+$noLicense = isset($args['no-license']);
 if ($draft && $vendor['server'] === '') {
     $vendor['server'] = 'https://lizenz.example.com';
 }
-if (!$draft && !preg_match('#^https://[^\s/]+#', (string) $vendor['server']) && !str_starts_with((string) $vendor['server'], 'http://127.0.0.1')) {
+if ($noLicense && !$draft && $vendor['server'] === '') {
+    fwrite(STDERR, "Hinweis: Ohne --server und --public-key kann diese Fassung später keine Updates laden. Du kannst sie trotzdem bauen und product.json später ergänzen.\n");
+} elseif (!$draft && !preg_match('#^https://[^\s/]+#', (string) $vendor['server']) && !str_starts_with((string) $vendor['server'], 'http://127.0.0.1')) {
     fail('Bitte die Adresse deines Lizenzservers angeben: --server=https://lizenz.deine-domain.de');
 }
-if (!$draft && $vendor['publicKeys'] === []) {
+if (!$draft && !($noLicense && $vendor['server'] === '') && $vendor['publicKeys'] === []) {
     fail('Bitte den öffentlichen Schlüssel angeben: --public-key=… (zu finden unter https://dein-server/api/license/public-key) oder --key-file=…');
 }
-if (!$draft) {
+if (!$draft && $vendor['server'] !== '') {
     file_put_contents(TOOLS_ROOT . '/vendor.json', json_encode($vendor, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
 }
 
@@ -73,22 +78,26 @@ $updateFiles = codeFiles(true);
 file_put_contents("$out/manifest.json", json_encode(buildManifest($product, $version, $updateFiles), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 file_put_contents("$out/product.json", json_encode([
     'product' => $product, 'name' => 'Webdesigner CRM', 'server' => $vendor['server'], 'publicKeys' => $vendor['publicKeys'],
-    'enforce' => true, 'builtAt' => gmdate('Y-m-d\TH:i:s\Z'),
+    'enforce' => !$noLicense, 'builtAt' => gmdate('Y-m-d\TH:i:s\Z'),
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+$licenseLine = $noLicense ? '' : ' Dein Lizenzschlüssel wird dort abgefragt.';
+$kind = $noLicense ? ' (ohne Lizenz)' : '';
 file_put_contents("$out/INSTALL.txt", <<<TXT
-Webdesigner CRM $version – Installation
+Webdesigner CRM $version$kind – Installation
 
 1. Diesen Ordnerinhalt auf deinen Webspace hochladen (am besten in eine eigene Subdomain, z. B. crm.deine-domain.de, mit https).
-2. https://deine-domain/install.php im Browser öffnen und den Anweisungen folgen. Dein Lizenzschlüssel wird dort abgefragt.
+2. https://deine-domain/install.php im Browser öffnen und den Anweisungen folgen.{$licenseLine}
 3. Danach install.php löschen.
 
-Updates: im Programm unter Einstellungen → Lizenz & Updates oder per Kommandozeile: php bin/update.php --check | --install
+Updates: im Programm unter Einstellungen → Version & Updates (bzw. Lizenz & Updates) oder per Kommandozeile: php bin/update.php --check | --install
+Verpasste Versionen werden automatisch in einem Schritt nachgeholt.
+Rechtstexte (Impressum, Datenschutz, AGB): im Admin unter System → Rechtstexte.
 
 TXT);
 
 $dist = TOOLS_ROOT . '/dist';
 @mkdir($dist, 0775, true);
-$zipPath = "$dist/$product-$version.zip";
+$zipPath = "$dist/$product-$version" . ($noLicense ? '-ohne-lizenz' : '') . '.zip';
 @unlink($zipPath);
 $zip = new ZipArchive();
 $zip->open($zipPath, ZipArchive::CREATE);
@@ -100,7 +109,7 @@ foreach ($it as $f) {
 }
 $zip->close();
 
-echo "Produkt gebaut: Lizenz-tools/$product/ (" . count($files) . " Dateien) und Lizenz-tools/dist/$product-$version.zip\n";
+echo "Produkt gebaut: Lizenz-tools/$product/ (" . count($files) . " Dateien) und Lizenz-tools/dist/" . basename($zipPath) . "\n";
 echo "Lizenzserver: {$vendor['server']}\n";
 if ($draft) {
     echo "ENTWURF: Server und öffentlicher Schlüssel sind Platzhalter. Vor der Auslieferung neu bauen mit:\n  php Lizenz-tools/build-product.php crm --server=https://lizenz.deine-domain.de --key-file=pfad/zu/license.key\n";
