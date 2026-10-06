@@ -16,3 +16,4 @@ spl_autoload_register(static function (string $class): void {
 
 date_default_timezone_set('UTC');
 App\Support\Env::load(APP_ROOT . '/.env');
+App\Support\Env::loadSettings();

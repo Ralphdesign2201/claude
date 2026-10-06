@@ -13,6 +13,33 @@ $base = "http://127.0.0.1:$port";
 $tmp = sys_get_temp_dir() . '/crm-test-' . bin2hex(random_bytes(4));
 mkdir($tmp);
 
+// TEST_DB=mysql php tests/run.php  → dieselben Tests gegen MySQL/MariaDB (Zugang über TEST_MYSQL_* bzw. crm@127.0.0.1)
+$mysqlMode = getenv('TEST_DB') === 'mysql';
+$my = ['host' => getenv('TEST_MYSQL_HOST') ?: '127.0.0.1', 'port' => getenv('TEST_MYSQL_PORT') ?: '3306', 'user' => getenv('TEST_MYSQL_USER') ?: 'crm', 'password' => getenv('TEST_MYSQL_PASSWORD') ?: 'crm-pass'];
+$mysqlMode_dbs = [];
+$mysqlPdo = static function (?string $db = null) use ($my): PDO {
+    return new PDO('mysql:host=' . $my['host'] . ';port=' . $my['port'] . ($db !== null ? ';dbname=' . $db : '') . ';charset=utf8mb4', $my['user'], $my['password'], [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET sql_mode = 'ANSI_QUOTES,NO_BACKSLASH_ESCAPES,STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION'",
+    ]);
+};
+/** Frische, leere MySQL-Datenbank für diesen Testlauf */
+$newMysqlDb = static function (string $suffix) use ($mysqlPdo, $tmp, &$mysqlMode_dbs): string {
+    $name = 'crmt_' . substr(md5($tmp), 0, 8) . '_' . $suffix;
+    $admin = $mysqlPdo();
+    $admin->exec("DROP DATABASE IF EXISTS `$name`");
+    $admin->exec("CREATE DATABASE `$name` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $mysqlMode_dbs[] = $name;
+    return $name;
+};
+/** Umgebungsvariablen für eine eigene (zweite) Datenbank */
+$dbEnv = static function (string $name) use ($mysqlMode, $my, $newMysqlDb, $tmp): array {
+    if (!$mysqlMode) {
+        return ['DATABASE_PATH' => "$tmp/$name.db"];
+    }
+    return ['DB_DRIVER' => 'mysql', 'DB_HOST' => $my['host'], 'DB_PORT' => $my['port'], 'DB_USER' => $my['user'], 'DB_PASSWORD' => $my['password'], 'DB_NAME' => $newMysqlDb($name)];
+};
+
 $mailDir = "$tmp/mail";
 mkdir($mailDir);
 $smtpPort = $port + 1;
@@ -36,12 +63,21 @@ $env = [
     'PRIVACY_URL' => 'https://crm.example.com/datenschutz',
     'REGISTER_RATE_LIMIT_MAX' => '7',
     'DATABASE_PATH' => "$tmp/test.db",
+    'SETTINGS_FILE' => "$tmp/settings.json",
     'JWT_SECRET' => 'test-secret-test-secret-123456',
     'ALLOW_REGISTRATION' => 'false',
     'LOGIN_RATE_LIMIT_MAX' => '5',
     'RATE_LIMIT_MAX' => '20000',
     'PATH' => (string) getenv('PATH'),
 ];
+
+if ($mysqlMode) {
+    $env += ['DB_DRIVER' => 'mysql', 'DB_HOST' => $my['host'], 'DB_PORT' => $my['port'], 'DB_USER' => $my['user'], 'DB_PASSWORD' => $my['password'], 'DB_NAME' => $newMysqlDb('main')];
+}
+/** PDO auf die Hauptdatenbank des Testlaufs (für direkte Stichproben) */
+$dbx = static function () use ($mysqlMode, $mysqlPdo, $env, $tmp): PDO {
+    return $mysqlMode ? $mysqlPdo($env['DB_NAME']) : new PDO('sqlite:' . "$tmp/test.db");
+};
 
 $run = static function (string $cmd) use ($env, $root): void {
     $p = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $root, $env);
@@ -61,9 +97,15 @@ $server = proc_open(
     $env,
 );
 
-register_shutdown_function(static function () use ($server, $sink, $tmp) {
+register_shutdown_function(static function () use ($server, $sink, $tmp, $mysqlMode, $mysqlPdo, &$mysqlMode_dbs) {
     proc_terminate($server);
     proc_terminate($sink);
+    if ($mysqlMode) {
+        $admin = $mysqlPdo();
+        foreach ($mysqlMode_dbs as $name) {
+            $admin->exec("DROP DATABASE IF EXISTS `$name`");
+        }
+    }
     $remove = static function (string $path) use (&$remove): void {
         if (is_dir($path) && !is_link($path)) {
             foreach (scandir($path) ?: [] as $f) {
@@ -808,7 +850,7 @@ $mailTo = static function (string $address) {
     $hits = array_values(array_filter(mails(), static fn ($m) => str_contains($m['head'], "X-Envelope-To: $address")));
     return $hits === [] ? null : end($hits);
 };
-$accountDb = new PDO('sqlite:' . "$tmp/test.db");
+$accountDb = $dbx();
 $res = call('GET', '/api/portal/config');
 check('Portal-Konfiguration (öffentlich): Registrierung offen, Firmenname, Datenschutz-Link, Mindestlänge', $res[0] === 200 && $res[1]['registration'] === true && $res[1]['company'] === 'Ralph Design' && $res[1]['privacyUrl'] === 'https://crm.example.com/datenschutz' && $res[1]['termsUrl'] === null && $res[1]['minPassword'] === 10, $res[2]);
 check('Registrierung ist geschlossen, wenn kein Mailserver eingerichtet ist oder sie abgeschaltet wurde', App\Services\AccountService::registrationOpen() === false && (putenv('SMTP_HOST=127.0.0.1') || true) && App\Services\AccountService::registrationOpen() === true && (putenv('PORTAL_REGISTRATION=off') || true) && App\Services\AccountService::registrationOpen() === false && (putenv('PORTAL_REGISTRATION') || true) && (putenv('SMTP_HOST') || true));
@@ -965,7 +1007,7 @@ check('Registrierungen pro IP und Stunde sind begrenzt (429)', in_array(429, $co
 $accountDb->exec("DELETE FROM PortalAccount WHERE email LIKE '%@spam.example'");
 
 echo "Kundenportal\n";
-$portalDb = new PDO('sqlite:' . "$tmp/test.db");
+$portalDb = $dbx();
 $res = call('GET', "/api/clients/$clientId/portal", null, $token);
 check('Portal: anfangs kein Zugang', $res[0] === 200 && $res[1]['active'] === false && $res[1]['mailConfigured'] === true && $res[1]['recipient'] === 'anna@beispiel.de', $res[2]);
 expect('Portal-Zugang für unbekannten Kunden → 404', call('POST', '/api/clients/gibtsnicht/portal', [], $token), 404);
@@ -1193,16 +1235,24 @@ $z->setPassword($secret);
 check('Mit Passwort ist die Datenbank lesbar', str_starts_with((string) $z->getFromName('database.sqlite'), 'SQLite format 3'));
 $z->close();
 
-$restoredDb = "$tmp/restored/app.db";
-$restoreEnv = ['DATABASE_PATH' => $restoredDb, 'UPLOAD_DIR' => "$tmp/restored-uploads", 'BACKUP_DIR' => "$tmp/restore-safety", 'BACKUP_PASSPHRASE' => $secret, 'LICENSE_KEY_FILE' => "$tmp/restored-license.key"];
+$restoreDbEnv = $dbEnv('restored');
+$restoredDb = $restoreDbEnv['DATABASE_PATH'] ?? '';
+// „Zieldatenbank existiert“: bei SQLite die Datei, bei MySQL die angelegten Tabellen
+$restoredExists = static function () use ($mysqlMode, $restoredDb, $restoreDbEnv, $mysqlPdo): bool {
+    if (!$mysqlMode) {
+        return is_file($restoredDb);
+    }
+    return (int) $mysqlPdo($restoreDbEnv['DB_NAME'])->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'Client'")->fetchColumn() > 0;
+};
+$restoreEnv = $restoreDbEnv + ['UPLOAD_DIR' => "$tmp/restored-uploads", 'BACKUP_DIR' => "$tmp/restore-safety", 'BACKUP_PASSPHRASE' => $secret, 'LICENSE_KEY_FILE' => "$tmp/restored-license.key"];
 [$code, $out] = $cli('restore.php', [$encFile], $restoreEnv);
-check('Wiederherstellung verlangt ausdrückliche Bestätigung (--yes), tut ohne nichts', $code === 1 && str_contains($out, '--yes') && !is_file($restoredDb), $out);
+check('Wiederherstellung verlangt ausdrückliche Bestätigung (--yes), tut ohne nichts', $code === 1 && str_contains($out, '--yes') && !$restoredExists(), $out);
 [$code, $out] = $cli('restore.php', [$encFile, '--yes'], ['BACKUP_PASSPHRASE' => 'falsches-passwort'] + $restoreEnv);
-check('Falsches Passwort: Abbruch mit klarer Meldung, nichts wird angelegt', $code === 1 && str_contains($out, 'Passwort') && !is_file($restoredDb), $out);
+check('Falsches Passwort: Abbruch mit klarer Meldung, nichts wird angelegt', $code === 1 && str_contains($out, 'Passwort') && !$restoredExists(), $out);
 [$code, $out] = $cli('restore.php', [$encFile, '--yes'], $restoreEnv);
-check('Wiederherstellung in neue Datenbank erfolgreich', $code === 0 && str_contains($out, 'wiederhergestellt') && is_file($restoredDb), $out);
-$restored = new PDO('sqlite:' . $restoredDb);
-check('Wiederhergestellte Datenbank: gleiche Kunden und Rechnungen, intakt', $restored->query('PRAGMA integrity_check')->fetchColumn() === 'ok' && (int) $restored->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientTotal && (int) $restored->query('SELECT COUNT(*) FROM Invoice')->fetchColumn() === $invoiceTotal && (int) $restored->query('SELECT COUNT(*) FROM User')->fetchColumn() >= 1);
+check('Wiederherstellung in neue Datenbank erfolgreich', $code === 0 && str_contains($out, 'wiederhergestellt') && $restoredExists(), $out);
+$restored = $mysqlMode ? $mysqlPdo($restoreDbEnv['DB_NAME']) : new PDO('sqlite:' . $restoredDb);
+check('Wiederhergestellte Datenbank: gleiche Kunden und Rechnungen, intakt', ($mysqlMode || $restored->query('PRAGMA integrity_check')->fetchColumn() === 'ok') && (int) $restored->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientTotal && (int) $restored->query('SELECT COUNT(*) FROM Invoice')->fetchColumn() === $invoiceTotal && (int) $restored->query('SELECT COUNT(*) FROM User')->fetchColumn() >= 1);
 check('Wiederhergestelltes Dokument hat den richtigen Inhalt', file_get_contents("$tmp/restored-uploads/$uploadedName") === 'Sicherungstest');
 unset($restored);
 [$code, $out] = $cli('restore.php', [$encFile, '--yes'], $restoreEnv);
@@ -1233,7 +1283,7 @@ $tz->close();
 check('Falsche Prüfsumme im Manifest: Wiederherstellung wird verweigert', $code === 1 && str_contains($out, 'Prüfsumme'), $out);
 
 // Skripte mehrfach ausführbar (Regression: „SELECT 1“-Abfragen)
-$seedEnv = ['DATABASE_PATH' => "$tmp/seedtest.db", 'BACKUP_DIR' => "$tmp/seed-backups"];
+$seedEnv = $dbEnv('seedtest') + ['BACKUP_DIR' => "$tmp/seed-backups"];
 [$code] = $cli('migrate.php', [], $seedEnv);
 [$c1, $o1] = $cli('seed.php', [], $seedEnv);
 [$c2, $o2] = $cli('seed.php', [], $seedEnv);
@@ -1253,7 +1303,7 @@ check('Cron: zweiter Lauf sichert nicht erneut', $res[1]['backup'] === null, $re
 check('bin/cron.php meldet „Backup aktuell“', $code === 0 && str_contains($out, 'Backup aktuell'), $out);
 
 echo "Domain-Lizenzen\n";
-(new PDO('sqlite:' . "$tmp/test.db"))->exec('DELETE FROM RateLimit'); // Sperren der vorigen Abschnitte aufheben
+$dbx()->exec('DELETE FROM RateLimit'); // Sperren der vorigen Abschnitte aufheben
 require_once $root . '/examples/license-client/LicenseClient.php';
 $res = call('GET', '/api/license/public-key');
 $pubKey = $res[1]['publicKey'] ?? '';
@@ -1317,7 +1367,7 @@ check('Kunde erhält den Schlüssel per E-Mail', count(array_filter($mailsNew, s
 $res = call('GET', '/api/portal/licenses', null, null, $LP);
 check('Portal zeigt den Schlüssel jetzt', str_contains($res[2], $key1) && $res[1][0]['changesLeft'] === 2, $res[2]);
 call('POST', "/api/invoices/$inv1/payments", ['amount' => 5], $token);
-check('Weitere Zahlung wirkt nicht doppelt', (int) (new PDO('sqlite:' . "$tmp/test.db"))->query('SELECT COUNT(*) FROM LicensePayment')->fetchColumn() === 1);
+check('Weitere Zahlung wirkt nicht doppelt', (int) $dbx()->query('SELECT COUNT(*) FROM LicensePayment')->fetchColumn() === 1);
 
 // Prüfung durch den Server
 [$ok, $p] = $decode($verify($key1, 'meine-seite.de', 'abcdefgh-1'));
@@ -1428,7 +1478,7 @@ $g = (strtotime($l3['validUntil']) - strtotime($l3['paidThrough'])) / 86400;
 check('Zahlung aktiviert Miete: bezahlt bis in ~1 Monat, +14 Tage Kulanz', $l3['status'] === 'ACTIVE' && $m > 27 && $m < 32 && round($g) == 14, $l3);
 $paid1 = $l3['paidThrough'];
 // zweite Abo-Rechnung: fällig stellen und abrechnen
-$licDb = new PDO('sqlite:' . "$tmp/test.db");
+$licDb = $dbx();
 $licDb->prepare('UPDATE Recurring SET startDate = ?, nextRunDate = ? WHERE id = ?')->execute([gmdate('Y-m-d', strtotime('-1 month')) . 'T00:00:00.000Z', gmdate('Y-m-d') . 'T00:00:00.000Z', $acc3['recurring']['id']]);
 $res = call('POST', '/api/recurring/run-due', null, $token);
 $inv3b = $res[1]['runs'][0]['invoiceId'] ?? null;
@@ -1470,6 +1520,150 @@ for ($i = 0; $i < 40 && $last !== 429; $i++) {
     $last = $verify(sprintf('ZZZZ%d-BBBBB-CCCCC-DDDDD-EEEEE', $i % 10), 'a.de')[0];
 }
 check('Durchprobieren unbekannter Schlüssel wird gebremst (429)', $last === 429, $i);
+
+echo "Einstellungen und Datenbankwechsel\n";
+call('POST', '/api/users', ['name' => 'Einstellungs-Aushilfe', 'email' => 'einst@example.com', 'password' => 'aushilfe123'], $token);
+$memberToken = call('POST', '/api/auth/login', ['email' => 'einst@example.com', 'password' => 'aushilfe123'])[1]['token'];
+expect('Einstellungen ohne Login → 401', call('GET', '/api/settings/all'), 401);
+expect('Einstellungen: Mitarbeiter ohne Zugriff → 403', call('GET', '/api/settings/all', null, $memberToken), 403);
+expect('Einstellungen speichern: Mitarbeiter → 403', call('PUT', '/api/settings/all', ['values' => ['COMPANY_PHONE' => '1']], $memberToken), 403);
+$res = call('GET', '/api/settings/all', null, $token);
+$st = ['groups' => array_column($res[1]['groups'] ?? [], null, 'id')];
+$fld = static function (array $groups, string $key): ?array {
+    foreach ($groups as $g) {
+        foreach ($g['fields'] as $f) {
+            if ($f['key'] === $key) {
+                return $f;
+            }
+        }
+    }
+    return null;
+};
+$groups = $res[1]['groups'] ?? [];
+check('Einstellungen: Gruppen Firma, Zahlung, E-Mail, Portal, Lizenzen, Backup', $res[0] === 200 && array_column($groups, 'id') === ['company', 'billing', 'mail', 'portal', 'license', 'backup'], $res[2]);
+check('Geheimnisse (SMTP-Passwort) werden nie ausgeliefert, nur „gesetzt“', $fld($groups, 'SMTP_PASSWORD')['isSet'] === true && $fld($groups, 'SMTP_PASSWORD')['value'] === '' && !str_contains($res[2], '"value":"secret') && !str_contains($res[2], 'test-secret'), $fld($groups, 'SMTP_PASSWORD'));
+check('Von der Server-Umgebung vorgegebene Werte sind gesperrt', $fld($groups, 'COMPANY_NAME')['locked'] === true && $fld($groups, 'COMPANY_NAME')['value'] === 'Ralph Design' && $fld($groups, 'COMPANY_PHONE')['locked'] === false, $fld($groups, 'COMPANY_NAME'));
+
+$res = call('PUT', '/api/settings/all', ['values' => ['COMPANY_PHONE' => '+49 40 123456', 'COMPANY_BANK' => 'Hamburger Sparkasse', 'COMPANY_NAME' => 'Hackerfirma', 'PAYMENT_DAYS' => '21', 'LICENSE_ALLOW_DEV' => 'false']], $token);
+expect('Einstellungen speichern', $res, 200);
+$groups = $res[1]['groups'];
+check('Gespeicherte Werte kommen zurück (Quelle: Einstellungen); gesperrte Felder bleiben unverändert', $fld($groups, 'COMPANY_PHONE')['value'] === '+49 40 123456' && $fld($groups, 'COMPANY_PHONE')['source'] === 'settings' && $fld($groups, 'COMPANY_NAME')['value'] === 'Ralph Design' && $fld($groups, 'PAYMENT_DAYS')['value'] === '21', $res[2]);
+$res = call('GET', '/api/portal/me', null, null, $OP);
+check('Neue Firmendaten wirken sofort (Portal zeigt die Telefonnummer)', ($res[1]['company']['phone'] ?? null) === '+49 40 123456', $res[2]);
+$settingsFile = "$tmp/settings.json";
+$saved = json_decode((string) file_get_contents($settingsFile), true);
+check('Einstellungsdatei: nur geänderte Werte, nicht lesbar für andere (0600)', is_array($saved) && $saved['COMPANY_PHONE'] === '+49 40 123456' && !isset($saved['COMPANY_NAME']) && !isset($saved['SMTP_PASSWORD']) && (fileperms($settingsFile) & 0077) === 0, [$saved, decoct(fileperms($settingsFile) & 0777)]);
+$res = call('PUT', '/api/settings/all', ['values' => ['PAYMENT_DAYS' => 'abc', 'MAIL_BCC' => 'kein-mail', 'REMINDER_FEE_1' => '-5', 'PORTAL_REGISTRATION' => 'vielleicht', 'TERMS_URL' => 'ftp://x', 'COMPANY_BIC' => str_repeat('x', 21)]], $token);
+$fe = (array) ($res[1]['details']['fieldErrors'] ?? []);
+check('Ungültige Werte werden Feld für Feld abgelehnt (nichts wird gespeichert)', $res[0] === 400 && count($fe) === 6 && json_decode((string) file_get_contents($settingsFile), true)['PAYMENT_DAYS'] === '21', $res[2]);
+expect('Unbekannte Einstellung → 400 (JWT_SECRET ist nicht änderbar)', call('PUT', '/api/settings/all', ['values' => ['JWT_SECRET' => 'x']], $token), 400);
+$res = call('PUT', '/api/settings/all', ['values' => ['BACKUP_PASSPHRASE' => 'neues-passwort-1']], $token);
+$f = $fld($res[1]['groups'], 'BACKUP_PASSPHRASE');
+check('Geheimnis speichern: „gesetzt“, nie im Klartext in der Antwort', $f['isSet'] === true && $f['value'] === '' && !str_contains($res[2], 'neues-passwort-1'), $res[2]);
+call('PUT', '/api/settings/all', ['values' => ['BACKUP_PASSPHRASE' => '']], $token);
+check('Leeres Geheimnis-Feld lässt den Wert unverändert', json_decode((string) file_get_contents($settingsFile), true)['BACKUP_PASSPHRASE'] === 'neues-passwort-1');
+$res = call('PUT', '/api/settings/all', ['values' => [], 'reset' => ['BACKUP_PASSPHRASE', 'COMPANY_PHONE', 'COMPANY_BANK', 'PAYMENT_DAYS', 'LICENSE_ALLOW_DEV']], $token);
+$saved = json_decode((string) file_get_contents($settingsFile), true);
+check('Zurücksetzen entfernt die eigenen Einstellungen', $res[0] === 200 && $saved === [], $saved);
+$res = call('PUT', '/api/settings/all', ['values' => ['COMPANY_PHONE' => '']], $token);
+check('Bewusst leerer Wert bleibt leer (überschreibt .env/Standard)', $fld($res[1]['groups'], 'COMPANY_PHONE')['source'] === 'settings' && $fld($res[1]['groups'], 'COMPANY_PHONE')['value'] === '');
+call('PUT', '/api/settings/all', ['values' => [], 'reset' => ['COMPANY_PHONE']], $token);
+
+// Test-Mail
+$before = count(mails());
+$res = call('POST', '/api/settings/test-mail', ['to' => 'inbox@test.example'], $token);
+$recent = array_slice(mails(), $before);
+check('Testmail wird zugestellt', $res[0] === 200 && count($recent) === 1 && str_contains($recent[0]['head'], 'X-Envelope-To: inbox@test.example') && str_contains(mailText($recent[0]), 'E-Mail-Versand funktioniert'), $res[2]);
+expect('Testmail: Server lehnt Empfänger ab → 502 mit Meldung', call('POST', '/api/settings/test-mail', ['to' => 'reject@test.example'], $token), 502);
+expect('Testmail: Mitarbeiter → 403', call('POST', '/api/settings/test-mail', [], $memberToken), 403);
+
+// Datenbank
+$res = call('GET', '/api/settings/all', null, $token);
+$dbInfo = $res[1]['database'];
+check('Datenbankstatus: Typ, Version, Zeilen', $dbInfo['driver'] === ($mysqlMode ? 'mysql' : 'sqlite') && $dbInfo['rows'] > 50 && $dbInfo['version'] !== '' && $dbInfo['locked'] === $mysqlMode, $dbInfo);
+expect('Datenbankwechsel ohne Bestätigung → 400', call('POST', '/api/settings/database/switch', ['target' => $mysqlMode ? 'sqlite' : 'mysql'], $token), 400);
+expect('Datenbankwechsel: Mitarbeiter → 403', call('POST', '/api/settings/database/switch', ['target' => 'mysql', 'confirm' => 'WECHSELN'], $memberToken), 403);
+try {
+    $mysqlPdo();
+    $mysqlUp = true;
+} catch (Throwable) {
+    $mysqlUp = false;
+}
+if ($mysqlMode) {
+    $res = call('POST', '/api/settings/database/switch', ['target' => 'sqlite', 'confirm' => 'WECHSELN'], $token);
+    check('Per Server-Umgebung festgelegte Datenbank lässt sich nicht umstellen → 409', $res[0] === 409 && str_contains($res[1]['error'], 'Server-Umgebung'), $res[2]);
+} elseif (!$mysqlUp) {
+    echo "  (MySQL nicht erreichbar – Wechsel-Tests übersprungen)\n";
+} else {
+    $swName = $newMysqlDb('switch');
+    $target = ['target' => 'mysql', 'host' => $my['host'], 'port' => (int) $my['port'], 'name' => $swName, 'user' => $my['user'], 'password' => $my['password']];
+    $res = call('POST', '/api/settings/database/test', ['password' => 'falsch'] + $target, $token);
+    check('Verbindungstest: falsches Passwort → verständliche Meldung', $res[0] === 400 && str_contains($res[1]['error'], 'Benutzer oder Passwort'), $res[2]);
+    $res = call('POST', '/api/settings/database/test', ['name' => 'gibt_es_nicht_xyz'] + $target, $token);
+    check('Verbindungstest: unbekannte Datenbank → verständliche Meldung', $res[0] === 400 && str_contains($res[1]['error'], 'gibt es nicht'), $res[2]);
+    $res = call('POST', '/api/settings/database/test', ['host' => 'bad host!'] + $target, $token);
+    expect('Verbindungstest: ungültiger Servername → 400', $res, 400);
+    $res = call('POST', '/api/settings/database/test', $target, $token);
+    check('Verbindungstest: erfolgreich, leere Zieldatenbank', $res[0] === 200 && $res[1]['ok'] === true && $res[1]['hasData'] === false && $res[1]['version'] !== '', $res[2]);
+    expect('Wechsel auf SQLite, obwohl SQLite aktiv ist → 409', call('POST', '/api/settings/database/switch', ['target' => 'sqlite', 'confirm' => 'WECHSELN'], $token), 409);
+
+    $clientsNow = call('GET', '/api/clients?pageSize=1', null, $token)[1]['meta']['total'];
+    $invoicesNow = call('GET', '/api/invoices?pageSize=1', null, $token)[1]['meta']['total'];
+    $licensesNow = call('GET', '/api/licenses?pageSize=1', null, $token)[1]['meta']['total'];
+    $sqliteBefore = (int) (new PDO('sqlite:' . "$tmp/test.db"))->query('SELECT COUNT(*) FROM Client')->fetchColumn();
+    $res = call('POST', '/api/settings/database/switch', $target + ['confirm' => 'WECHSELN'], $token);
+    check('Wechsel SQLite → MySQL: alle Tabellen übernommen, Vorab-Backup erstellt', $res[0] === 200 && $res[1]['driver'] === 'mysql' && $res[1]['rows'] > 50 && $res[1]['backup'] !== null, $res[2]);
+    $my2 = $mysqlPdo($swName);
+    check('Die MySQL-Datenbank enthält jetzt dieselben Kunden', (int) $my2->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientsNow && $clientsNow === $sqliteBefore, [$clientsNow, $sqliteBefore]);
+    $settingsAfter = json_decode((string) file_get_contents($settingsFile), true);
+    check('Zugang zur MySQL-Datenbank steht in der Einstellungsdatei (0600)', $settingsAfter['DB_DRIVER'] === 'mysql' && $settingsAfter['DB_NAME'] === $swName && (fileperms($settingsFile) & 0077) === 0);
+    $res = call('GET', '/api/settings/all', null, $token);
+    check('Angemeldet bleiben nach dem Wechsel (gleiches Token), Status zeigt MySQL ohne Passwort', $res[0] === 200 && $res[1]['database']['driver'] === 'mysql' && !str_contains($res[2], $my['password']) && $res[1]['database']['mysql']['passwordSet'] === true, $res[2]);
+    check('Daten bleiben vollständig lesbar (Kunden, Rechnungen, Lizenzen)', call('GET', '/api/clients?pageSize=1', null, $token)[1]['meta']['total'] === $clientsNow && call('GET', '/api/invoices?pageSize=1', null, $token)[1]['meta']['total'] === $invoicesNow && call('GET', '/api/licenses?pageSize=1', null, $token)[1]['meta']['total'] === $licensesNow);
+    $res = call('POST', '/api/clients', ['name' => 'Nur in MySQL', 'email' => 'mysql@wechsel.example'], $token);
+    $onlyMy = $res[1]['id'] ?? '';
+    check('Neue Daten landen in MySQL, nicht mehr in SQLite', $res[0] === 201 && (int) $my2->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 1 && (int) (new PDO('sqlite:' . "$tmp/test.db"))->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 0, $res[2]);
+    $res = call('POST', '/api/license/verify', ['key' => 'AAAAA-BBBBB-CCCCC-DDDDD-EEEEE', 'domain' => 'a.de', 'nonce' => 'abcdefgh12']);
+    check('Auch die öffentliche Lizenzprüfung arbeitet mit MySQL', $res[0] === 200 && isset($res[1]['signature']), $res[2]);
+    $res = call('POST', '/api/backups', [], $token);
+    $bz = new ZipArchive();
+    $bz->open("$tmp/backups/{$res[1]['name']}");
+    $bdb = "$tmp/mysql-backup.db";
+    file_put_contents($bdb, $bz->getFromName('database.sqlite'));
+    $bz->close();
+    $bpdo = new PDO('sqlite:' . $bdb);
+    check('Backup unter MySQL ist eine portable SQLite-Datei mit allen Daten', $res[0] === 201 && $bpdo->query('PRAGMA integrity_check')->fetchColumn() === 'ok' && (int) $bpdo->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 1, $res[2]);
+    unset($bpdo);
+    expect('Wechsel auf dieselbe MySQL-Datenbank → 409', call('POST', '/api/settings/database/switch', $target + ['confirm' => 'WECHSELN'], $token), 409);
+
+    // zurück zu SQLite: dort liegt noch der alte Stand
+    $res = call('POST', '/api/settings/database/test', ['target' => 'sqlite'], $token);
+    check('Test für SQLite meldet vorhandene Daten in der alten Datei', $res[0] === 200 && $res[1]['hasData'] === true, $res[2]);
+    $res = call('POST', '/api/settings/database/switch', ['target' => 'sqlite', 'confirm' => 'WECHSELN'], $token);
+    check('Zurück zu SQLite ohne Überschreib-Bestätigung → 409 (alte Datei bleibt)', $res[0] === 409 && is_file("$tmp/test.db"), $res[2]);
+    $res = call('POST', '/api/settings/database/switch', ['target' => 'sqlite', 'confirm' => 'WECHSELN', 'overwrite' => true], $token);
+    check('Wechsel MySQL → SQLite mit Bestätigung; die alte Datei wird beiseitegelegt', $res[0] === 200 && $res[1]['driver'] === 'sqlite' && $res[1]['oldFile'] !== null && count(array_filter(glob("$tmp/test.db.vor-wechsel-*"), static fn ($f) => !preg_match('/-(wal|shm)$/', $f))) === 1, $res[2]);
+    $back = new PDO('sqlite:' . "$tmp/test.db");
+    check('SQLite enthält wieder alles, auch den in MySQL angelegten Kunden', (int) $back->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 1 && (int) $back->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientsNow + 1 && $back->query('PRAGMA integrity_check')->fetchColumn() === 'ok');
+    unset($back);
+    check('Nach dem Zurückwechseln läuft alles weiter (gleiches Token)', call('GET', '/api/clients?pageSize=1', null, $token)[1]['meta']['total'] === $clientsNow + 1 && call('GET', '/api/settings/all', null, $token)[1]['database']['driver'] === 'sqlite');
+
+    // MySQL-Ziel mit Daten: nur mit Bestätigung überschreiben
+    $res = call('POST', '/api/settings/database/test', $target, $token);
+    check('Test meldet, dass die MySQL-Datenbank schon Daten enthält', $res[1]['hasData'] === true, $res[2]);
+    $res = call('POST', '/api/settings/database/switch', $target + ['confirm' => 'WECHSELN'], $token);
+    check('Wechsel auf eine MySQL-Datenbank mit Daten ohne Bestätigung → 409', $res[0] === 409, $res[2]);
+    call('POST', '/api/clients', ['name' => 'Nur in SQLite danach', 'email' => 's@wechsel.example'], $token);
+    $res = call('POST', '/api/settings/database/switch', $target + ['confirm' => 'WECHSELN', 'overwrite' => true], $token);
+    check('Mit Bestätigung wird die MySQL-Datenbank überschrieben und enthält den neuesten Stand', $res[0] === 200 && (int) $mysqlPdo($swName)->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in SQLite danach'")->fetchColumn() === 1, $res[2]);
+    // gespeichertes Passwort weiterverwenden
+    $res = call('POST', '/api/settings/database/switch', ['target' => 'sqlite', 'confirm' => 'WECHSELN', 'overwrite' => true], $token);
+    check('Und wieder zurück zu SQLite', $res[0] === 200 && call('GET', '/api/settings/all', null, $token)[1]['database']['driver'] === 'sqlite', $res[2]);
+    // unterbrochener Wechsel: kaputte Zugangsdaten ändern nichts
+    $res = call('POST', '/api/settings/database/switch', ['password' => 'falsch', 'confirm' => 'WECHSELN'] + $target, $token);
+    check('Fehlgeschlagener Wechsel (falsches Passwort) ändert nichts', $res[0] === 400 && call('GET', '/api/settings/all', null, $token)[1]['database']['driver'] === 'sqlite');
+    call('PUT', '/api/settings/all', ['values' => [], 'reset' => ['SMTP_HOST']], $token);
+}
 
 echo "Sicherheit\n";
 $forged = (static function () {

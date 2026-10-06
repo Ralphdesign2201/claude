@@ -128,7 +128,7 @@ final class LicenseService
             try {
                 return Db::insert('License', $data + ['licenseKey' => self::generateKey()]);
             } catch (\PDOException $e) {
-                if (!str_contains($e->getMessage(), 'UNIQUE constraint failed: License.licenseKey')) {
+                if (!Db::isUniqueViolation($e)) {
                     throw $e;
                 }
             }

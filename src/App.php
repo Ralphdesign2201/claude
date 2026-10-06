@@ -215,6 +215,11 @@ final class App
         $r->add('POST', '/api/orders/:id/reject', [OrdersController::class, 'reject']);
 
         $r->add('GET', '/api/settings', [SettingsController::class, 'show']);
+        $r->add('GET', '/api/settings/all', [SettingsController::class, 'all'], $admin);
+        $r->add('PUT', '/api/settings/all', [SettingsController::class, 'save'], $admin);
+        $r->add('POST', '/api/settings/test-mail', [SettingsController::class, 'testMail'], $admin);
+        $r->add('POST', '/api/settings/database/test', [SettingsController::class, 'databaseTest'], $admin);
+        $r->add('POST', '/api/settings/database/switch', [SettingsController::class, 'databaseSwitch'], $admin);
 
         $r->add('GET', '/api/contracts', [ContractsController::class, 'index']);
         $r->add('POST', '/api/contracts', [ContractsController::class, 'create']);
@@ -257,14 +262,14 @@ final class App
         }
 
         if ($e instanceof PDOException) {
-            $message = $e->getMessage();
-            if (str_contains($message, 'UNIQUE constraint failed')) {
+            $kind = \App\Support\Db::violationKind($e);
+            if ($kind === 'unique') {
                 return Response::json(['error' => 'Eintrag existiert bereits'], 409);
             }
-            if (str_contains($message, 'FOREIGN KEY constraint failed')) {
-                return Response::json(['error' => 'Referenzierter Datensatz existiert nicht'], 400);
+            if ($kind === 'foreign') {
+                return Response::json(['error' => 'Referenzierter Datensatz existiert nicht oder wird noch verwendet'], 400);
             }
-            if (str_contains($message, 'CHECK constraint failed') || str_contains($message, 'NOT NULL constraint failed')) {
+            if ($kind === 'invalid') {
                 return Response::json(['error' => 'Ungültige Daten'], 400);
             }
         }

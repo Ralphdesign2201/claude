@@ -11,3 +11,4 @@ database/outbox/
 backups/
 database/license.key
 database/*.key
+database/settings.json*

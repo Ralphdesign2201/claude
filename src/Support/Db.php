@@ -24,25 +24,129 @@ final class Db
         return $path;
     }
 
+    /** @return array{driver:string,host:string,port:int,name:string,user:string,password:string} */
+    public static function config(): array
+    {
+        return [
+            'driver' => strtolower(Env::get('DB_DRIVER', 'sqlite') ?? 'sqlite') === 'mysql' ? 'mysql' : 'sqlite',
+            'host' => Env::get('DB_HOST', '127.0.0.1') ?: '127.0.0.1',
+            'port' => Env::int('DB_PORT', 3306),
+            'name' => Env::get('DB_NAME', '') ?? '',
+            'user' => Env::get('DB_USER', '') ?? '',
+            'password' => Env::get('DB_PASSWORD', '') ?? '',
+        ];
+    }
+
+    public static function driver(): string
+    {
+        return self::config()['driver'];
+    }
+
+    public static function isMysql(): bool
+    {
+        return self::driver() === 'mysql';
+    }
+
+    /** Verwirft die offene Verbindung (nach dem Wechsel der Datenbank). */
+    public static function reset(): void
+    {
+        self::$pdo = null;
+        self::$depth = 0;
+    }
+
     public static function pdo(): PDO
     {
         if (self::$pdo !== null) {
             return self::$pdo;
         }
-        $path = self::path();
-        if (!is_dir(dirname($path))) {
-            mkdir(dirname($path), 0775, true);
+        $cfg = self::config();
+        if ($cfg['driver'] === 'sqlite') {
+            $cfg['path'] = self::path();
         }
-        $pdo = new PDO('sqlite:' . $path, null, null, [
+        return self::$pdo = self::connect($cfg);
+    }
+
+    /**
+     * Öffnet eine Verbindung. SQLite: ['driver' => 'sqlite', 'path' => …]; MySQL/MariaDB: host, port, name, user, password.
+     * MySQL läuft im Modus ANSI_QUOTES, damit dieselben SQL-Texte ("Spalte") wie bei SQLite funktionieren.
+     *
+     * @param array<string,mixed> $cfg
+     */
+    public static function connect(array $cfg): PDO
+    {
+        $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
+        ];
+        if (($cfg['driver'] ?? 'sqlite') === 'mysql') {
+            if (!extension_loaded('pdo_mysql')) {
+                throw new \RuntimeException('Die PHP-Erweiterung „pdo_mysql“ fehlt auf diesem Server.');
+            }
+            $options[PDO::ATTR_TIMEOUT] = 8;
+            $options[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET NAMES utf8mb4, time_zone = '+00:00', "
+                . "sql_mode = 'ANSI_QUOTES,NO_BACKSLASH_ESCAPES,STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION'";
+            $dsn = 'mysql:host=' . $cfg['host'] . ';port=' . (int) $cfg['port'] . ';dbname=' . $cfg['name'] . ';charset=utf8mb4';
+            return new PDO($dsn, (string) $cfg['user'], (string) $cfg['password'], $options);
+        }
+        $path = (string) $cfg['path'];
+        if (!is_dir(dirname($path))) {
+            mkdir(dirname($path), 0775, true);
+        }
+        $pdo = new PDO('sqlite:' . $path, null, null, $options);
         $pdo->exec('PRAGMA foreign_keys = ON');
         $pdo->exec('PRAGMA busy_timeout = 5000');
         $pdo->exec('PRAGMA journal_mode = WAL');
         $pdo->exec('PRAGMA synchronous = NORMAL');
-        return self::$pdo = $pdo;
+        return $pdo;
+    }
+
+    /** Ist der Fehler eine verletzte Eindeutigkeit (UNIQUE bzw. „Duplicate entry“)? */
+    public static function isUniqueViolation(Throwable $e): bool
+    {
+        $m = $e->getMessage();
+        return str_contains($m, 'UNIQUE constraint failed') || ($e instanceof \PDOException && (int) ($e->errorInfo[1] ?? 0) === 1062);
+    }
+
+    /** @return 'unique'|'foreign'|'invalid'|null */
+    public static function violationKind(Throwable $e): ?string
+    {
+        $m = $e->getMessage();
+        $code = $e instanceof \PDOException ? (int) ($e->errorInfo[1] ?? 0) : 0;
+        if (self::isUniqueViolation($e)) {
+            return 'unique';
+        }
+        if (str_contains($m, 'FOREIGN KEY constraint failed') || in_array($code, [1451, 1452], true)) {
+            return 'foreign';
+        }
+        if (str_contains($m, 'CHECK constraint failed') || str_contains($m, 'NOT NULL constraint failed') || in_array($code, [1048, 1364, 3819, 4025], true)) {
+            return 'invalid';
+        }
+        return null;
+    }
+
+    /** Übersetzt die wenigen SQLite-Eigenheiten der Abfragen für MySQL/MariaDB. */
+    private static function adapt(string $sql): string
+    {
+        if (!self::isMysql()) {
+            return $sql;
+        }
+        return str_replace([' COLLATE NOCASE', ' AS INTEGER)'], ['', ' AS SIGNED)'], $sql);
+    }
+
+    /** @param \PDOStatement $stmt */
+    private static function execute(\PDOStatement $stmt, array $params): void
+    {
+        $params = self::bind($params);
+        if (!self::isMysql()) {
+            $stmt->execute($params);
+            return;
+        }
+        // Native Prepared Statements von MySQL brauchen echte Ganzzahlen (z. B. bei LIMIT ?)
+        foreach ($params as $i => $v) {
+            $stmt->bindValue($i + 1, $v, is_int($v) ? PDO::PARAM_INT : ($v === null ? PDO::PARAM_NULL : PDO::PARAM_STR));
+        }
+        $stmt->execute();
     }
 
     public static function newId(): string
@@ -53,8 +157,8 @@ final class Db
     /** @return list<array<string,mixed>> */
     public static function all(string $sql, array $params = []): array
     {
-        $stmt = self::pdo()->prepare($sql);
-        $stmt->execute(self::bind($params));
+        $stmt = self::pdo()->prepare(self::adapt($sql));
+        self::execute($stmt, $params);
         return array_map([self::class, 'nest'], $stmt->fetchAll());
     }
 
@@ -66,16 +170,16 @@ final class Db
 
     public static function value(string $sql, array $params = []): mixed
     {
-        $stmt = self::pdo()->prepare($sql);
-        $stmt->execute(self::bind($params));
+        $stmt = self::pdo()->prepare(self::adapt($sql));
+        self::execute($stmt, $params);
         $value = $stmt->fetchColumn();
         return $value === false ? null : $value;
     }
 
     public static function run(string $sql, array $params = []): int
     {
-        $stmt = self::pdo()->prepare($sql);
-        $stmt->execute(self::bind($params));
+        $stmt = self::pdo()->prepare(self::adapt($sql));
+        self::execute($stmt, $params);
         return $stmt->rowCount();
     }
 
@@ -132,17 +236,42 @@ final class Db
         if (self::$depth > 0) {
             return $fn();
         }
-        $pdo->exec('BEGIN IMMEDIATE');
+        $mysql = self::isMysql();
+        $lock = null;
+        if ($mysql) {
+            // Wie bei SQLite soll immer nur ein Schreibvorgang gleichzeitig laufen (Nummernvergabe, Zähler)
+            $lock = 'crm-write-' . substr(sha1(self::config()['name']), 0, 12);
+            $got = $pdo->prepare('SELECT GET_LOCK(?, 15)');
+            $got->execute([$lock]);
+            if ((int) $got->fetchColumn() !== 1) {
+                throw new \RuntimeException('Die Datenbank ist gerade belegt – bitte erneut versuchen.');
+            }
+            $pdo->exec('START TRANSACTION');
+        } else {
+            $pdo->exec('BEGIN IMMEDIATE');
+        }
         self::$depth++;
         try {
             $result = $fn();
             $pdo->exec('COMMIT');
             return $result;
         } catch (Throwable $e) {
-            $pdo->exec('ROLLBACK');
+            try {
+                $pdo->exec('ROLLBACK');
+            } catch (Throwable) {
+                // Verbindung weg: nichts mehr zu tun
+            }
             throw $e;
         } finally {
             self::$depth--;
+            if ($lock !== null) {
+                try {
+                    $rel = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+                    $rel->execute([$lock]);
+                } catch (Throwable) {
+                    // Sperre verfällt mit der Verbindung
+                }
+            }
         }
     }
 

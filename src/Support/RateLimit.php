@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
-/** Festes Zeitfenster pro Schlüssel, gespeichert in SQLite (funktioniert auch ohne APCu/Redis). */
+/** Festes Zeitfenster pro Schlüssel, gespeichert in der Datenbank (funktioniert auch ohne APCu/Redis). */
 final class RateLimit
 {
     /** Zählt einen Treffer und gibt die Anzahl im aktuellen Fenster zurück. */
@@ -15,8 +15,11 @@ final class RateLimit
             $row = Db::one('SELECT "windowStart", "hits" FROM "RateLimit" WHERE "key" = ?', [$key]);
             if ($row === null || $row['windowStart'] + $windowSeconds <= $now) {
                 Db::run(
-                    'INSERT INTO "RateLimit" ("key", "windowStart", "hits") VALUES (?, ?, 1)
-                     ON CONFLICT("key") DO UPDATE SET "windowStart" = excluded."windowStart", "hits" = 1',
+                    Db::isMysql()
+                        ? 'INSERT INTO "RateLimit" ("key", "windowStart", "hits") VALUES (?, ?, 1)
+                           ON DUPLICATE KEY UPDATE "windowStart" = VALUES("windowStart"), "hits" = 1'
+                        : 'INSERT INTO "RateLimit" ("key", "windowStart", "hits") VALUES (?, ?, 1)
+                           ON CONFLICT("key") DO UPDATE SET "windowStart" = excluded."windowStart", "hits" = 1',
                     [$key, $now],
                 );
                 if (random_int(1, 100) === 1) {

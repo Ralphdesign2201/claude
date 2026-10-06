@@ -8,6 +8,7 @@ use App\Controllers\DocumentsController;
 use App\Http\ApiError;
 use App\Support\Dates;
 use App\Support\Db;
+use App\Support\DatabaseTransfer;
 use App\Support\Env;
 use PDO;
 use RuntimeException;
@@ -64,7 +65,11 @@ final class BackupService
 
         try {
             // Konsistenter Schnappschuss, ohne die laufende Anwendung zu blockieren
-            Db::pdo()->exec('VACUUM INTO ' . Db::pdo()->quote($snapshot));
+            if (Db::isMysql()) {
+                DatabaseTransfer::exportToSqlite(Db::pdo(), $snapshot); // das Backup bleibt eine portable SQLite-Datei
+            } else {
+                Db::pdo()->exec('VACUUM INTO ' . Db::pdo()->quote($snapshot));
+            }
             self::assertHealthy($snapshot);
             $dbHash = hash_file('sha256', $snapshot);
 
@@ -236,24 +241,34 @@ final class BackupService
             throw new RuntimeException('Prüfsumme der Datenbank stimmt nicht – das Backup ist beschädigt.');
         }
 
-        $target = Db::path();
-        $targetDir = self::ensureDir(dirname($target));
+        $mysql = Db::isMysql();
+        $target = $mysql ? 'MySQL/MariaDB (' . Db::config()['name'] . ')' : Db::path();
+        $targetDir = self::ensureDir($mysql ? self::dir() : dirname($target));
         $incoming = $targetDir . '/.restore-' . bin2hex(random_bytes(6)) . '.db';
         file_put_contents($incoming, $dbBytes);
         try {
             self::assertHealthy($incoming);
 
             $safety = null;
-            if (is_file($target)) {
-                $safety = self::dir() . '/vor-wiederherstellung-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(2)) . '.sqlite';
-                $old = new PDO('sqlite:' . $target);
-                $old->exec('VACUUM INTO ' . $old->quote($safety));
-                unset($old);
-            }
-            @unlink($target . '-wal');
-            @unlink($target . '-shm');
-            if (!rename($incoming, $target)) {
-                throw new RuntimeException('Datenbank konnte nicht ersetzt werden.');
+            if ($mysql) {
+                $pdo = Db::pdo();
+                if (DatabaseTransfer::hasData($pdo)) {
+                    $safety = self::dir() . '/vor-wiederherstellung-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(2)) . '.sqlite';
+                    DatabaseTransfer::exportToSqlite($pdo, $safety);
+                }
+                DatabaseTransfer::importFromSqlite($incoming, $pdo, 'mysql');
+            } else {
+                if (is_file($target)) {
+                    $safety = self::dir() . '/vor-wiederherstellung-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(2)) . '.sqlite';
+                    $old = new PDO('sqlite:' . $target);
+                    $old->exec('VACUUM INTO ' . $old->quote($safety));
+                    unset($old);
+                }
+                @unlink($target . '-wal');
+                @unlink($target . '-shm');
+                if (!rename($incoming, $target)) {
+                    throw new RuntimeException('Datenbank konnte nicht ersetzt werden.');
+                }
             }
         } finally {
             if (is_file($incoming)) {
