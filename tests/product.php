@@ -582,6 +582,31 @@ expect('Update-Anspruch vor Erscheinen der Version abgelaufen → 404', call($vp
 call($vp, 'PATCH', '/api/licenses/' . $okSup['id'], ['status' => 'REVOKED'], $A);
 expect('Gesperrte Lizenz → 403', call($vp, 'GET', '/api/portal/licenses/' . $okSup['id'] . '/download', null, null, $PH), 403);
 call($vp, 'DELETE', '/api/releases/' . $r5[1]['id'], null, $A);
+// Release und Vollpaket direkt aus dem Server erstellen (ohne Kommandozeile)
+$si = call($vp, 'GET', '/api/releases/self', null, $A);
+check('Server nennt seine Version und ob schon ein Release existiert', $si[0] === 200 && $si[1]['version'] === '0.1.0-beta' && $si[1]['released'] === false, $si[2]);
+$dlLic = $issue(['domain' => 'download.example.com']);
+$res = call($vp, 'POST', '/api/releases/build-self', ['channel' => 'stable', 'published' => true, 'notes' => 'Erste Beta'], $A);
+check('Ein Klick: Release (signiert) und Vollpaket entstehen und sind veröffentlicht', $res[0] === 201 && $res[1]['version'] === '0.1.0-beta' && $res[1]['hasFull'] === true && $res[1]['isPublished'] === true, $res[2]);
+$pl = array_values(array_filter(call($vp, 'GET', '/api/portal/licenses', null, null, $PH)[1], static fn ($x) => $x['id'] === $dlLic['id']))[0];
+$sdl = call($vp, 'GET', '/api/portal/licenses/' . $dlLic['id'] . '/download', null, null, $PH);
+$zz = new ZipArchive();
+$tmpz = "$tmp/self-full.zip";
+file_put_contents($tmpz, $sdl[2]);
+$okZip = $zz->open($tmpz) === true;
+$pj = $okZip ? json_decode((string) $zz->getFromName('crm/product.json'), true) : [];
+check('Portal-Download: ZIP mit install.php, product.json (Server, öffentlicher Schlüssel, Lizenzpflicht)', $sdl[0] === 200 && $okZip && $zz->locateName('crm/public/install.php') !== false && $pj['server'] === 'https://lizenz.example.com' && $pj['publicKeys'] === [$pubKey['publicKey']] && $pj['enforce'] === true && ($pl['download']['version'] ?? '') === '0.1.0-beta', [$sdl[0], $pj]);
+check('Vollpaket enthält weder Datenbank noch Schlüssel noch .env', $okZip && !preg_grep('/\.db$|license\.key|(^|\/)\.env$|settings\.json|Lizenz-tools|tests\//', array_map(static fn ($i) => $zz->getNameIndex($i), range(0, $zz->numFiles - 1))));
+$zz->close();
+expect('Dieselbe Version nochmal: Vollpaket wird nur ersetzt (kein Duplikat)', call($vp, 'POST', '/api/releases/build-self', ['published' => true], $A), 201);
+$vdbs = new PDO('sqlite:' . "$tmp/vendor.db");
+check('… es gibt weiterhin genau ein Release dieser Version', (int) $vdbs->query("SELECT COUNT(*) FROM \"Release\" WHERE version = '0.1.0-beta'")->fetchColumn() === 1);
+$selfRel = call($vp, 'GET', '/api/releases', null, $A)[1];
+foreach ($selfRel as $x) {
+    if ($x['version'] === '0.1.0-beta') {
+        call($vp, 'DELETE', '/api/releases/' . $x['id'], null, $A);
+    }
+}
 foreach ([$r1, $r2, $r3, $licOnly] as $rr) {
     call($vp, 'DELETE', '/api/releases/' . $rr[1]['id'], null, $A);
 }

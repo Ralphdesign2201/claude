@@ -198,6 +198,8 @@ final class App
         $r->add('POST', '/api/license/download', [LicenseApiController::class, 'download'], $pub);
         $r->add('GET', '/api/releases', [ReleasesController::class, 'index'], $admin);
         $r->add('POST', '/api/releases', [ReleasesController::class, 'create'], $admin);
+        $r->add('GET', '/api/releases/self', [ReleasesController::class, 'selfInfo'], $admin);
+        $r->add('POST', '/api/releases/build-self', [ReleasesController::class, 'buildSelf'], $admin);
         $r->add('POST', '/api/releases/:id/full', [ReleasesController::class, 'uploadFull'], $admin);
         $r->add('PATCH', '/api/releases/:id', [ReleasesController::class, 'update'], $admin);
         $r->add('DELETE', '/api/releases/:id', [ReleasesController::class, 'delete'], $admin);

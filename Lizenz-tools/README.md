@@ -59,6 +59,8 @@ Rücksicherung von Hand: `php bin/update.php --rollback=backups/code-vor-update-
 
 ### Software-Download für Kunden (Vollpaket)
 
+**Ohne Kommandozeile:** Im Admin unter Lizenzen → Releases & Updates erstellt der Knopf **„Release und Vollpaket erstellen“** beides in einem Klick aus den Dateien des Servers (Version = Datei `VERSION`). Voraussetzung: die „Öffentliche Adresse“ (https) ist in den Einstellungen eingetragen.
+
 Nach der Zahlung sieht der Kunde im Portal bei seiner Lizenz den Schlüssel **und** den Knopf „Software herunterladen“. Damit der Knopf erscheint:
 
 1. Vollpaket bauen: `php Lizenz-tools/build-product.php crm --server=https://lizenz.deine-domain.de --key-file=database/license.key` → `Lizenz-tools/dist/crm-<Version>.zip`

@@ -947,8 +947,18 @@
     return '<div class="chips" style="margin-bottom:-6px">' + [['licenses', 'Lizenzen'], ['releases', 'Releases & Updates']].map(function (c) { return '<button class="chip" data-act="ltab" data-v="' + c[0] + '" aria-pressed="' + (ui.ltab === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>';
   }
   function vReleases() {
-    return api('GET', '/api/releases').then(function (list) {
-      return head('Lizenzen', 'Update-Pakete für deine Software. Nur Lizenzen mit gültigem Update-Zeitraum können sie laden.') + ltabs() +
+    return Promise.all([api('GET', '/api/releases'), api('GET', '/api/releases/self')]).then(function (all) {
+      var list = all[0], me2 = all[1];
+      var state = me2.released ? (me2.hasFull ? '<span class="pill good">Release und Vollpaket vorhanden</span>' : '<span class="pill warn">Release vorhanden, Vollpaket fehlt</span>') : '<span class="pill neutral">noch nicht erstellt</span>';
+      var selfBox = '<form class="card stack" id="selfform" novalidate><h2>Version aus diesem Server erstellen <span class="sub">– ohne Kommandozeile</span></h2>' +
+        '<p style="margin:0">Dieser Server hat die Version <b>' + esc(me2.version) + '</b> · ' + state + '</p>' +
+        '<div class="sub">Ein Klick erstellt das signierte Update-Paket <b>und</b> das Vollpaket (Erstinstallation für das Kundenportal) aus den Dateien dieses Servers. Das Vollpaket verweist auf <b class="mono">' + esc(me2.serverUrl || '– Adresse fehlt –') + '</b> als Lizenzserver.</div>' +
+        (me2.serverUrl ? '' : '<div class="note err">Bitte zuerst unter Einstellungen → Kundenportal die „Öffentliche Adresse“ (https://…) eintragen.</div>') +
+        '<div class="form">' + selectField('self-channel', 'Kanal', [['stable', 'Stabil'], ['beta', 'Beta']], 'stable') + selectField('self-access', 'Wer darf Updates laden?', [['licensed', 'Nur Kunden mit Update-Anspruch'], ['public', 'Jeder – auch ohne Lizenz']], 'licensed') +
+        '<label class="full" for="self-notes">Änderungen (Kunden sehen das vor dem Update)<textarea id="self-notes" rows="3" placeholder="• Neu: …"></textarea></label>' +
+        '<label style="flex-direction:row;align-items:center;gap:8px"><input id="self-pub" type="checkbox" checked> Sofort veröffentlichen</label></div>' +
+        '<div><button type="submit" class="btn primary" id="self-send"' + (me2.serverUrl ? '' : ' disabled') + '>' + (me2.released && !me2.hasFull ? 'Vollpaket erstellen' : me2.released ? 'Vollpaket neu erstellen' : 'Release und Vollpaket erstellen') + '</button></div></form>';
+      return head('Lizenzen', 'Update-Pakete für deine Software. Nur Lizenzen mit gültigem Update-Zeitraum können sie laden.') + ltabs() + selfBox +
         '<form class="card stack" id="relform" novalidate><h2>Neue Version hochladen</h2><div class="sub">Paket bauen: <span class="mono">php Lizenz-tools/build-release.php crm</span> – es liegt danach unter <span class="mono">Lizenz-tools/releases/</span>. Der Server prüft das Paket und signiert es mit deinem geheimen Lizenzschlüssel.</div>' +
         '<div class="form"><label class="full">Paket (ZIP)<input id="rel-file" type="file" accept=".zip"></label>' + selectField('rel-channel', 'Kanal', [['stable', 'Stabil'], ['beta', 'Beta (nur wer es wünscht)']], 'stable') +
         selectField('rel-access', 'Wer darf laden?', [['licensed', 'Nur Kunden mit gültigem Update-Anspruch'], ['public', 'Jeder – auch ohne Lizenz (z. B. Beta-Version)']], 'licensed') +
@@ -1695,6 +1705,12 @@
       if (e.target.checked && !$('#lg-override').value.trim()) $('#lg-override').value = legalAdoptText;
       legalPreview();
     } else if (e.target.closest && e.target.closest('#legalform')) legalPreview();
+  });
+  document.addEventListener('submit', function (e) {
+    if (e.target.id !== 'selfform') return;
+    e.preventDefault();
+    var btn = $('#self-send'); btn.disabled = true; btn.textContent = 'Wird erstellt …';
+    api('POST', '/api/releases/build-self', { channel: $('#self-channel').value, access: $('#self-access').value, notes: $('#self-notes').value.trim(), published: $('#self-pub').checked }).then(function (r) { done('Version ' + r.version + ' erstellt – Release und Vollpaket sind bereit'); }).catch(function (err) { btn.disabled = false; toast(err.message); render(); });
   });
   document.addEventListener('submit', function (e) {
     if (e.target.id !== 'relform') return;

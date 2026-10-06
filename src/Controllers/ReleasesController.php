@@ -38,6 +38,28 @@ final class ReleasesController
         return Response::json(self::view($release), 201);
     }
 
+    /** Welche Version dieser Server gerade ist und ob daraus gebaut werden kann. */
+    public static function selfInfo(Request $r): Response
+    {
+        $i = \App\Services\PackageBuilder::info();
+        $row = Db::one('SELECT "id", "fullSize", "published" FROM "Release" WHERE "product" = ? AND "version" = ?', [$i['product'], $i['version']]);
+
+        return Response::json($i + ['released' => $row !== null, 'hasFull' => $row !== null && $row['fullSize'] !== null, 'published' => $row !== null && (int) $row['published'] === 1]);
+    }
+
+    /** Release und Vollpaket der aktuellen Version aus diesem Server erstellen (ohne Kommandozeile). */
+    public static function buildSelf(Request $r): Response
+    {
+        set_time_limit(300);
+        $b = TicketsController::form($r);
+        $release = \App\Services\PackageBuilder::publish(
+            TicketsController::enum($b, 'channel', ['stable', 'beta'], 'stable'), TicketsController::text($b, 'notes', 10000),
+            TicketsController::flag($b, 'published'), TicketsController::enum($b, 'access', ['public', 'licensed'], 'licensed'), TicketsController::text($b, 'minFrom', 30),
+        );
+
+        return Response::json(self::view($release), 201);
+    }
+
     /** Vollpaket (Erstinstallation) zu einer bestehenden Version hochladen oder ersetzen. */
     public static function uploadFull(Request $r): Response
     {
