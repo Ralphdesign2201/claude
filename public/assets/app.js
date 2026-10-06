@@ -72,7 +72,7 @@
   var listAll = function (path, params) { return api('GET', path + qs(Object.assign({ pageSize: 100 }, params || {}))).then(function (r) { return r.items; }); };
 
   /* ---------- Zustand ---------- */
-  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', lstatus: '', lsearch: '', orderId: null, pending: 0 };
+  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
 
   /* ---------- Rechnungs-Hilfen ---------- */
   function shownStatus(inv) {
@@ -122,11 +122,20 @@
   function renderShell() {
     if (!$('#main')) {
       $('#root').innerHTML = '<div class="app"><aside class="side"><div class="brand"><i>W</i><span>Webdesigner CRM</span></div><nav class="nav" id="nav" aria-label="Bereiche"></nav>' +
-        '<div class="side-foot"><div class="user"><span class="avatar" id="sb-avatar"></span><span id="sb-name"></span></div><button class="btn sm" data-act="logout">Abmelden</button></div></aside><main class="main" id="main"></main></div>';
+        '<div class="side-foot"><div class="user"><span class="avatar" id="sb-avatar"></span><span id="sb-name"></span></div><button class="btn sm" data-act="logout">Abmelden</button></div></aside>' +
+        '<div class="col"><header class="topbar" id="topbar"></header><main class="main" id="main"></main></div></div>';
     }
     $('#sb-avatar').textContent = (me.name || '?').split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
     $('#sb-name').innerHTML = esc(me.name) + '<br><span class="sub">' + (me.role === 'ADMIN' ? 'Admin' : 'Mitarbeiter') + '</span>';
     drawNav();
+    drawTopbar();
+  }
+  /** Kopfleiste mit dem Einstellungs-Knopf rechts (nur für Admins, nur sie dürfen Einstellungen ändern). */
+  function drawTopbar() {
+    var bar = $('#topbar'); if (!bar) return;
+    bar.innerHTML = me && me.role === 'ADMIN'
+      ? '<button class="btn sm settings-btn" data-act="nav" data-v="settings" aria-label="Einstellungen"' + (ui.view === 'settings' ? ' aria-current="page"' : '') + '><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Einstellungen</span></button>'
+      : '';
   }
   function drawNav() {
     $('#nav').innerHTML = navItems().map(function (n) {
@@ -464,6 +473,123 @@
     });
   }
 
+
+  /* ---------- Einstellungen ---------- */
+  function settingField(f) {
+    var id = 'set-' + f.key, dis = f.locked ? ' disabled' : '';
+    var hint = f.locked ? 'Vom Server vorgegeben (Umgebungsvariable) – hier nicht änderbar.' : f.source === 'file' ? 'Aktuell aus der Datei .env; ein hier gespeicherter Wert hat Vorrang.' : (f.help || '');
+    var reset = !f.locked && f.source === 'settings' ? ' <button type="button" class="link" data-act="set-reset" data-key="' + esc(f.key) + '">zurücksetzen</button>' : '';
+    var lab = '<label class="' + (f.type === 'lines' || f.type === 'bool' ? 'full' : '') + '" for="' + id + '">';
+    var ph = f['default'] ? ' placeholder="' + esc(f['default']) + '"' : '';
+    var data = ' data-key="' + esc(f.key) + '" data-type="' + f.type + '" data-initial="' + esc(f.value) + '"';
+    var tail = (hint ? '<span class="sub" style="font-weight:400">' + esc(hint) + '</span>' : '');
+    if (f.type === 'bool') {
+      var on = f.value === '' ? f['default'] === 'true' : /^(1|true|yes|on)$/i.test(f.value);
+      return '<label class="full" for="' + id + '" style="flex-direction:row;align-items:center;gap:8px"><input id="' + id + '" type="checkbox"' + data + ' data-initial="' + (on ? 'true' : 'false') + '"' + (on ? ' checked' : '') + dis + '> ' + esc(f.label) + reset + '</label>' + (hint ? '<div class="sub full" style="margin-top:-6px">' + esc(hint) + '</div>' : '');
+    }
+    if (f.type === 'select') {
+      var cur = f.value || f['default'] || '';
+      return lab + esc(f.label) + reset + '<select id="' + id + '"' + data + dis + '>' + f.options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>' + tail + '</label>';
+    }
+    if (f.type === 'lines') return lab + esc(f.label) + reset + '<textarea id="' + id + '" rows="3"' + data + dis + '>' + esc(f.value) + '</textarea>' + tail + '</label>';
+    if (f.type === 'secret') {
+      return lab + esc(f.label) + (f.isSet ? ' <span class="pill good">gesetzt</span>' : '') + reset + '<input id="' + id + '" type="password" autocomplete="new-password"' + data + ' data-initial=""' + dis + ' placeholder="' + (f.isSet ? '•••••••• (leer lassen = unverändert)' : 'nicht gesetzt') + '">' + tail + '</label>';
+    }
+    var type = f.type === 'int' || f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : 'text';
+    var attrs = (f.type === 'int' ? ' step="1"' : f.type === 'number' ? ' step="0.01"' : '') + (f.min != null && type === 'number' ? ' min="' + f.min + '"' : '') + (f.max != null && type === 'number' ? ' max="' + f.max + '"' : '') + (type === 'text' && f.max ? ' maxlength="' + f.max + '"' : '');
+    return lab + esc(f.label) + reset + '<input id="' + id + '" type="' + type + '" value="' + esc(f.value) + '"' + attrs + data + dis + ph + (f.type === 'url' ? ' placeholder="https://"' : '') + ' autocapitalize="off" spellcheck="false">' + tail + '</label>';
+  }
+
+  function settingsCard(g, mail) {
+    var extra = '';
+    if (g.id === 'mail') {
+      extra = '<div class="row" style="margin-top:12px;align-items:center"><button type="button" class="btn sm" data-act="test-mail">Testmail senden</button>' +
+        (mail.configured ? '<span class="pill good">eingerichtet · Absender ' + esc(mail.from) + '</span>' : '<span class="pill warn">noch nicht eingerichtet</span>') + '</div><div class="sub" style="margin-top:6px">Speichere zuerst, dann sende die Testmail – sie nutzt die gespeicherten Angaben.</div>';
+    }
+    return '<section class="card stack" id="sec-' + g.id + '"><h2>' + esc(g.title) + '</h2>' + (g.intro ? '<p class="sub" style="margin:0">' + esc(g.intro) + '</p>' : '') +
+      '<form class="set-form" data-group="' + g.id + '" novalidate><div class="form">' + g.fields.map(settingField).join('') + '</div>' +
+      '<div class="row" style="margin-top:14px;justify-content:flex-end"><button type="submit" class="btn primary">Speichern</button></div></form>' + extra + '</section>';
+  }
+
+  function dbCard(d) {
+    var my = d.mysql, isMy = d.driver === 'mysql';
+    var cur = isMy
+      ? '<span class="pill good">MySQL / MariaDB</span> <span class="sub">' + esc(my.user) + '@' + esc(my.host) + ':' + my.port + ' · Datenbank ' + esc(my.name) + ' · Version ' + esc(d.version) + '</span>'
+      : '<span class="pill good">SQLite</span> <span class="sub">Datei ' + esc(d.sqlitePath) + ' · ' + fsize(d.size || 0) + ' · Version ' + esc(d.version) + '</span>';
+    var body = '<p style="margin:0">Aktuell in Benutzung: ' + cur + '</p><div class="sub">' + d.rows.toLocaleString('de-DE') + ' Datensätze in ' + d.tables + ' Tabellen.</div>';
+    if (d.locked) {
+      return '<section class="card stack" id="sec-database"><h2>Datenbank</h2>' + body + '<div class="note err" style="background:var(--surface-2);color:var(--muted)">Die Datenbank ist über die Server-Umgebung (<span class="mono">DB_DRIVER</span>) festgelegt. Zum Wechseln dort die Variablen ändern.</div></section>';
+    }
+    var form = '<form class="set-form db-form" id="dbform" novalidate><div class="form">' +
+      field('db-host', 'Server', my.host || 'localhost', 'text', { attrs: 'autocapitalize="off" spellcheck="false" placeholder="localhost"' }) + field('db-port', 'Port', my.port || 3306, 'number', { attrs: 'min="1" max="65535"' }) +
+      field('db-name', 'Datenbankname', my.name || '', 'text', { attrs: 'autocapitalize="off" spellcheck="false"' }) + field('db-user', 'Benutzer', my.user || '', 'text', { attrs: 'autocapitalize="off" spellcheck="false" autocomplete="off"' }) +
+      '<label class="full" for="db-pass">Passwort' + (my.passwordSet ? ' <span class="pill good">gespeichert</span>' : '') + '<input id="db-pass" type="password" autocomplete="new-password" placeholder="' + (my.passwordSet ? '•••••••• (leer lassen = gespeichertes verwenden)' : '') + '"></label></div>' +
+      '<div class="row" style="margin-top:12px"><button type="button" class="btn" data-act="db-test" data-target="mysql">Verbindung testen</button><button type="button" class="btn primary" data-act="db-switch" data-target="mysql">' + (isMy ? 'Zu dieser MySQL-Datenbank wechseln …' : 'Zu MySQL wechseln …') + '</button></div><div id="db-result" style="margin-top:10px"></div></form>';
+    return '<section class="card stack" id="sec-database"><h2>Datenbank</h2>' + body +
+      '<p class="sub" style="margin:0">Du kannst jederzeit zwischen SQLite (eine Datei, keine Einrichtung) und MySQL/MariaDB (z. B. beim Hosting-Paket) wechseln – in beide Richtungen. Beim Wechsel wird <b>alles</b> übernommen (Kunden, Rechnungen, Lizenzen, Benutzer …), vorher entsteht ein Backup, und die bisherige Datenbank bleibt unverändert als Rückfall erhalten. Du bleibst angemeldet. Bitte während des Wechsels (wenige Sekunden) nichts bearbeiten.</p>' +
+      (isMy ? '<div class="row"><button type="button" class="btn" data-act="db-switch" data-target="sqlite">Zurück zu SQLite wechseln …</button></div>' : '') +
+      '<h3 style="margin:6px 0 0;font-size:14px">' + (isMy ? 'Zu einer anderen MySQL-Datenbank wechseln' : 'Zu MySQL / MariaDB wechseln') + '</h3>' + form +
+      '<div class="sub">Die Zugangsdaten werden in <span class="mono">' + esc(settingsFile) + '</span> gespeichert (nur für den Server lesbar). Die Datenbank im Hosting-Panel muss vorher angelegt sein; der Benutzer braucht das Recht, Tabellen anzulegen.</div></section>';
+  }
+  var settingsFile = 'database/settings.json';
+
+  function vSettings() {
+    return api('GET', '/api/settings/all').then(function (res) {
+      settingsFile = res.file || settingsFile;
+      var chips = res.groups.map(function (g) { return [g.id, g.title]; }).concat([['database', 'Datenbank']]);
+      return head('Einstellungen', 'Firmendaten, E-Mail, Portal und Datenbank – alles an einem Ort. Änderungen gelten sofort.') +
+        '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="set-jump" data-v="' + c[0] + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
+        res.groups.map(function (g) { return settingsCard(g, res.mail); }).join('') + dbCard(res.database);
+    });
+  }
+
+  function settingsValues(form) {
+    var values = {};
+    form.querySelectorAll('[data-key]').forEach(function (el) {
+      if (el.disabled) return;
+      var v = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value;
+      if (el.dataset.type === 'secret') { if (v !== '') values[el.dataset.key] = v; return; }
+      if (el.dataset.type !== 'select' && el.dataset.type !== 'bool' && el.dataset.type !== 'lines') v = v.trim();
+      if (v !== el.dataset.initial) values[el.dataset.key] = v;
+    });
+    return values;
+  }
+  function dbInput() {
+    return { host: v($('#dbform'), 'db-host'), port: parseInt(v($('#dbform'), 'db-port'), 10) || 3306, name: v($('#dbform'), 'db-name'), user: v($('#dbform'), 'db-user'), password: $('#db-pass').value, keepPassword: true };
+  }
+  function dbTest(target) {
+    var box = $('#db-result');
+    var body = target === 'mysql' ? Object.assign({ target: 'mysql' }, dbInput()) : { target: 'sqlite' };
+    if (box) box.innerHTML = '<span class="sub">Prüfe …</span>';
+    return api('POST', '/api/settings/database/test', body).then(function (r) {
+      if (box) box.innerHTML = '<div class="note ok">Verbindung steht' + (r.version ? ' (Version ' + esc(r.version) + ')' : '') + '. ' + (r.hasData ? 'Die Datenbank enthält bereits Daten.' : r.hasTables ? 'Die Datenbank enthält leere Tabellen.' : 'Die Datenbank ist leer – bereit.') + '</div>';
+      return r;
+    }).catch(function (err) { if (box) box.innerHTML = '<div class="note err">' + esc(err.message) + '</div>'; throw err; });
+  }
+  function dbSwitchDialog(target) {
+    var body = target === 'mysql' ? Object.assign({ target: 'mysql' }, dbInput()) : { target: 'sqlite' };
+    dbTest(target).then(function (t) {
+      if (t.same) return toast('Diese Datenbank ist bereits aktiv.');
+      var name = target === 'mysql' ? 'MySQL/MariaDB' : 'SQLite';
+      modal('Zu ' + name + ' wechseln',
+        '<p style="margin:0">Alle Daten werden nach <b>' + name + '</b> kopiert und danach geprüft. Vorher wird ein Backup erstellt, die bisherige Datenbank bleibt unverändert bestehen. Du bleibst angemeldet.</p>' +
+        (t.hasData ? '<div class="errbox" style="margin-top:10px;display:block"><b>Das Ziel enthält schon Daten.</b><br>' + (target === 'sqlite' ? 'Die vorhandene SQLite-Datei wird vorher beiseitegelegt (Endung „.vor-wechsel-…“) und dann durch den aktuellen Stand ersetzt.' : 'Sie werden durch den aktuellen Stand <b>ersetzt</b>.') + '</div><label style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input id="db-overwrite" type="checkbox"> Ja, vorhandene Daten im Ziel überschreiben</label>' : '') +
+        '<p class="sub" style="margin:10px 0 0">Der Vorgang dauert meist nur wenige Sekunden. Bitte in dieser Zeit nichts bearbeiten.</p>', 'Jetzt wechseln',
+        function (f) {
+          var ow = f.querySelector('#db-overwrite');
+          if (t.hasData && !ow.checked) return bad('Bitte das Überschreiben bestätigen.');
+          return api('POST', '/api/settings/database/switch', Object.assign({}, body, { confirm: 'WECHSELN', overwrite: !!(ow && ow.checked) })).then(function (r) {
+            toast('Gewechselt zu ' + name + ': ' + r.rows.toLocaleString('de-DE') + ' Datensätze übernommen.');
+            return render().then(function () {
+              var m = $('#main'); if (!m) return;
+              var info = '<div class="note ok" id="db-done" style="margin-bottom:6px">Wechsel abgeschlossen. ' + (r.backup ? 'Backup: ' + esc(r.backup) + '. ' : '') + (r.oldFile ? 'Die alte Datei liegt unter ' + esc(r.oldFile) + '. ' : '') + (r.warning ? esc(r.warning) : '') + '</div>';
+              m.insertAdjacentHTML('afterbegin', info);
+            });
+          });
+        });
+    }).catch(function () { /* Meldung steht schon im Ergebnisfeld */ });
+  }
+
   function vLicenses() {
     return api('GET', '/api/licenses' + qs({ pageSize: 100, status: ui.lstatus, search: ui.lsearch })).then(function (res) {
       var chips = [['', 'Alle']].concat(opts(LICENSE_STATUS));
@@ -502,6 +628,13 @@
           return api('PATCH', '/api/licenses/' + l.id, body).then(function () { done('Lizenz gespeichert'); });
         });
     }).catch(fail);
+  }
+
+  function confirmDialogTo() {
+    modal('Testmail senden', '<div class="form">' + field('tm-to', 'Empfänger', me.email, 'email', { full: true }) + '</div><div class="sub">Gesendet wird mit den gespeicherten Mail-Einstellungen.</div>', 'Senden',
+      function (f) {
+        return api('POST', '/api/settings/test-mail', { to: v(f, 'tm-to') }).then(function (r) { toast('Testmail an ' + r.to + ' gesendet'); });
+      });
   }
 
   function newLicenseDialog() {
@@ -543,7 +676,7 @@
   }
 
   /* ---------- Rendern ---------- */
-  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
+  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, settings: vSettings, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
   var seq = 0;
   function render() {
     if (!token || !me) return;
@@ -1020,6 +1153,11 @@
       case 'prod-dup': return api('POST', '/api/products/' + id + '/duplicate').then(function () { done('Kopie angelegt (inaktiv)'); }).catch(fail);
       case 'prod-del': return confirmDialog('Das Produkt wird aus dem Katalog gelöscht. Bereits eingegangene Bestellungen behalten Name und Preis.', 'Produkt löschen', function () { return api('DELETE', '/api/products/' + id).then(function () { done('Produkt gelöscht'); }); });
       case 'new-order': return newOrderDialog();
+      case 'set-jump': { var sec = $('#sec-' + el.dataset.v); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      case 'set-reset': return api('PUT', '/api/settings/all', { values: {}, reset: [el.dataset.key] }).then(function () { done('Zurückgesetzt'); }).catch(fail);
+      case 'test-mail': return confirmDialogTo();
+      case 'db-test': return dbTest(el.dataset.target).catch(function () {});
+      case 'db-switch': return dbSwitchDialog(el.dataset.target);
       case 'lfilter': ui.lstatus = el.dataset.v; return render();
       case 'open-license': return licenseDialog(id);
       case 'new-license': return newLicenseDialog();
@@ -1065,6 +1203,19 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('#layer').firstChild) closeModal(); });
 
   var searchTimer = null;
+  document.addEventListener('submit', function (e) {
+    var f = e.target.closest ? e.target.closest('form.set-form') : null;
+    if (!f || f.id === 'dbform') { if (f) e.preventDefault(); return; }
+    e.preventDefault();
+    var values = settingsValues(f), btn = f.querySelector('button[type=submit]');
+    if (!Object.keys(values).length) return toast('Nichts geändert');
+    btn.disabled = true;
+    api('PUT', '/api/settings/all', { values: values }).then(function () { return render(); }).then(function () { toast('Gespeichert'); }).catch(function (err) {
+      btn.disabled = false; toast(err.message);
+      var m = /\((\w+):/.exec(err.message); // Feldname aus der Fehlermeldung markieren
+      if (m) { var el = f.querySelector('[data-key="' + m[1] + '"]'); if (el) el.focus(); }
+    });
+  });
   var licTimer;
   document.addEventListener('input', function (e) {
     if (e.target.id === 'lq') { ui.lsearch = e.target.value; clearTimeout(licTimer); licTimer = setTimeout(render, 300); return; }

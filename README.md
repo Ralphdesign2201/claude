@@ -177,6 +177,21 @@ Entwicklungsadressen (`localhost`, `*.test`, `*.local`, `127.x`) sind erlaubt (`
 
 **Ehrliche Grenzen:** Eine Lizenzprüfung in PHP-Code, den der Kunde besitzt, kann jemand mit Programmierkenntnissen aus der Software entfernen. Sie verhindert Weitergabe an ehrliche Dritte und zeigt dir, wo die Software läuft – echten Schutz bringt nur, was der Kunde nicht selbst ändern kann (Updates, Support, Funktionen über deine API). Sinnvoll ist, die Prüfung an mehreren Stellen einzubauen und Quellcode ggf. zu verschleiern.
 
+## Einstellungen und Datenbank
+
+Oben rechts in der Kopfleiste (nur für Admins) öffnet **„Einstellungen“** eine Seite für Firmendaten, Zahlung/Mahnwesen, E-Mail (SMTP, mit Testmail), Kundenportal, Lizenzen, Datensicherung und die Datenbank.
+Änderungen gelten sofort und stehen in `database/settings.json` (Rechte 0600, nicht im Git, nicht im Web-Verzeichnis). Reihenfolge der Quellen: echte Server-Umgebungsvariable → Einstellungsseite → `.env` → Standardwert.
+Von der Server-Umgebung vorgegebene Werte sind in der Oberfläche gesperrt; Passwörter werden nie wieder angezeigt (leer lassen = unverändert). Bewusst nicht änderbar: `JWT_SECRET`, `CRON_TOKEN`, Speicherorte und der Lizenz-Signaturschlüssel.
+Die Zugangsdaten liegen im Klartext in der Einstellungsdatei – sie ist nur durch Dateirechte geschützt und gehört nicht in Backups, die du weitergibst.
+
+**Datenbank wechseln (SQLite ↔ MySQL/MariaDB, in beide Richtungen):** Unter „Datenbank“ Zugangsdaten eintragen, „Verbindung testen“, dann „Zu MySQL wechseln“. Der Ablauf:
+Vorab-Backup → Schema im Ziel anlegen → alle Tabellen kopieren → Zeilenzahlen prüfen → erst dann umstellen. Scheitert etwas, bleibt alles beim Alten. Die bisherige Datenbank bleibt unverändert als Rückfall bestehen, und du bleibst angemeldet.
+Enthält das Ziel schon Daten, wird nur nach ausdrücklicher Bestätigung überschrieben (eine vorhandene SQLite-Datei wird vorher als `….vor-wechsel-<Zeit>` beiseitegelegt). Während des Kopierens (Sekunden) werden Schreibzugriffe gesperrt.
+Voraussetzungen für MySQL: MySQL 8.0.13+ oder MariaDB 10.3+, PHP-Erweiterung `pdo_mysql`, eine bereits angelegte leere Datenbank und ein Benutzer mit dem Recht, Tabellen anzulegen. Das Schema wird aus denselben `database/migrations/*.sql` erzeugt (automatisch übersetzt), beide Datenbanken haben daher immer dieselben Tabellen.
+Backups bleiben auch unter MySQL portable SQLite-Dateien und lassen sich in beide Datenbanktypen zurückspielen (`bin/restore.php`).
+Ohne Oberfläche geht es auch per Umgebung: `DB_DRIVER=mysql`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, danach `php bin/migrate.php` – dann ist die Datenbank allerdings „vom Server festgelegt“ und in der Oberfläche nicht umschaltbar. Daten übernimmst du in dem Fall über einen vorherigen Wechsel in der Oberfläche oder ein Backup/Restore.
+Die Tests laufen gegen beide: `php tests/run.php` und `TEST_DB=mysql php tests/run.php` (MySQL-Zugang über `TEST_MYSQL_HOST/PORT/USER/PASSWORD`).
+
 ## Datensicherung (Backup)
 
 Ein Backup ist eine ZIP-Datei mit einem **konsistenten Schnappschuss der Datenbank** (auch bei laufendem Betrieb), allen **hochgeladenen Dokumenten** und
@@ -234,6 +249,7 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Bestellungen  | `GET/POST /api/orders`, `GET /api/orders/:id`, `POST /api/orders/:id/accept`, `POST /api/orders/:id/reject`; Portal: `GET /api/portal/products`, `GET/POST /api/portal/orders`, `POST /api/portal/orders/:id/cancel` |
 | Kundenkonten  | Portal: `GET /api/portal/config`, `POST /api/portal/register`, `/verify-info`, `/verify`, `/login`, `/logout`, `/forgot`, `/reset`, `/password`; Verwaltung: `POST /api/portal-accounts/:id/active`, `/reset`, `DELETE /api/portal-accounts/:id` |
 | Lizenzen      | `GET/POST /api/licenses`, `GET/PATCH/DELETE /api/licenses/:id`, `POST /api/licenses/:id/regenerate`, `POST /api/licenses/:id/send`; öffentlich: `POST /api/license/verify`, `GET /api/license/public-key`, `GET /license/client.php`; Portal: `GET /api/portal/licenses`, `POST /api/portal/licenses/:id/domain` |
+| Einstellungen | `GET/PUT /api/settings/all`, `POST /api/settings/test-mail`, `POST /api/settings/database/test`, `POST /api/settings/database/switch` (nur Admin) |
 | Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
 | Einstellungen | `GET /api/settings` (Mail eingerichtet? Firmendaten gesetzt?) |
 | Verträge      | `GET/POST /api/contracts`, `GET/PATCH/DELETE /api/contracts/:id` |
