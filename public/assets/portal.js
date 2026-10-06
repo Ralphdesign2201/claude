@@ -14,6 +14,7 @@
   var PERIOD = { MONTHLY: 'Monat', QUARTERLY: 'Quartal', HALF_YEARLY: 'Halbjahr', YEARLY: 'Jahr' };
   var RHYTHM = { MONTHLY: 'monatlich', QUARTERLY: 'vierteljährlich', HALF_YEARLY: 'halbjährlich', YEARLY: 'jährlich' };
   var LSTATUS = { PENDING: ['Wartet auf Zahlung', 'warn'], ACTIVE: ['Aktiv', 'good'], SUSPENDED: ['Gesperrt', 'bad'], REVOKED: ['Widerrufen', 'bad'], EXPIRED: ['Abgelaufen', 'warn'] };
+  var TSTATUS = { OPEN: ['In Bearbeitung', 'info'], PENDING: ['Wartet auf Ihre Antwort', 'warn'], ON_HOLD: ['In Bearbeitung', 'info'], RESOLVED: ['Gelöst', 'good'], CLOSED: ['Geschlossen', 'neutral'] };
   var qty = function (n) { return Number(n).toLocaleString('de-DE', { maximumFractionDigits: 2 }); };
   var pill = function (map, key) { var m = map[key] || [key, 'neutral']; return '<span class="pill ' + m[1] + '">' + esc(m[0]) + '</span>'; };
 
@@ -42,12 +43,13 @@
     try { sessionStorage.removeItem(KEY); localStorage.removeItem(SESSION_KEY); } catch (e) { /* Speicher nicht verfügbar */ }
   }
 
-  var state = { me: null, invoices: [], quotes: [], products: [], orders: [], licenses: [], tab: 'invoices', open: {}, shopCat: '' };
+  var state = { me: null, invoices: [], quotes: [], products: [], orders: [], licenses: [], tickets: [], categories: [], faq: [], ticket: null, faqQuery: '', tab: 'invoices', open: {}, shopCat: '' };
 
   function api(method, path, body) {
     var headers = { 'X-Portal-Token': token || '' };
     var init = { method: method, headers: headers };
-    if (body !== undefined) { headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
+    if (body instanceof FormData) init.body = body;
+    else if (body !== undefined) { headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
     return fetch(path, init).catch(function () { throw new Error('Keine Verbindung zum Server'); }).then(function (res) {
       if (res.status === 204) return null;
       return res.json().catch(function () { return null; }).then(function (data) {
@@ -265,6 +267,91 @@
     });
   }
 
+
+  /* ---------- Support ---------- */
+  var ago = function (iso) {
+    var m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1) return 'gerade eben'; if (m < 60) return 'vor ' + m + ' Min.'; if (m < 1440) return 'vor ' + Math.round(m / 60) + ' Std.'; if (m < 43200) return 'vor ' + Math.round(m / 1440) + ' Tagen';
+    return fdate(iso);
+  };
+  var ftime = function (iso) { return new Date(iso).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  var fsize = function (b) { return b >= 1048576 ? (b / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(b / 1024)).toLocaleString('de-DE') + ' KB'; };
+  function faqItem(a) { return '<details class="faq"><summary>' + esc(a.title) + '</summary><div class="faq-body">' + esc(a.body) + '</div></details>'; }
+  function faqMatches(q) {
+    var words = q.toLowerCase().split(/\s+/).filter(function (w) { return w.length > 2; });
+    if (!words.length) return state.faq;
+    return state.faq.filter(function (a) { var t = (a.title + ' ' + a.body + ' ' + (a.category || '')).toLowerCase(); return words.some(function (w) { return t.indexOf(w) >= 0; }); });
+  }
+  function ticketCard(t) {
+    return '<div class="card doc"><div class="doc-row"><div class="doc-main"><b class="mono">' + esc(t.number) + '</b> ' + pill(TSTATUS, t.status) + (t.unread ? ' <span class="pill info">neue Antwort</span>' : '') +
+      '<div><button class="link-btn" style="font-weight:600;font-size:15px;text-align:left" data-act="tk-open" data-id="' + esc(t.id) + '">' + esc(t.subject) + '</button></div>' +
+      '<div class="sub">' + (t.category ? esc(t.category) + ' · ' : '') + 'zuletzt ' + ago(t.lastActivityAt) + '</div><div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(t.preview || '') + '</div></div>' +
+      '<div class="doc-actions"><button class="btn sm" data-act="tk-open" data-id="' + esc(t.id) + '">Öffnen</button></div></div></div>';
+  }
+  function supportHtml() {
+    if (state.ticket) return ticketDetailHtml(state.ticket);
+    var faq = state.faq.length ? '<div class="card stack"><b>Häufige Fragen</b><input id="faq-q" type="search" placeholder="Hilfe durchsuchen …" value="' + esc(state.faqQuery) + '" aria-label="Hilfe durchsuchen"><div id="faq-list">' + (faqMatches(state.faqQuery).map(faqItem).join('') || '<div class="sub">Keine passenden Artikel – schreiben Sie uns gern.</div>') + '</div></div>' : '';
+    return '<div class="row" style="justify-content:space-between;align-items:center"><div><b style="font-size:16px">Ihre Anfragen</b><div class="sub">Brauchen Sie Hilfe? Wir antworten so schnell wie möglich.</div></div><button class="btn primary" data-act="tk-new">+ Neue Anfrage</button></div>' +
+      (state.tickets.length ? state.tickets.map(ticketCard).join('') : '<div class="card empty">Sie haben noch keine Anfrage gestellt.</div>') + faq;
+  }
+  function msgHtml(m) {
+    var cls = m.kind === 'CUSTOMER' ? 'cust' : 'staff';
+    return '<div class="tk-msg ' + cls + '"><div class="tk-meta">' + (m.kind === 'CUSTOMER' ? 'Sie' : esc(m.authorName) + ' (Support)') + ' · ' + esc(ftime(m.createdAt)) + '</div><div class="tk-body">' + esc(m.body) + '</div>' +
+      (m.attachments.length ? '<div class="tk-atts">' + m.attachments.map(function (a) { return '<button type="button" class="chip" data-act="tk-att" data-id="' + esc(a.id) + '">📎 ' + esc(a.fileName) + ' (' + fsize(a.size) + ')</button>'; }).join('') + '</div>' : '') + '</div>';
+  }
+  function ticketDetailHtml(t) {
+    var done = t.status === 'RESOLVED' || t.status === 'CLOSED';
+    var rate = done ? (t.rating ? '<div class="card"><b>Ihre Bewertung:</b> <span style="color:var(--warn);font-size:18px">' + '★★★★★'.slice(0, t.rating) + '<span style="opacity:.3">' + '★★★★★'.slice(t.rating) + '</span></span>' + (t.ratingComment ? '<div class="sub">„' + esc(t.ratingComment) + '“</div>' : '') + '</div>'
+      : '<div class="card stack"><b>Wie zufrieden waren Sie mit unserer Hilfe?</b><div id="stars" role="radiogroup" aria-label="Bewertung">' + [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" class="star" data-act="tk-rate" data-v="' + n + '" aria-label="' + n + ' Sterne" role="radio" aria-checked="false">★</button>'; }).join('') + '</div><div id="rate-form" hidden><textarea id="rate-comment" rows="2" maxlength="1000" placeholder="Möchten Sie uns etwas mitteilen? (optional)"></textarea><div style="margin-top:8px"><button class="btn primary sm" data-act="tk-rate-send">Bewertung senden</button></div></div></div>') : '';
+    return '<button class="btn ghost sm" data-act="tk-back" style="align-self:flex-start">← Alle Anfragen</button>' +
+      '<div class="card stack"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b class="mono">' + esc(t.number) + '</b> ' + pill(TSTATUS, t.status) + '<h2 style="margin:6px 0 0">' + esc(t.subject) + '</h2>' +
+      '<div class="sub">' + (t.category ? esc(t.category) + ' · ' : '') + 'eröffnet am ' + fdate(t.createdAt) + (t.license ? ' · Lizenz ' + esc(t.license.domain) : '') + '</div></div>' +
+      (t.status === 'CLOSED' || t.status === 'RESOLVED' ? '<button class="btn sm" data-act="tk-reopen">Wieder öffnen</button>' : '<button class="btn sm" data-act="tk-close">Als erledigt schließen</button>') + '</div>' +
+      '<div class="tk-thread">' + t.messages.map(msgHtml).join('') + '</div></div>' + rate +
+      '<form class="card stack" id="tk-reply" novalidate><b>' + (done ? 'Noch eine Frage? Antworten öffnet das Ticket wieder.' : 'Antwort schreiben') + '</b><textarea id="tk-msg" rows="5" maxlength="10000" placeholder="Ihre Nachricht …" aria-label="Nachricht"></textarea>' +
+      '<div class="row"><label class="btn sm" style="cursor:pointer">📎 Datei anhängen<input id="tk-files" type="file" multiple hidden></label><span class="sub" id="tk-filelist"></span></div><div><button type="submit" class="btn primary">Senden</button></div></form>';
+  }
+  function newTicketDialog() {
+    $('#layer').innerHTML = '<div class="overlay" data-act="overlay"><form class="modal" id="tform" role="dialog" aria-modal="true" aria-labelledby="mt" novalidate><h2 id="mt">Neue Support-Anfrage</h2>' +
+      '<div class="form"><label class="full" for="t-subject">Betreff<input id="t-subject" type="text" maxlength="200" placeholder="Worum geht es?" autocomplete="off"></label>' +
+      '<div class="full" id="t-sugg"></div>' +
+      '<label for="t-cat">Kategorie<select id="t-cat"><option value="">– bitte wählen –</option>' + state.categories.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select></label>' +
+      '<label for="t-prio">Dringlichkeit<select id="t-prio"><option value="NORMAL">Normal</option><option value="HIGH">Dringend (Seite/Software funktioniert nicht)</option></select></label>' +
+      (state.licenses.length ? '<label class="full" for="t-lic">Betrifft Lizenz (optional)<select id="t-lic"><option value="">– keine –</option>' + state.licenses.map(function (l) { return '<option value="' + esc(l.id) + '">' + esc(l.productName) + ' · ' + esc(l.domain) + '</option>'; }).join('') + '</select></label>' : '') +
+      '<label class="full" for="t-msg">Ihre Nachricht<textarea id="t-msg" rows="6" maxlength="10000" placeholder="Bitte beschreiben Sie das Problem möglichst genau."></textarea></label>' +
+      '<div class="full row"><label class="btn sm" style="cursor:pointer">📎 Datei anhängen<input id="t-files" type="file" multiple hidden></label><span class="sub" id="t-filelist">Screenshots, PDF, Text, ZIP – bis 5 Dateien</span></div></div>' +
+      '<div class="actions"><button type="button" class="btn" data-act="close">Abbrechen</button><button type="submit" class="btn primary">Anfrage senden</button></div></form></div>';
+    $('#t-subject').focus();
+    $('#t-subject').addEventListener('input', function () {
+      var q = $('#t-subject').value, hits = q.trim().length > 3 ? faqMatches(q).slice(0, 3) : [];
+      $('#t-sugg').innerHTML = hits.length && state.faq.length && faqMatches(q) !== state.faq ? '<div class="note ok" style="background:var(--info-soft);color:var(--info)"><b>Vielleicht hilft das schon:</b>' + hits.map(faqItem).join('') + '</div>' : '';
+    });
+    $('#t-files').addEventListener('change', function () { $('#t-filelist').textContent = Array.prototype.map.call($('#t-files').files, function (f) { return f.name; }).join(', '); });
+    $('#tform').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var subject = $('#t-subject').value.trim(), msg = $('#t-msg').value.trim();
+      if (subject.length < 3) return toast('Bitte einen Betreff eingeben.');
+      if (!msg) return toast('Bitte beschreiben Sie Ihr Anliegen.');
+      var fd = new FormData(); fd.append('subject', subject); fd.append('message', msg); fd.append('priority', $('#t-prio').value);
+      if ($('#t-cat').value) fd.append('category', $('#t-cat').value);
+      if ($('#t-lic') && $('#t-lic').value) fd.append('licenseId', $('#t-lic').value);
+      Array.prototype.forEach.call($('#t-files').files, function (f) { fd.append('files[]', f); });
+      var btn = $('#tform button[type=submit]'); btn.disabled = true;
+      api('POST', '/api/portal/tickets', fd).then(function (t) { $('#layer').innerHTML = ''; toast('Danke! Ihre Anfrage ' + t.number + ' ist eingegangen.'); state.tab = 'support'; return load().then(function () { state.ticket = t; render(); }); })
+        .catch(function (err) { btn.disabled = false; toast(err.message); });
+    });
+  }
+  function openTicket(id) {
+    return api('GET', '/api/portal/tickets/' + id).then(function (t) {
+      state.ticket = t; state.tab = 'support';
+      var row = state.tickets.filter(function (x) { return x.id === id; })[0]; if (row) row.unread = false;
+      render(); window.scrollTo(0, 0);
+    }).catch(function (err) { toast(err.message); });
+  }
+  function ticketCall(id, action, body) {
+    return api('POST', '/api/portal/tickets/' + id + '/' + action, body || {}).then(function (t) { state.ticket = t; return load().then(function () { state.ticket = t; render(); }); }).catch(function (err) { toast(err.message); });
+  }
+
   function render() {
     var me = state.me, co = me.company;
     var first = (me.client.name || '').split(/\s+/)[0];
@@ -274,6 +361,7 @@
       : state.tab === 'quotes'
         ? (state.quotes.length ? state.quotes.map(quoteCard).join('') : '<div class="card empty">Aktuell liegen keine Angebote für Sie vor.</div>')
         : state.tab === 'shop' ? shopHtml()
+          : state.tab === 'support' ? supportHtml()
           : state.tab === 'licenses' ? licensesHtml()
           : (state.orders.length ? state.orders.map(orderCard).join('') : '<div class="card empty">Sie haben noch nichts bestellt. Im Reiter „Produkte“ finden Sie unser Angebot.</div>');
     var pendingOrders = state.orders.filter(function (o) { return o.status === 'PENDING'; }).length;
@@ -290,14 +378,15 @@
       '<button role="tab" data-act="tab" data-tab="quotes" aria-selected="' + (state.tab === 'quotes') + '">Angebote (' + state.quotes.length + ')' + (waiting ? ' <span class="pill info">' + waiting + ' neu</span>' : '') + '</button>' +
       '<button role="tab" data-act="tab" data-tab="shop" aria-selected="' + (state.tab === 'shop') + '">Produkte' + (productCount ? ' (' + productCount + ')' : '') + '</button>' +
       '<button role="tab" data-act="tab" data-tab="orders" aria-selected="' + (state.tab === 'orders') + '">Bestellungen (' + state.orders.length + ')' + (pendingOrders ? ' <span class="pill info">' + pendingOrders + ' offen</span>' : '') + '</button>' +
+      '<button role="tab" data-act="tab" data-tab="support" aria-selected="' + (state.tab === 'support') + '">Support' + (state.tickets.some(function (t) { return t.unread; }) ? ' <span class="pill info">neu</span>' : '') + '</button>' +
       (state.licenses.length ? '<button role="tab" data-act="tab" data-tab="licenses" aria-selected="' + (state.tab === 'licenses') + '">Lizenzen (' + state.licenses.length + ')</button>' : '') + '</div>' +
       '<div class="stack">' + list + '</div>' +
       '<div class="p-foot">Fragen? ' + [co.email ? esc(co.email) : '', co.phone ? esc(co.phone) : ''].filter(Boolean).join(' · ') + '<br>' + esc(co.name) + (co.address.length ? ' · ' + co.address.map(esc).join(', ') : '') + '</div></div>';
   }
 
   function load() {
-    return Promise.all([api('GET', '/api/portal/me'), api('GET', '/api/portal/invoices'), api('GET', '/api/portal/quotes'), api('GET', '/api/portal/products'), api('GET', '/api/portal/orders'), api('GET', '/api/portal/licenses')]).then(function (r) {
-      state.me = r[0]; state.invoices = r[1]; state.quotes = r[2]; state.products = r[3]; state.orders = r[4]; state.licenses = r[5];
+    return Promise.all([api('GET', '/api/portal/me'), api('GET', '/api/portal/invoices'), api('GET', '/api/portal/quotes'), api('GET', '/api/portal/products'), api('GET', '/api/portal/orders'), api('GET', '/api/portal/licenses'), api('GET', '/api/portal/tickets'), api('GET', '/api/portal/faq')]).then(function (r) {
+      state.me = r[0]; state.invoices = r[1]; state.quotes = r[2]; state.products = r[3]; state.orders = r[4]; state.licenses = r[5]; state.tickets = r[6].tickets; state.categories = r[6].categories; state.faq = r[7];
       if (state.tab === 'invoices' && !state.invoices.length && state.quotes.length) state.tab = 'quotes';
       render();
     });
@@ -376,11 +465,19 @@
     var act = el.dataset.act, id = el.dataset.id;
     if (act === 'overlay') { if (e.target === el) $('#layer').innerHTML = ''; return; }
     if (act === 'close') { $('#layer').innerHTML = ''; return; }
-    if (act === 'tab') { state.tab = el.dataset.tab; render(); return; }
+    if (act === 'tab') { state.tab = el.dataset.tab; if (state.tab === 'support') state.ticket = null; render(); return; }
+    if (act === 'tk-new') { newTicketDialog(); return; }
+    if (act === 'tk-open') { openTicket(id); return; }
+    if (act === 'tk-back') { state.ticket = null; render(); return; }
+    if (act === 'tk-close') { ticketCall(state.ticket.id, 'close'); return; }
+    if (act === 'tk-reopen') { ticketCall(state.ticket.id, 'reopen'); return; }
+    if (act === 'tk-att') { downloadPdf(el, '/api/portal/attachments/' + id); return; }
+    if (act === 'tk-rate') { state.rating = parseInt(el.dataset.v, 10); document.querySelectorAll('.star').forEach(function (b) { var on = parseInt(b.dataset.v, 10) <= state.rating; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(parseInt(b.dataset.v, 10) === state.rating)); }); $('#rate-form').hidden = false; return; }
+    if (act === 'tk-rate-send') { el.disabled = true; ticketCall(state.ticket.id, 'rating', { rating: state.rating, comment: $('#rate-comment').value.trim() }).then(function () { toast('Danke für Ihre Bewertung!'); }); return; }
     if (act === 'auth-mode') { loadConfig().then(function () { showAuth(el.dataset.mode); }); return; }
     if (act === 'password') { passwordDialog(); return; }
     if (act === 'logout') {
-      var done = function () { clearToken(); state = { me: null, invoices: [], quotes: [], products: [], orders: [], licenses: [], tab: 'invoices', open: {}, shopCat: '' }; loadConfig().then(function () { showAuth('login', 'Du bist abgemeldet.', 'ok'); }); };
+      var done = function () { clearToken(); state = { me: null, invoices: [], quotes: [], products: [], orders: [], licenses: [], tickets: [], categories: [], faq: [], ticket: null, faqQuery: '', tab: 'invoices', open: {}, shopCat: '' }; loadConfig().then(function () { showAuth('login', 'Du bist abgemeldet.', 'ok'); }); };
       api('POST', '/api/portal/logout', {}).then(done, done);
       return;
     }
@@ -419,6 +516,22 @@
       }).catch(function (err) { $('#layer').innerHTML = ''; toast(err.message); load().catch(function () {}); });
     }
   });
+  document.addEventListener('submit', function (e) {
+    if (e.target.id !== 'tk-reply') return;
+    e.preventDefault();
+    var msg = $('#tk-msg').value.trim(); if (!msg) return toast('Bitte eine Nachricht eingeben.');
+    var fd = new FormData(); fd.append('message', msg);
+    Array.prototype.forEach.call($('#tk-files').files, function (f) { fd.append('files[]', f); });
+    var btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
+    api('POST', '/api/portal/tickets/' + state.ticket.id + '/messages', fd).then(function (t) { state.ticket = t; toast('Nachricht gesendet'); return load().then(function () { state.ticket = t; render(); }); })
+      .catch(function (err) { btn.disabled = false; toast(err.message); });
+  });
+  document.addEventListener('input', function (e) {
+    if (e.target.id !== 'faq-q') return;
+    state.faqQuery = e.target.value;
+    $('#faq-list').innerHTML = faqMatches(state.faqQuery).map(faqItem).join('') || '<div class="sub">Keine passenden Artikel – schreiben Sie uns gern.</div>';
+  });
+  document.addEventListener('change', function (e) { if (e.target.id === 'tk-files') $('#tk-filelist').textContent = Array.prototype.map.call(e.target.files, function (f) { return f.name; }).join(', '); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('#layer').innerHTML = ''; });
 
   if (pending) {

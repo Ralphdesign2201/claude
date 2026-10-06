@@ -72,7 +72,7 @@
   var listAll = function (path, params) { return api('GET', path + qs(Object.assign({ pageSize: 100 }, params || {}))).then(function (r) { return r.items; }); };
 
   /* ---------- Zustand ---------- */
-  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
+  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', newTickets: 0, company: '', ticketId: null, tview: 'open', tsearch: '', tprio: '', tcat: '', stab: 'tickets', tsel: [], sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
 
   /* ---------- Rechnungs-Hilfen ---------- */
   function shownStatus(inv) {
@@ -115,7 +115,7 @@
 
   /* ---------- Rahmen ---------- */
   function navItems() {
-    var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['licenses', 'Lizenzen'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
+    var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['support', 'Support'], ['licenses', 'Lizenzen'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
     if (me && me.role === 'ADMIN') n.push(['team', 'Team']);
     return n;
   }
@@ -139,15 +139,17 @@
   }
   function drawNav() {
     $('#nav').innerHTML = navItems().map(function (n) {
-      var cur = ui.view === n[0] || (n[0] === 'clients' && ui.view === 'client') || (n[0] === 'invoices' && ui.view === 'invoice') || (n[0] === 'quotes' && ui.view === 'quote') || (n[0] === 'orders' && ui.view === 'order');
-      var badge = n[0] === 'orders' && ui.pending > 0 ? '<span class="count" aria-label="' + ui.pending + ' neue">' + ui.pending + '</span>' : '';
+      var cur = ui.view === n[0] || (n[0] === 'clients' && ui.view === 'client') || (n[0] === 'invoices' && ui.view === 'invoice') || (n[0] === 'quotes' && ui.view === 'quote') || (n[0] === 'orders' && ui.view === 'order') || (n[0] === 'support' && ui.view === 'ticket');
+      var cnt = n[0] === 'orders' ? ui.pending : n[0] === 'support' ? ui.newTickets : 0;
+      var badge = cnt > 0 ? '<span class="count" aria-label="' + cnt + ' neue">' + cnt + '</span>' : '';
       return '<button data-act="nav" data-v="' + n[0] + '"' + (cur ? ' aria-current="page"' : '') + '>' + n[1] + badge + '</button>';
     }).join('');
   }
   /** Zählt offene Bestellungen für das Menü, ohne die Ansicht zu blockieren. */
   function refreshBadge() {
     api('GET', '/api/settings').then(function (st) {
-      if (st.pendingOrders !== ui.pending && $('#nav')) { ui.pending = st.pendingOrders; drawNav(); }
+      ui.company = st.company && st.company.name || ui.company;
+      if ((st.pendingOrders !== ui.pending || st.newTickets !== ui.newTickets) && $('#nav')) { ui.pending = st.pendingOrders; ui.newTickets = st.newTickets || 0; drawNav(); }
     }).catch(function () { /* Badge ist optional */ });
   }
   var head = function (title, sub, actions) {
@@ -590,6 +592,160 @@
     }).catch(function () { /* Meldung steht schon im Ergebnisfeld */ });
   }
 
+
+  /* ---------- Support ---------- */
+  var TSTATUS = { OPEN: ['Offen', 'info'], PENDING: ['Wartet auf Kunde', 'warn'], ON_HOLD: ['Zurückgestellt', 'neutral'], RESOLVED: ['Gelöst', 'good'], CLOSED: ['Geschlossen', 'neutral'] };
+  var TPRIO = { LOW: ['Niedrig', 'neutral'], NORMAL: ['Normal', 'info'], HIGH: ['Hoch', 'warn'], URGENT: ['Dringend', 'bad'] };
+  var TVIEWS = [['open', 'Offene'], ['mine', 'Mir zugewiesen'], ['none', 'Nicht zugewiesen'], ['unread', 'Neu / ungelesen'], ['overdue', 'Überfällig'], ['RESOLVED', 'Gelöst'], ['CLOSED', 'Geschlossen'], ['all', 'Alle']];
+  var ago = function (iso) {
+    if (!iso) return '–';
+    var m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1) return 'gerade eben'; if (m < 60) return 'vor ' + m + ' Min.';
+    if (m < 1440) return 'vor ' + Math.round(m / 60) + ' Std.'; if (m < 43200) return 'vor ' + Math.round(m / 1440) + ' Tg.';
+    return fdate(iso);
+  };
+  var minutesText = function (m) { return m == null ? '–' : m < 60 ? m + ' Min.' : m < 2880 ? (Math.round(m / 6) / 10).toLocaleString('de-DE') + ' Std.' : (Math.round(m / 144) / 10).toLocaleString('de-DE') + ' Tg.'; };
+  var stars = function (n) { return n ? '★★★★★'.slice(0, n) + '<span style="opacity:.3">' + '★★★★★'.slice(n) + '</span>' : ''; };
+  var slaPill = function (t) {
+    var sla = t.sla; if (!sla) return '';
+    if (sla.overdue) return '<span class="pill bad">überfällig</span>';
+    var due = sla.firstDueAt || sla.resolveDueAt;
+    if (t.status !== 'OPEN' || !due) return '';
+    var m = Math.round((new Date(due).getTime() - Date.now()) / 60000);
+    return '<span class="pill neutral">' + (sla.firstDueAt ? 'Antwort' : 'Lösung') + ' in ' + (m < 60 ? m + ' Min.' : m < 2880 ? Math.round(m / 60) + ' Std.' : Math.round(m / 1440) + ' Tg.') + '</span>';
+  };
+
+  function vSupport() {
+    var tabs = '<div class="chips" style="margin-bottom:-6px">' + [['tickets', 'Tickets'], ['canned', 'Textbausteine'], ['faq', 'Hilfe-Artikel']].map(function (c) {
+      return '<button class="chip" data-act="stab" data-v="' + c[0] + '" aria-pressed="' + (ui.stab === c[0]) + '">' + c[1] + '</button>';
+    }).join('') + '</div>';
+    if (ui.stab === 'canned') return api('GET', '/api/canned').then(function (list) {
+      return head('Support', 'Textbausteine für schnelle, einheitliche Antworten.', '<button class="btn primary" data-act="new-canned">+ Textbaustein</button>') + tabs +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Titel</th><th>Text</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (c) {
+          return '<tr><td><b>' + esc(c.title) + '</b></td><td class="sub" style="white-space:pre-wrap;max-width:520px">' + esc(c.body.length > 160 ? c.body.slice(0, 160) + '…' : c.body) + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="edit-canned" data-id="' + esc(c.id) + '">Bearbeiten</button><button class="btn sm ghost danger" data-act="del-canned" data-id="' + esc(c.id) + '">Löschen</button></div></td></tr>';
+        }).join('') : '<tr><td colspan="3" class="empty">Noch keine Textbausteine. Lege z. B. „Danke für Ihre Nachricht“ oder „Bitte Zugangsdaten prüfen“ an.</td></tr>') + '</tbody></table></div></div>' +
+        '<p class="sub">Platzhalter, die beim Einfügen ersetzt werden: <span class="mono">{kunde}</span> (Name des Kunden), <span class="mono">{ticket}</span> (Ticketnummer), <span class="mono">{betreff}</span>, <span class="mono">{mitarbeiter}</span> (dein Name), <span class="mono">{firma}</span>.</p>';
+    });
+    if (ui.stab === 'faq') return api('GET', '/api/faq').then(function (list) {
+      return head('Support', 'Hilfe-Artikel erscheinen im Kundenportal. Kunden bekommen beim Ticket-Schreiben passende Artikel vorgeschlagen – das spart Tickets.', '<button class="btn primary" data-act="new-faq">+ Artikel</button>') + tabs +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Artikel</th><th>Kategorie</th><th>Status</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (a) {
+          return '<tr><td><b>' + esc(a.title) + '</b><div class="sub">' + esc(a.body.length > 100 ? a.body.slice(0, 100) + '…' : a.body) + '</div></td><td>' + esc(a.category || '–') + '</td><td>' + (a.published ? '<span class="pill good">Veröffentlicht</span>' : '<span class="pill neutral">Entwurf</span>') + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="edit-faq" data-id="' + esc(a.id) + '">Bearbeiten</button><button class="btn sm ghost danger" data-act="del-faq" data-id="' + esc(a.id) + '">Löschen</button></div></td></tr>';
+        }).join('') : '<tr><td colspan="4" class="empty">Noch keine Artikel. Schreibe Antworten auf die häufigsten Fragen, z. B. „Wie ändere ich meine Domain?“.</td></tr>') + '</tbody></table></div></div>';
+    });
+
+    var q = { pageSize: 50, search: ui.tsearch, priority: ui.tprio, category: ui.tcat };
+    var v = ui.tview;
+    if (v === 'mine') { q.assigneeId = 'me'; } else if (v === 'none') { q.assigneeId = 'none'; } else if (v === 'unread') { q.view = 'unread'; q.status = 'all'; } else if (v === 'overdue') { q.view = 'overdue'; } else if (v === 'all') { q.status = 'all'; } else if (v === 'RESOLVED' || v === 'CLOSED') { q.status = v; }
+    return Promise.all([api('GET', '/api/tickets' + qs(q)), api('GET', '/api/tickets/stats'), api('GET', '/api/tickets/meta')]).then(function (r) {
+      var res = r[0], st = r[1], meta = r[2];
+      ui.tsel = ui.tsel.filter(function (id) { return res.items.some(function (t) { return t.id === id; }); });
+      var stat = function (label, val, sub, view, cls) { return '<button class="card kpi ' + (cls || '') + '" data-act="tview" data-v="' + view + '" style="text-align:left;cursor:pointer"><span class="l">' + label + '</span><span class="v">' + val + '</span><span class="s">' + sub + '</span></button>'; };
+      var agentOpts = function (cur) { return [['', '– niemand –']].concat(meta.agents.map(function (a) { return [a.id, a.name]; })); };
+      return head('Support', 'Anfragen deiner Kunden aus dem Portal – mit Fälligkeiten, Zuweisung und Textbausteinen.', '<button class="btn primary" data-act="new-ticket">+ Ticket erfassen</button>') + tabs +
+        '<div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">' +
+        stat('Offen', st.open, st.needsReply + ' warten auf dich', 'open') + stat('Überfällig', st.overdue, 'Antwort/Lösung fällig', 'overdue', st.overdue ? 'bad' : '') + stat('Nicht zugewiesen', st.unassigned, 'ohne Bearbeiter', 'none') +
+        '<div class="card kpi"><span class="l">Ø erste Antwort</span><span class="v">' + minutesText(st.avgFirstResponseMinutes) + '</span><span class="s">letzte 30 Tage</span></div>' +
+        '<div class="card kpi"><span class="l">Zufriedenheit</span><span class="v">' + (st.avgRating ? '★ ' + st.avgRating.toLocaleString('de-DE') : '–') + '</span><span class="s">' + st.ratings + ' Bewertung(en)</span></div></div>' +
+        '<div class="row"><input id="tq" type="search" placeholder="Suchen (Nummer, Betreff, Kunde, Nachrichtentext)" value="' + esc(ui.tsearch) + '" aria-label="Tickets suchen" style="flex:1;min-width:220px;max-width:420px">' +
+        '<select id="tprio" aria-label="Priorität filtern"><option value="">Alle Prioritäten</option>' + Object.keys(TPRIO).map(function (k) { return '<option value="' + k + '"' + (ui.tprio === k ? ' selected' : '') + '>' + TPRIO[k][0] + '</option>'; }).join('') + '</select>' +
+        '<select id="tcat" aria-label="Kategorie filtern"><option value="">Alle Kategorien</option>' + meta.categories.map(function (c) { return '<option' + (ui.tcat === c ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div>' +
+        '<div class="chips">' + TVIEWS.map(function (c) { return '<button class="chip" data-act="tview" data-v="' + c[0] + '" aria-pressed="' + (ui.tview === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>' +
+        (ui.tsel.length ? '<div class="demo"><span><b>' + ui.tsel.length + '</b> ausgewählt</span><span class="row">' +
+          '<select id="bk-status" aria-label="Status setzen"><option value="">Status …</option>' + Object.keys(TSTATUS).map(function (k) { return '<option value="' + k + '">' + TSTATUS[k][0] + '</option>'; }).join('') + '</select>' +
+          '<select id="bk-prio" aria-label="Priorität setzen"><option value="">Priorität …</option>' + Object.keys(TPRIO).map(function (k) { return '<option value="' + k + '">' + TPRIO[k][0] + '</option>'; }).join('') + '</select>' +
+          '<select id="bk-assign" aria-label="Zuweisen"><option value="">Zuweisen an …</option>' + meta.agents.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select>' +
+          (me.role === 'ADMIN' ? '<button class="btn sm danger" data-act="bulk-delete">Löschen</button>' : '') + '</span></div>' : '') +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th style="width:28px"><input type="checkbox" id="tk-all" aria-label="Alle auswählen"></th><th>Ticket</th><th>Priorität</th><th>Status</th><th>Bearbeiter</th><th>Aktivität</th></tr></thead><tbody>' + (res.items.length ? res.items.map(function (t) {
+          var unread = t.unreadStaff === 1 && t.status !== 'CLOSED';
+          return '<tr class="click" data-act="open-ticket" data-id="' + esc(t.id) + '"><td><input type="checkbox" class="tk-sel" data-id="' + esc(t.id) + '"' + (ui.tsel.indexOf(t.id) >= 0 ? ' checked' : '') + ' aria-label="Auswählen"></td>' +
+            '<td style="max-width:460px"><span class="mono sub">' + esc(t.number) + '</span> ' + (unread ? '<span class="pill info">neu</span> ' : '') + '<button class="link" data-act="open-ticket" data-id="' + esc(t.id) + '" style="font-weight:' + (unread ? 700 : 500) + '">' + esc(t.subject) + '</button>' +
+            '<div class="sub">' + esc(t.client.company || t.client.name) + (t.category ? ' · ' + esc(t.category) : '') + ' · ' + t.messageCount + ' Nachr.</div><div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (t.lastKind === 'STAFF' ? '↩ ' : '') + esc(t.preview || '') + '</div></td>' +
+            '<td>' + pill(TPRIO, t.priority) + '</td><td>' + pill(TSTATUS, t.status) + ' ' + slaPill(t) + '</td><td>' + (t.assignee ? esc(t.assignee.name) : '<span class="sub">–</span>') + '</td><td class="sub" title="' + esc(ftime(t.lastActivityAt)) + '">' + ago(t.lastActivityAt) + '</td></tr>';
+        }).join('') : '<tr><td colspan="6" class="empty">' + (ui.tsearch || ui.tprio || ui.tcat || ui.tview !== 'open' ? 'Keine Tickets für diese Auswahl.' : 'Keine offenen Tickets – alles beantwortet. 🎉') + '</td></tr>') + '</tbody></table></div></div>';
+    });
+  }
+
+  function bubble(m) {
+    if (m.kind === 'EVENT') return '<div class="tk-event">' + esc(m.body) + ' · ' + esc(ftime(m.createdAt)) + '</div>';
+    var cls = m.kind === 'CUSTOMER' ? 'cust' : m.kind === 'STAFF' ? 'staff' : 'note';
+    var who = m.kind === 'NOTE' ? '🔒 Interne Notiz – ' + esc(m.authorName) : esc(m.authorName) + (m.kind === 'STAFF' ? ' (Support)' : '');
+    return '<div class="tk-msg ' + cls + '"><div class="tk-meta">' + who + ' · ' + esc(ftime(m.createdAt)) + '</div><div class="tk-body">' + esc(m.body) + '</div>' +
+      (m.attachments && m.attachments.length ? '<div class="tk-atts">' + m.attachments.map(function (a) { return '<button type="button" class="chip" data-act="tk-att" data-id="' + esc(a.id) + '">📎 ' + esc(a.fileName) + ' (' + fsize(a.size) + ')</button>'; }).join('') + '</div>' : '') + '</div>';
+  }
+
+  function vTicket() {
+    return Promise.all([api('GET', '/api/tickets/' + ui.ticketId), api('GET', '/api/tickets/meta'), api('GET', '/api/canned')]).then(function (r) {
+      var t = r[0], meta = r[1], canned = r[2];
+      ui.ticket = t; ui.canned = canned;
+      var sel = function (id, label, options, cur) { return '<label class="tk-side" for="' + id + '">' + label + '<select id="' + id + '" data-tk="' + id.replace('tk-', '') + '">' + options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === (cur || '') ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></label>'; };
+      var cats = meta.categories.slice(); if (t.category && cats.indexOf(t.category) < 0) cats.push(t.category);
+      var sla = t.sla, open = ['OPEN', 'PENDING', 'ON_HOLD'].indexOf(t.status) >= 0;
+      var thread = t.messages.map(bubble).join('');
+      var reply = '<form class="card stack" id="tk-reply" novalidate><div class="chips" role="tablist"><button type="button" class="chip" data-act="tk-mode" data-v="STAFF" aria-pressed="true">Antwort an den Kunden</button><button type="button" class="chip" data-act="tk-mode" data-v="NOTE" aria-pressed="false">🔒 Interne Notiz</button></div>' +
+        '<textarea id="tk-body" rows="6" placeholder="Antwort schreiben … (Strg+Enter sendet)" aria-label="Nachricht"></textarea>' +
+        '<div class="row"><select id="tk-canned" aria-label="Textbaustein einfügen"><option value="">Textbaustein einfügen …</option>' + canned.map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(c.title) + '</option>'; }).join('') + '</select>' +
+        '<label class="btn sm" style="cursor:pointer">📎 Datei anhängen<input id="tk-files" type="file" multiple hidden></label><span class="sub" id="tk-filelist"></span></div>' +
+        '<div class="row" style="justify-content:space-between"><label id="tk-statuswrap" style="display:flex;flex-direction:row;align-items:center;gap:8px;font-size:13px">Danach Status: <select id="tk-after"><option value="PENDING">Wartet auf Kunde</option><option value="RESOLVED">Gelöst</option><option value="">unverändert</option><option value="ON_HOLD">Zurückgestellt</option></select></label>' +
+        '<button type="submit" class="btn primary" id="tk-send">Antwort senden</button></div></form>';
+      var side = '<div class="stack">' +
+        '<div class="card stack"><h2>Ticket</h2>' + sel('tk-status', 'Status', Object.keys(TSTATUS).map(function (k) { return [k, TSTATUS[k][0]]; }), t.status) + sel('tk-priority', 'Priorität', Object.keys(TPRIO).map(function (k) { return [k, TPRIO[k][0]]; }), t.priority) +
+        sel('tk-assigneeId', 'Bearbeiter', [['', '– niemand –']].concat(meta.agents.map(function (a) { return [a.id, a.name]; })), t.assigneeId) + sel('tk-category', 'Kategorie', [['', '– keine –']].concat(cats.map(function (c) { return [c, c]; })), t.category) +
+        sel('tk-licenseId', 'Lizenz', [['', '– keine –']].concat(t.licenses.map(function (l) { return [l.id, l.productName + ' · ' + l.domain]; })), t.licenseId) +
+        '<label class="tk-side" for="tk-tags">Stichworte<input id="tk-tags" data-tk="tags" value="' + esc(t.tags || '') + '" maxlength="200" placeholder="z. B. dringend, hosting"></label></div>' +
+        '<div class="card stack"><h2>Kunde</h2><div><button class="link" data-act="open-client" data-id="' + esc(t.client.id) + '"><b>' + esc(t.client.company || t.client.name) + '</b></button><div class="sub">' + esc(t.client.name) + '</div></div>' +
+        (t.client.email ? '<div class="sub"><a href="mailto:' + esc(t.client.email) + '">' + esc(t.client.email) + '</a></div>' : '') + (t.client.phone ? '<div class="sub">' + esc(t.client.phone) + '</div>' : '') +
+        (t.related.length ? '<div class="sub" style="margin-top:6px"><b>Weitere Tickets</b></div>' + t.related.map(function (x) { return '<div><button class="link" data-act="open-ticket" data-id="' + esc(x.id) + '">' + esc(x.number) + ' ' + esc(x.subject) + '</button> ' + pill(TSTATUS, x.status) + '</div>'; }).join('') : '') + '</div>' +
+        '<div class="card stack"><h2>Zeiten</h2><dl class="kv"><dt>Eröffnet</dt><dd>' + ftime(t.createdAt) + '</dd><dt>Erste Antwort</dt><dd>' + (t.firstResponseMinutes != null ? minutesText(t.firstResponseMinutes) + ' nach Eröffnung' : (sla.firstOverdue ? '<span class="pill bad">überfällig</span>' : sla.firstDueAt ? 'fällig ' + ago(sla.firstDueAt).replace('vor ', 'seit ') + ' / ' + ftime(sla.firstDueAt) : '–')) + '</dd>' +
+        (open ? '<dt>Lösung fällig</dt><dd>' + (sla.resolveOverdue ? '<span class="pill bad">überfällig</span> ' : '') + ftime(sla.resolveDueAt) + '</dd>' : '') + (t.resolvedAt ? '<dt>Gelöst</dt><dd>' + ftime(t.resolvedAt) + '</dd>' : '') + (t.closedAt ? '<dt>Geschlossen</dt><dd>' + ftime(t.closedAt) + '</dd>' : '') + '</dl>' +
+        (t.rating ? '<div><b style="color:var(--warn)">' + stars(t.rating) + '</b>' + (t.ratingComment ? '<div class="sub">„' + esc(t.ratingComment) + '“</div>' : '') + '</div>' : '') + '</div>' +
+        (me.role === 'ADMIN' ? '<button class="btn sm ghost danger" data-act="del-ticket" data-id="' + esc(t.id) + '">Ticket löschen</button>' : '') + '</div>';
+      return '<button class="btn ghost sm back" data-act="nav" data-v="support" style="align-self:flex-start">← Alle Tickets</button>' +
+        head('<span class="mono">' + esc(t.number) + '</span> ' + esc(t.subject), pill(TSTATUS, t.status) + ' ' + pill(TPRIO, t.priority) + (t.license ? ' · Lizenz ' + esc(t.license.domain) : '') + (t.source === 'ADMIN' ? ' · telefonisch erfasst' : ''),
+          (open ? '<button class="btn" data-act="tk-quick" data-v="RESOLVED">Als gelöst markieren</button>' : '<button class="btn" data-act="tk-quick" data-v="OPEN">Wieder öffnen</button>') + (t.status !== 'CLOSED' ? '<button class="btn ghost" data-act="tk-quick" data-v="CLOSED">Schließen</button>' : '')) +
+        '<div class="tk-layout"><div class="stack"><div class="card tk-thread">' + thread + '</div>' + reply + '</div>' + side + '</div>';
+    });
+  }
+
+  function ticketAction(path, method, body, isForm) { return api(method, '/api/tickets' + path, body, isForm); }
+  function fillCanned(c) {
+    var t = ui.ticket;
+    return c.body.replace(/\{kunde\}/g, t.client.name).replace(/\{ticket\}/g, t.number).replace(/\{betreff\}/g, t.subject).replace(/\{mitarbeiter\}/g, me.name).replace(/\{firma\}/g, ui.company || '');
+  }
+  function cannedDialog(c) {
+    modal(c ? 'Textbaustein bearbeiten' : 'Neuer Textbaustein', '<div class="form">' + field('cn-title', 'Titel *', c ? c.title : '', 'text', { full: true, attrs: 'maxlength="120"' }) +
+      '<label class="full" for="cn-body">Text *<textarea id="cn-body" rows="7" maxlength="5000">' + esc(c ? c.body : '') + '</textarea></label></div><div class="sub">Platzhalter: {kunde} {ticket} {betreff} {mitarbeiter} {firma}</div>', 'Speichern', function (f) {
+      var body = { title: v(f, 'cn-title'), body: f.querySelector('#cn-body').value.trim() };
+      if (!body.title || !body.body) return bad('Bitte Titel und Text eingeben.');
+      return (c ? api('PATCH', '/api/canned/' + c.id, body) : api('POST', '/api/canned', body)).then(function () { done('Textbaustein gespeichert'); });
+    });
+  }
+  function faqDialog(a) {
+    modal(a ? 'Artikel bearbeiten' : 'Neuer Hilfe-Artikel', '<div class="form">' + field('fq-title', 'Frage / Titel *', a ? a.title : '', 'text', { full: true, attrs: 'maxlength="200"' }) + field('fq-cat', 'Kategorie', a ? a.category : '', 'text', { attrs: 'maxlength="80"' }) +
+      '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="fq-pub" type="checkbox"' + (!a || a.published ? ' checked' : '') + '> Im Portal veröffentlichen</label>' +
+      '<label class="full" for="fq-body">Antwort *<textarea id="fq-body" rows="9">' + esc(a ? a.body : '') + '</textarea></label></div>', 'Speichern', function (f) {
+      var body = { title: v(f, 'fq-title'), category: v(f, 'fq-cat'), published: f.querySelector('#fq-pub').checked, body: f.querySelector('#fq-body').value.trim() };
+      if (body.title.length < 3 || !body.body) return bad('Bitte Titel (mind. 3 Zeichen) und Antwort eingeben.');
+      return (a ? api('PATCH', '/api/faq/' + a.id, body) : api('POST', '/api/faq', body)).then(function () { done('Artikel gespeichert'); });
+    });
+  }
+  function newTicketDialog() {
+    Promise.all([listAll('/api/clients', { sort: 'name' }), api('GET', '/api/tickets/meta')]).then(function (r) {
+      var clients = r[0], meta = r[1];
+      if (!clients.length) return toast('Lege zuerst einen Kunden an.');
+      modal('Ticket erfassen', '<div class="form">' + selectField('nt-c', 'Kunde', clientOptions(clients), clients[0].id, true) + field('nt-s', 'Betreff *', '', 'text', { full: true, attrs: 'maxlength="200"' }) +
+        '<label class="full" for="nt-b">Anliegen des Kunden *<textarea id="nt-b" rows="5" placeholder="z. B. Anruf von heute: …"></textarea></label>' +
+        selectField('nt-p', 'Priorität', Object.keys(TPRIO).map(function (k) { return [k, TPRIO[k][0]]; }), 'NORMAL') + selectField('nt-cat', 'Kategorie', [['', '– keine –']].concat(meta.categories.map(function (c) { return [c, c]; })), '') +
+        selectField('nt-a', 'Bearbeiter', [['', '– niemand –']].concat(meta.agents.map(function (a) { return [a.id, a.name]; })), me.id) +
+        '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="nt-n" type="checkbox" checked> Kunden per E-Mail benachrichtigen</label></div>', 'Ticket anlegen', function (f) {
+        if (v(f, 'nt-s').length < 3 || !f.querySelector('#nt-b').value.trim()) return bad('Bitte Betreff und Anliegen eingeben.');
+        var fd = new FormData();
+        fd.append('clientId', v(f, 'nt-c')); fd.append('subject', v(f, 'nt-s')); fd.append('body', f.querySelector('#nt-b').value.trim()); fd.append('priority', v(f, 'nt-p'));
+        if (v(f, 'nt-cat')) fd.append('category', v(f, 'nt-cat')); if (v(f, 'nt-a')) fd.append('assigneeId', v(f, 'nt-a')); fd.append('notifyCustomer', f.querySelector('#nt-n').checked ? 'true' : 'false');
+        return api('POST', '/api/tickets', fd, true).then(function (t) { go('ticket', { ticketId: t.id }); toast('Ticket ' + t.number + ' angelegt'); });
+      });
+    }).catch(fail);
+  }
+
   function vLicenses() {
     return api('GET', '/api/licenses' + qs({ pageSize: 100, status: ui.lstatus, search: ui.lsearch })).then(function (res) {
       var chips = [['', 'Alle']].concat(opts(LICENSE_STATUS));
@@ -676,7 +832,7 @@
   }
 
   /* ---------- Rendern ---------- */
-  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, settings: vSettings, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
+  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, settings: vSettings, support: vSupport, ticket: vTicket, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
   var seq = 0;
   function render() {
     if (!token || !me) return;
@@ -1158,6 +1314,26 @@
       case 'test-mail': return confirmDialogTo();
       case 'db-test': return dbTest(el.dataset.target).catch(function () {});
       case 'db-switch': return dbSwitchDialog(el.dataset.target);
+      case 'stab': ui.stab = el.dataset.v; return render();
+      case 'tview': ui.tview = el.dataset.v; ui.stab = 'tickets'; if (ui.view !== 'support') ui.view = 'support'; return render();
+      case 'open-ticket': if (e.target.closest('.tk-sel') ) return; return go('ticket', { ticketId: id });
+      case 'new-ticket': return newTicketDialog();
+      case 'new-canned': return cannedDialog();
+      case 'edit-canned': return api('GET', '/api/canned').then(function (l) { cannedDialog(l.filter(function (c) { return c.id === id; })[0]); }).catch(fail);
+      case 'del-canned': return confirmDialog('Der Textbaustein wird gelöscht.', 'Löschen', function () { return api('DELETE', '/api/canned/' + id).then(function () { done('Gelöscht'); }); });
+      case 'new-faq': return faqDialog();
+      case 'edit-faq': return api('GET', '/api/faq').then(function (l) { faqDialog(l.filter(function (c) { return c.id === id; })[0]); }).catch(fail);
+      case 'del-faq': return confirmDialog('Der Artikel wird gelöscht und ist im Portal nicht mehr sichtbar.', 'Löschen', function () { return api('DELETE', '/api/faq/' + id).then(function () { done('Gelöscht'); }); });
+      case 'tk-att': return downloadPdf(el, '/api/tickets/attachments/' + id);
+      case 'tk-mode': {
+        var staff = el.dataset.v === 'STAFF', form = $('#tk-reply');
+        form.querySelectorAll('[data-act=tk-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === el)); });
+        form.dataset.mode = el.dataset.v; $('#tk-statuswrap').hidden = !staff; $('#tk-send').textContent = staff ? 'Antwort senden' : 'Notiz speichern';
+        form.classList.toggle('is-note', !staff); return;
+      }
+      case 'tk-quick': return ticketAction('/' + ui.ticketId, 'PATCH', { status: el.dataset.v }).then(function () { done('Status geändert'); }).catch(fail);
+      case 'del-ticket': return confirmDialog('Das Ticket wird samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('DELETE', '/api/tickets/' + id).then(function () { go('support'); toast('Ticket gelöscht'); }); });
+      case 'bulk-delete': return confirmDialog(ui.tsel.length + ' Ticket(s) werden samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('POST', '/api/tickets/bulk', { ids: ui.tsel, action: 'delete' }).then(function () { ui.tsel = []; done('Gelöscht'); }); });
       case 'lfilter': ui.lstatus = el.dataset.v; return render();
       case 'open-license': return licenseDialog(id);
       case 'new-license': return newLicenseDialog();
@@ -1215,6 +1391,48 @@
       var m = /\((\w+):/.exec(err.message); // Feldname aus der Fehlermeldung markieren
       if (m) { var el = f.querySelector('[data-key="' + m[1] + '"]'); if (el) el.focus(); }
     });
+  });
+  /* Support: Auswahl, Filter, Ticket-Felder, Antwort senden */
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.id === 'tk-all') { document.querySelectorAll('.tk-sel').forEach(function (c) { c.checked = t.checked; }); ui.tsel = t.checked ? Array.prototype.map.call(document.querySelectorAll('.tk-sel'), function (c) { return c.dataset.id; }) : []; return render(); }
+    if (t.classList && t.classList.contains('tk-sel')) { var id = t.dataset.id, i = ui.tsel.indexOf(id); if (t.checked && i < 0) ui.tsel.push(id); if (!t.checked && i >= 0) ui.tsel.splice(i, 1); return render(); }
+    if (t.id === 'tprio') { ui.tprio = t.value; return render(); }
+    if (t.id === 'tcat') { ui.tcat = t.value; return render(); }
+    if (t.id === 'bk-status' || t.id === 'bk-prio' || t.id === 'bk-assign') {
+      if (!t.value) return;
+      var action = t.id === 'bk-status' ? 'status' : t.id === 'bk-prio' ? 'priority' : 'assign';
+      return api('POST', '/api/tickets/bulk', { ids: ui.tsel, action: action, value: t.value }).then(function (r) { ui.tsel = []; done(r.done + ' Ticket(s) geändert'); }).catch(fail);
+    }
+    if (t.dataset && t.dataset.tk && ui.view === 'ticket') {
+      var body = {}; body[t.dataset.tk] = t.value;
+      return ticketAction('/' + ui.ticketId, 'PATCH', body).then(function () { done('Gespeichert'); }).catch(function (err) { fail(err); render(); });
+    }
+    if (t.id === 'tk-canned') {
+      var c = (ui.canned || []).filter(function (x) { return x.id === t.value; })[0], ta = $('#tk-body');
+      if (c && ta) { ta.value = (ta.value ? ta.value.replace(/\s+$/, '') + '\n\n' : '') + fillCanned(c); ta.focus(); }
+      t.value = ''; return;
+    }
+    if (t.id === 'tk-files') { var names = Array.prototype.map.call(t.files, function (f) { return f.name; }); $('#tk-filelist').textContent = names.join(', '); }
+  });
+  var tkTimer;
+  document.addEventListener('input', function (e) {
+    if (e.target.id === 'tq') { ui.tsearch = e.target.value; clearTimeout(tkTimer); tkTimer = setTimeout(render, 300); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.target.id === 'tk-body' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#tk-reply').requestSubmit(); }
+  });
+  document.addEventListener('submit', function (e) {
+    if (e.target.id !== 'tk-reply') return;
+    e.preventDefault();
+    var f = e.target, body = $('#tk-body').value.trim(), mode = f.dataset.mode || 'STAFF', btn = $('#tk-send');
+    if (!body) return toast('Bitte eine Nachricht eingeben.');
+    var fd = new FormData();
+    fd.append('kind', mode); fd.append('body', body);
+    if (mode === 'STAFF' && $('#tk-after').value) fd.append('status', $('#tk-after').value);
+    Array.prototype.forEach.call($('#tk-files').files, function (file) { fd.append('files[]', file); });
+    btn.disabled = true;
+    api('POST', '/api/tickets/' + ui.ticketId + '/messages', fd, true).then(function () { return render(); }).then(function () { toast(mode === 'STAFF' ? 'Antwort gesendet' : 'Notiz gespeichert'); }).catch(function (err) { btn.disabled = false; toast(err.message); });
   });
   var licTimer;
   document.addEventListener('input', function (e) {

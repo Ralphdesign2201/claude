@@ -177,6 +177,23 @@ Entwicklungsadressen (`localhost`, `*.test`, `*.local`, `127.x`) sind erlaubt (`
 
 **Ehrliche Grenzen:** Eine Lizenzprüfung in PHP-Code, den der Kunde besitzt, kann jemand mit Programmierkenntnissen aus der Software entfernen. Sie verhindert Weitergabe an ehrliche Dritte und zeigt dir, wo die Software läuft – echten Schutz bringt nur, was der Kunde nicht selbst ändern kann (Updates, Support, Funktionen über deine API). Sinnvoll ist, die Prüfung an mehreren Stellen einzubauen und Quellcode ggf. zu verschleiern.
 
+## Support (Tickets)
+
+Kunden schreiben im Kundenportal unter **„Support“** eine Anfrage (Betreff, Kategorie, Dringlichkeit, optional eine betroffene Lizenz, bis zu 5 Dateien) und verfolgen sie dort. Beim Schreiben schlägt das Portal passende **Hilfe-Artikel** vor.
+Sie bekommen eine Eingangsbestätigung, jede Antwort des Teams per E-Mail (mit Portal-Link), sehen ungelesene Antworten, können das Ticket schließen oder wieder öffnen und nach der Lösung 1–5 Sterne vergeben. Antwortet der Kunde auf ein gelöstes/geschlossenes Ticket, öffnet es sich von selbst wieder.
+
+Für das Team gibt es im Menü **„Support“** (mit Zähler für neue Tickets):
+- Kennzahlen: offen, überfällig, nicht zugewiesen, Ø erste Antwortzeit, Zufriedenheit; Klick auf eine Kachel filtert die Liste.
+- Filter: offene, mir zugewiesen, nicht zugewiesen, neu/ungelesen, überfällig, gelöst, geschlossen, alle – plus Suche (Nummer, Betreff, Kunde, **Nachrichtentext**), Priorität und Kategorie. **Sammelaktionen** für Status, Priorität, Zuweisung und (Admin) Löschen.
+- Ticket-Ansicht: Verlauf als Unterhaltung, **interne Notizen** (nie für den Kunden sichtbar, auch ihre Anhänge nicht), automatischer Änderungsverlauf (Status, Zuweisung, Priorität …), Antworten mit Dateien, **Textbausteine** mit Platzhaltern (`{kunde}`, `{ticket}`, `{betreff}`, `{mitarbeiter}`, `{firma}`) und Status-Wechsel direkt beim Senden (z. B. „Wartet auf Kunde“). Seitenleiste: Status, Priorität, Bearbeiter (bekommt eine Mail), Kategorie, Lizenz, Stichworte, Kundendaten, weitere Tickets des Kunden, Zeiten und Bewertung.
+- **Fälligkeiten (SLA):** `TICKET_FIRST_RESPONSE_HOURS` (24) und `TICKET_RESOLVE_HOURS` (72); bei „Hoch“ gilt die halbe, bei „Dringend“ ein Viertel, bei „Niedrig“ die doppelte Zeit. „Wartet auf Kunde“ und „Zurückgestellt“ stoppen die Uhr. Überfällige Tickets sind markiert und filterbar.
+- Tickets lassen sich auch **im Namen des Kunden erfassen** (z. B. nach einem Anruf), optional mit Benachrichtigung.
+- **Automatik per Cron** (`bin/cron.php`): gelöste Tickets werden nach `TICKET_AUTOCLOSE_DAYS` (7) geschlossen, „Wartet auf Kunde“ ohne Reaktion nach `TICKET_PENDING_DAYS` (14) als gelöst markiert.
+- Alles Weitere (Kategorien, Zeiten, Benachrichtigungsadresse, Anhangsgröße) unter Einstellungen → Support.
+
+Anhänge liegen **nicht** im öffentlichen Upload-Ordner, sondern in `uploads/tickets/` und werden nur nach Prüfung der Berechtigung ausgeliefert (Kunde nur eigene, ohne interne Notizen). Erlaubt sind Bilder, PDF, Text, Office und ZIP; HTML/SVG/Skripte werden abgelehnt, Bilder auf Echtheit geprüft. Sie sind im Backup enthalten.
+Missbrauchsbremse im Portal: höchstens 15 neue Tickets und 60 Nachrichten pro Kunde und Stunde. Ehrlich: Antworten per E-Mail-Antwort (Inbound-Mail) gibt es nicht – Kunden antworten im Portal.
+
 ## Einstellungen und Datenbank
 
 Oben rechts in der Kopfleiste (nur für Admins) öffnet **„Einstellungen“** eine Seite für Firmendaten, Zahlung/Mahnwesen, E-Mail (SMTP, mit Testmail), Kundenportal, Lizenzen, Datensicherung und die Datenbank.
@@ -249,6 +266,7 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Bestellungen  | `GET/POST /api/orders`, `GET /api/orders/:id`, `POST /api/orders/:id/accept`, `POST /api/orders/:id/reject`; Portal: `GET /api/portal/products`, `GET/POST /api/portal/orders`, `POST /api/portal/orders/:id/cancel` |
 | Kundenkonten  | Portal: `GET /api/portal/config`, `POST /api/portal/register`, `/verify-info`, `/verify`, `/login`, `/logout`, `/forgot`, `/reset`, `/password`; Verwaltung: `POST /api/portal-accounts/:id/active`, `/reset`, `DELETE /api/portal-accounts/:id` |
 | Lizenzen      | `GET/POST /api/licenses`, `GET/PATCH/DELETE /api/licenses/:id`, `POST /api/licenses/:id/regenerate`, `POST /api/licenses/:id/send`; öffentlich: `POST /api/license/verify`, `GET /api/license/public-key`, `GET /license/client.php`; Portal: `GET /api/portal/licenses`, `POST /api/portal/licenses/:id/domain` |
+| Support       | Team: `GET/POST /api/tickets`, `GET /api/tickets/stats|meta`, `GET/PATCH/DELETE /api/tickets/:id`, `POST /api/tickets/:id/messages` (multipart), `POST /api/tickets/bulk`, `GET /api/tickets/attachments/:id`, `/api/canned`, `/api/faq`; Portal: `GET/POST /api/portal/tickets`, `GET /api/portal/tickets/:id`, `POST …/messages|close|reopen|rating`, `GET /api/portal/attachments/:id`, `GET /api/portal/faq` |
 | Einstellungen | `GET/PUT /api/settings/all`, `POST /api/settings/test-mail`, `POST /api/settings/database/test`, `POST /api/settings/database/switch` (nur Admin) |
 | Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
 | Einstellungen | `GET /api/settings` (Mail eingerichtet? Firmendaten gesetzt?) |
