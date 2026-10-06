@@ -1,4 +1,4 @@
--- Rechtstexte (Impressum, Datenschutzerklärung, AGB) und erweiterte Release-Verwaltung (öffentliche Releases, Mindestversion)
+-- Rechtstexte (Impressum, Datenschutzerklärung, AGB)
 
 CREATE TABLE "LegalDocument" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -13,8 +13,3 @@ CREATE TABLE "LegalDocument" (
 );
 
 CREATE UNIQUE INDEX "LegalDocument_type_key" ON "LegalDocument"("type");
-
--- access: 'public' = jede Installation (auch ohne Lizenz), 'licensed' = nur mit gültiger Lizenz
-ALTER TABLE "Release" ADD COLUMN "access" TEXT NOT NULL DEFAULT 'licensed' CHECK ("access" IN ('public', 'licensed'));
--- Mindestversion, ab der dieses Paket direkt installierbar ist; ältere Installationen bekommen vorher die dazwischenliegende Version
-ALTER TABLE "Release" ADD COLUMN "minFrom" TEXT;

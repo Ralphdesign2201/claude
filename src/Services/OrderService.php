@@ -189,7 +189,6 @@ final class OrderService
         $o['recurring'] = $o['recurringId'] ? Db::one('SELECT "id", "title", "active" FROM "Recurring" WHERE "id" = ?', [$o['recurringId']]) : null;
         $o['project'] = $o['projectId'] ? Db::one('SELECT "id", "name" FROM "Project" WHERE "id" = ?', [$o['projectId']]) : null;
         $o['totals'] = self::totals($o);
-        $o = array_filter($o, static fn ($k) => !str_starts_with((string) $k, 'license') && $k !== 'domain', ARRAY_FILTER_USE_KEY); // Spalten des früheren Lizenzsystems
         return $o;
     }
 

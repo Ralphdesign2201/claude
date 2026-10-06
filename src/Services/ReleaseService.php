@@ -204,10 +204,6 @@ final class ReleaseService
     {
         $r = Db::require('Release', $id, 'Release nicht gefunden');
         Db::delete('Release', $id);
-        $full = (string) ($r['fullFileName'] ?? ''); // Vollpakete früherer Versionen mit aufräumen
-        if (preg_match('/^full-[a-f0-9]{24}\\.zip$/', $full) && is_file(self::dir() . '/' . $full)) {
-            @unlink(self::dir() . '/' . $full);
-        }
         $path = self::dir() . '/' . $r['fileName'];
         if (preg_match('/^release-[a-f0-9]{24}\.zip$/', $r['fileName']) && is_file($path)) {
             @unlink($path);

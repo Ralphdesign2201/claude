@@ -327,7 +327,6 @@ final class TicketService
         unset($m);
 
         $t['messages'] = $messages;
-        unset($t['licenseId']); // Spalte des früheren Lizenzsystems
         if ($forStaff) {
             $t['client'] = Db::one('SELECT "id", "name", "company", "email", "phone" FROM "Client" WHERE "id" = ?', [$t['clientId']]);
             $t['assignee'] = $t['assigneeId'] ? Db::one('SELECT "id", "name" FROM "User" WHERE "id" = ?', [$t['assigneeId']]) : null;

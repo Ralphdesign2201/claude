@@ -45,9 +45,8 @@ final class UpdateSigner
         if ($configured) {
             return $configured;
         }
-        $old = APP_ROOT . '/database/license.key'; // Schlüssel aus früheren Versionen weiterverwenden – bereits ausgelieferte Installationen kennen den öffentlichen Teil
 
-        return is_file($old) ? $old : APP_ROOT . '/database/update.key';
+        return APP_ROOT . '/database/update.key';
     }
 
     /** Öffentlicher Schlüssel (Base64) für die Installationen. */

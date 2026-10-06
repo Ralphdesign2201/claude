@@ -113,7 +113,7 @@ final class ReleasesController
     /** @param array<string,mixed> $r @return array<string,mixed> */
     private static function view(array $r): array
     {
-        unset($r['fileName'], $r['signature'], $r['fullFileName'], $r['fullSha256'], $r['fullSize'], $r['access']);
+        unset($r['fileName'], $r['signature']);
 
         return $r + ['isPublished' => (bool) $r['published']];
     }

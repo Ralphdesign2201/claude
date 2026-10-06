@@ -277,7 +277,7 @@ final class BackupService
         }
 
         // Signaturschlüssel für Updates zurückspielen (ein abweichender vorhandener wird als Kopie aufgehoben)
-        $keyData = trim(Env::get('UPDATE_SECRET_KEY', '') ?? '') === '' ? ($zip->getFromName(self::KEY_ENTRY) ?: $zip->getFromName('license.key')) : false; // „license.key“ = Backups früherer Versionen
+        $keyData = trim(Env::get('UPDATE_SECRET_KEY', '') ?? '') === '' ? $zip->getFromName(self::KEY_ENTRY) : false;
         if ($keyData !== false && $keyData !== '') {
             $keyFile = UpdateSigner::keyFile();
             self::ensureDir(dirname($keyFile));

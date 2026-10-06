@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Projekt: CRM für Webdesigner (PHP ≥ 8.1, SQLite oder MySQL/MariaDB, eigenes Mini-Framework, **keine Composer-Abhängigkeiten**). UI, Fehlermeldungen, Doku und Commit-Texte sind auf Deutsch – beim Schreiben von Meldungen dabei bleiben. Ausführliche Feature-Doku: `README.md`, Lizenz-Tools: `Lizenz-tools/README.md`.
+Projekt: CRM für Webdesigner (PHP ≥ 8.1, SQLite oder MySQL/MariaDB, eigenes Mini-Framework, **keine Composer-Abhängigkeiten**). UI, Fehlermeldungen, Doku und Commit-Texte sind auf Deutsch – beim Schreiben von Meldungen dabei bleiben. Ausführliche Feature-Doku: `README.md`.
 
 ## Befehle
 
@@ -16,7 +16,7 @@ TEST_DB=mysql php tests/run.php    # dasselbe gegen MySQL (TEST_MYSQL_* , Standa
 php tests/product.php              # Update-Server + Installations-Kopien: signierte Updates, verpasste Versionen, Installer
 ```
 
-Es gibt kein Lint/Build und kein Test-Framework: `tests/*.php` sind eigenständige Skripte mit `check()/expect()`; einzelne Tests lassen sich nur ausführen, indem man das Skript kürzt oder eine Sektion (`echo "Name\n"`-Blöcke) isoliert. Aktuell alles grün (run.php 655, product.php 115). `php -l datei.php` und `node --check public/assets/app.js` für schnelle Syntax-Checks. UI-Prüfung erfolgt mit Playwright-Skripten gegen einen frisch migrierten Dev-Server (Chromium liegt unter `/opt/pw-browsers`).
+Es gibt kein Lint/Build und kein Test-Framework: `tests/*.php` sind eigenständige Skripte mit `check()/expect()`; einzelne Tests lassen sich nur ausführen, indem man das Skript kürzt oder eine Sektion (`echo "Name\n"`-Blöcke) isoliert. Aktuell alles grün (run.php 551, product.php 69). `php -l datei.php` und `node --check public/assets/app.js` für schnelle Syntax-Checks. UI-Prüfung erfolgt mit Playwright-Skripten gegen einen frisch migrierten Dev-Server (Chromium liegt unter `/opt/pw-browsers`).
 
 Releases entstehen im Admin (System → Versionen & Updates, `PackageBuilder`); vorher `VERSION` hochzählen. Das ZIP für neue Installationen: „Installationspaket herunterladen“ ebendort.
 
@@ -30,10 +30,9 @@ Releases entstehen im Admin (System → Versionen & Updates, `PackageBuilder`); 
 - Zwei Auth-Welten: Team (JWT, Rollen ADMIN/Mitarbeiter, Login per Benutzername oder E-Mail) und Kundenportal (`/api/portal/*`, Token nur als Hash gespeichert, `PortalAccount`).
 
 **Update-System** (bereichsübergreifend; das frühere Lizenzsystem wurde bewusst komplett entfernt – nicht wieder einführen):
-- Jede Installation kann *Update-Server* sein (`ReleaseService`, `UpdateApiController`, Signatur über `UpdateSigner`, Ed25519-Schlüssel `database/update.key`, fällt auf altes `license.key` zurück) und *Client* (`product.json` mit `server` + `publicKeys`; `Support\Product`, `Support\UpdateClient`, `UpdateService`).
+- Jede Installation kann *Update-Server* sein (`ReleaseService`, `UpdateApiController`, Signatur über `UpdateSigner`, Ed25519-Schlüssel `database/update.key`) und *Client* (`product.json` mit `server` + `publicKeys`; `Support\Product`, `Support\UpdateClient`, `UpdateService`).
 - `ReleaseService::plan()` wählt das Ziel inkl. `minFrom`-Kette; `UpdateService::installAll()` installiert in Schleife (Download, SHA-256 + Signatur, Whitelist-Verzeichnisse, Backup, Rollback). Jedes Release ist ein **vollständiger Stand** (Code + alle Migrationen), damit Versionen übersprungen werden können. `product.json`, `public/install.php`, Daten und Einstellungen werden nie überschrieben.
 - `PackageBuilder` baut Update-Paket und Installationspaket aus den Dateien des laufenden Servers; das Manifest-Format teilen sich `PackageBuilder`, `ReleaseService::readManifest` und `UpdateService::extract`.
-- Alte DB-Spalten/Tabellen des Lizenzsystems (`License*`, `Product.license*`, `Ticket.licenseId` …) bleiben ungenutzt bestehen (Migration 011 entfernt nur `LicenseNonce`); die API liefert sie nicht mehr aus.
 
 **Weitere Querschnittsthemen:** `LegalService` (Impressum/Datenschutz/AGB-Generator, Markdown-light→HTML, öffentliche Seiten `/impressum` etc.) und `HealthService` (rote/gelbe Dashboard-Hinweise, Cron-Zeitstempel in `database/cron-state.json`) hängen an den Einstellungen und fast allen Feature-Flags; Support-Tickets (`TicketService`, SLA, Anhänge in `uploads/tickets/`); Backups (`BackupService`, optional verschlüsselt); Cron-Arbeit läuft über `bin/cron.php` **oder** `POST /api/cron/run` mit `CRON_TOKEN`.
 

@@ -11,7 +11,6 @@ CREATE TABLE "Ticket" (
     "tags" TEXT,
     "source" TEXT NOT NULL DEFAULT 'PORTAL' CHECK ("source" IN ('PORTAL', 'ADMIN')),
     "assigneeId" TEXT,
-    "licenseId" TEXT,
     "unreadStaff" INTEGER NOT NULL DEFAULT 1 CHECK ("unreadStaff" IN (0, 1)),
     "unreadCustomer" INTEGER NOT NULL DEFAULT 0 CHECK ("unreadCustomer" IN (0, 1)),
     "firstResponseAt" TEXT,
@@ -25,8 +24,7 @@ CREATE TABLE "Ticket" (
     "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     FOREIGN KEY ("clientId") REFERENCES "Client" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    FOREIGN KEY ("assigneeId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-    FOREIGN KEY ("licenseId") REFERENCES "License" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    FOREIGN KEY ("assigneeId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE UNIQUE INDEX "Ticket_number_key" ON "Ticket"("number");

@@ -95,7 +95,7 @@ final class CatalogController
             . $where->sql() . ' ORDER BY p."sortOrder" ASC, p."name" COLLATE NOCASE ASC',
             $where->params(),
         );
-        return Response::json(array_map([self::class, 'withoutLegacy'], Casts::rows($rows, self::PRODUCT_BOOLS)));
+        return Response::json(Casts::rows($rows, self::PRODUCT_BOOLS));
     }
 
     public static function showProduct(Request $r): Response
@@ -200,14 +200,9 @@ final class CatalogController
             'SELECT p.*, c.id AS category__id, c.name AS category__name FROM "Product" p LEFT JOIN "Category" c ON c.id = p.categoryId WHERE p."id" = ?',
             [$id],
         ) ?? throw ApiError::notFound('Produkt nicht gefunden');
-        return self::withoutLegacy(Casts::row($row, self::PRODUCT_BOOLS));
+        return Casts::row($row, self::PRODUCT_BOOLS);
     }
 
-    /** Spalten des früheren Lizenzsystems (in der Datenbank ungenutzt vorhanden) nicht mehr ausliefern. @param array<string,mixed> $row @return array<string,mixed> */
-    private static function withoutLegacy(array $row): array
-    {
-        return array_filter($row, static fn ($k) => !str_starts_with((string) $k, 'license'), ARRAY_FILTER_USE_KEY);
-    }
 
     /**
      * Fachliche Regeln je Produktart. Miete braucht einen Rhythmus; Einrichtungsgebühr und Rhythmus

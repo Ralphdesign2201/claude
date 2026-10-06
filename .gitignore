@@ -9,7 +9,6 @@ vendor
 .DS_Store
 database/outbox/
 backups/
-database/license.key
 database/*.key
 database/settings.json*
 !uploads/.htaccess
