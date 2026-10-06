@@ -29,9 +29,11 @@ final class PortalService
         $expires = $days > 0 ? (new DateTimeImmutable('now'))->modify("+$days days")->format(Dates::FORMAT) : null;
 
         Db::transaction(static function () use ($clientId, $token, $expires, $userId) {
-            Db::run('UPDATE "PortalToken" SET "revokedAt" = ? WHERE "clientId" = ? AND "revokedAt" IS NULL', [Dates::now(), $clientId]);
+            // Nur frühere Zugangslinks werden ungültig; angemeldete Sitzungen von Konten bleiben bestehen.
+            Db::run('UPDATE "PortalToken" SET "revokedAt" = ? WHERE "clientId" = ? AND "kind" = \'LINK\' AND "revokedAt" IS NULL', [Dates::now(), $clientId]);
             Db::insert('PortalToken', [
                 'clientId' => $clientId,
+                'kind' => 'LINK',
                 'tokenHash' => hash('sha256', $token),
                 'expiresAt' => $expires,
                 'createdBy' => $userId,
@@ -41,6 +43,7 @@ final class PortalService
         return ['token' => $token, 'link' => self::baseUrl() . '/portal#' . $token, 'expiresAt' => $expires];
     }
 
+    /** Sperrt Zugangslink und alle angemeldeten Sitzungen des Kunden. */
     public static function revoke(string $clientId): void
     {
         Db::run('UPDATE "PortalToken" SET "revokedAt" = ? WHERE "clientId" = ? AND "revokedAt" IS NULL', [Dates::now(), $clientId]);
@@ -51,7 +54,7 @@ final class PortalService
     {
         $row = Db::one(
             'SELECT "createdAt", "expiresAt", "lastUsedAt" FROM "PortalToken"
-             WHERE "clientId" = ? AND "revokedAt" IS NULL ORDER BY "createdAt" DESC LIMIT 1',
+             WHERE "clientId" = ? AND "kind" = \'LINK\' AND "revokedAt" IS NULL ORDER BY "createdAt" DESC LIMIT 1',
             [$clientId],
         );
         $active = $row !== null && ($row['expiresAt'] === null || $row['expiresAt'] > Dates::now());
@@ -59,12 +62,22 @@ final class PortalService
     }
 
     /**
-     * Prüft den Schlüssel aus dem Header X-Portal-Token und liefert den zugehörigen Kunden.
+     * Prüft den Schlüssel aus dem Header X-Portal-Token (Zugangslink oder Anmelde-Sitzung) und liefert den Kunden.
      * Fehlversuche werden pro IP gezählt, damit niemand Schlüssel durchprobieren kann.
      *
      * @return array<string,mixed>
      */
     public static function authenticate(Request $r): array
+    {
+        return self::authenticateFull($r)['client'];
+    }
+
+    /**
+     * Wie authenticate(), liefert zusätzlich die Token-Zeile und – bei Anmeldung mit Konto – das Konto.
+     *
+     * @return array{client:array<string,mixed>,token:array<string,mixed>,account:?array<string,mixed>}
+     */
+    public static function authenticateFull(Request $r): array
     {
         $key = 'portal-fail:' . $r->ip();
         if (RateLimit::count($key, self::FAIL_WINDOW) >= self::FAIL_LIMIT) {
@@ -73,18 +86,30 @@ final class PortalService
 
         $token = (string) $r->header('x-portal-token');
         $row = $token !== '' && strlen($token) <= 128
-            ? Db::one('SELECT "id", "clientId", "expiresAt", "lastUsedAt" FROM "PortalToken" WHERE "tokenHash" = ? AND "revokedAt" IS NULL', [hash('sha256', $token)])
+            ? Db::one('SELECT "id", "clientId", "kind", "accountId", "expiresAt", "lastUsedAt" FROM "PortalToken" WHERE "tokenHash" = ? AND "revokedAt" IS NULL', [hash('sha256', $token)])
             : null;
+
+        $account = null;
+        if ($row !== null && $row['kind'] === 'SESSION') {
+            $account = Db::find('PortalAccount', (string) $row['accountId']);
+            if ($account === null || !$account['active'] || $account['clientId'] !== $row['clientId']) {
+                $row = null; // gesperrtes oder gelöschtes Konto
+            }
+        }
 
         if ($row === null || ($row['expiresAt'] !== null && $row['expiresAt'] <= Dates::now())) {
             RateLimit::hit($key, self::FAIL_WINDOW);
-            throw ApiError::unauthorized('Der Zugangslink ist ungültig oder abgelaufen');
+            throw ApiError::unauthorized('Der Zugang ist ungültig oder abgelaufen – bitte erneut anmelden');
         }
 
         if ($row['lastUsedAt'] === null || $row['lastUsedAt'] < gmdate(Dates::FORMAT, time() - 300)) {
             Db::run('UPDATE "PortalToken" SET "lastUsedAt" = ? WHERE "id" = ?', [Dates::now(), $row['id']]);
         }
-        return Db::require('Client', $row['clientId'], 'Kunde nicht gefunden');
+        return [
+            'client' => Db::require('Client', $row['clientId'], 'Kunde nicht gefunden'),
+            'token' => $row,
+            'account' => $account,
+        ];
     }
 
     /** Öffentliche Adresse der Anwendung (APP_URL empfohlen; sonst aus der aktuellen Anfrage abgeleitet). */

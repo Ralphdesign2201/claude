@@ -234,3 +234,18 @@ select.inline { padding: 4px 8px; }
 
 .tabs button { white-space: nowrap; }
 .tabs { scrollbar-width: thin; }
+
+/* Anmeldung im Kundenportal */
+.auth { max-width: 440px; margin: 6vh auto 0; width: 100%; display: flex; flex-direction: column; gap: 14px; padding: 24px; }
+.auth label:not(.check) { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.auth label input:not([type=checkbox]) { font-weight: 400; color: var(--fg); }
+.auth .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--fg); }
+.auth .check a { color: var(--accent); }
+.note { border-radius: 10px; padding: 9px 13px; font-size: 13.5px; }
+.note.err { background: var(--bad-soft); color: var(--bad); }
+.note.ok { background: var(--good-soft); color: var(--good); }
+.link-btn { all: unset; cursor: pointer; color: var(--accent); font-size: 13.5px; text-align: center; }
+.link-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.hp { position: absolute; left: -9999px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+.p-user { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; font: 400 13px var(--f-body); }
+.p-top { flex-wrap: wrap; }

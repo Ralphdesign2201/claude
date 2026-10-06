@@ -32,6 +32,8 @@ $env = [
     'BACKUP_DIR' => "$tmp/backups",
     'UPLOAD_DIR' => "$tmp/uploads",
     'APP_URL' => 'https://crm.example.com',
+    'PRIVACY_URL' => 'https://crm.example.com/datenschutz',
+    'REGISTER_RATE_LIMIT_MAX' => '7',
     'DATABASE_PATH' => "$tmp/test.db",
     'JWT_SECRET' => 'test-secret-test-secret-123456',
     'ALLOW_REGISTRATION' => 'false',
@@ -797,6 +799,170 @@ check('Mehr als 20 offene Bestellungen gleichzeitig werden abgelehnt (409)', cou
 call('DELETE', "/api/clients/$spamClient", null, $token);
 call('DELETE', "/api/clients/$strangerClient", null, $token);
 
+echo "Kundenkonten (Registrierung)\n";
+$linkFrom = static function (array $mail, string $kind): ?string {
+    return preg_match('~https://crm\.example\.com/portal#' . $kind . '=([A-Za-z0-9_-]+)~', mailText($mail), $m) ? $m[1] : null;
+};
+$mailTo = static function (string $address) {
+    $hits = array_values(array_filter(mails(), static fn ($m) => str_contains($m['head'], "X-Envelope-To: $address")));
+    return $hits === [] ? null : end($hits);
+};
+$accountDb = new PDO('sqlite:' . "$tmp/test.db");
+$res = call('GET', '/api/portal/config');
+check('Portal-Konfiguration (öffentlich): Registrierung offen, Firmenname, Datenschutz-Link, Mindestlänge', $res[0] === 200 && $res[1]['registration'] === true && $res[1]['company'] === 'Ralph Design' && $res[1]['privacyUrl'] === 'https://crm.example.com/datenschutz' && $res[1]['termsUrl'] === null && $res[1]['minPassword'] === 10, $res[2]);
+check('Registrierung ist geschlossen, wenn kein Mailserver eingerichtet ist oder sie abgeschaltet wurde', App\Services\AccountService::registrationOpen() === false && (putenv('SMTP_HOST=127.0.0.1') || true) && App\Services\AccountService::registrationOpen() === true && (putenv('PORTAL_REGISTRATION=off') || true) && App\Services\AccountService::registrationOpen() === false && (putenv('PORTAL_REGISTRATION') || true) && (putenv('SMTP_HOST') || true));
+
+$register = static fn (array $body) => call('POST', '/api/portal/register', $body + ['terms' => true]);
+expect('Registrierung mit ungültiger E-Mail → 400', $register(['name' => 'Max Muster', 'email' => 'kaputt']), 400);
+expect('Registrierung mit zu kurzem Namen → 400', $register(['name' => 'M', 'email' => 'max@muster.example']), 400);
+expect('Registrierung ohne Zustimmung zur Datenschutzerklärung → 400', call('POST', '/api/portal/register', ['name' => 'Max Muster', 'email' => 'max@muster.example']), 400);
+$clientsBefore = (int) $accountDb->query('SELECT COUNT(*) FROM Client')->fetchColumn();
+$before = count(mails());
+$res = $register(['name' => 'Max Muster', 'company' => 'Muster GmbH', 'email' => 'Max@Muster.example']);
+check('Registrierung: 202 mit neutraler Meldung', $res[0] === 202 && $res[1]['ok'] === true && str_contains($res[1]['message'], 'E-Mail'), $res[2]);
+$mail = $mailTo('max@muster.example');
+$verifyToken = $mail ? $linkFrom($mail, 'verify') : null;
+check('Bestätigungs-Mail an die (kleingeschriebene) Adresse mit Link', count(mails()) === $before + 1 && $verifyToken !== null && strlen($verifyToken) === 43 && str_contains(mailText($mail), 'Passwort fest') && !str_contains(mailText($mail), 'Passwort:'), $mail ? mailText($mail) : 'keine Mail');
+check('Noch kein Kunde angelegt, Konto unbestätigt', (int) $accountDb->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientsBefore && $accountDb->query("SELECT verifiedAt FROM PortalAccount WHERE email = 'max@muster.example'")->fetchColumn() === null);
+check('Datenbank speichert nur den Hash des Bestätigungsschlüssels', $accountDb->query("SELECT verifyTokenHash FROM PortalAccount WHERE email = 'max@muster.example'")->fetchColumn() === hash('sha256', $verifyToken));
+expect('Anmeldung vor der Bestätigung unmöglich (kein Passwort bekannt) → 401', call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'irgendetwas123']), 401);
+
+$before = count(mails());
+$res = call('POST', '/api/portal/register', ['name' => 'Bot', 'email' => 'bot@spam.example', 'terms' => true, 'website' => 'http://spam.example']);
+check('Bot-Falle: gleiche Antwort, aber keine Mail und kein Konto', $res[0] === 202 && count(mails()) === $before && (int) $accountDb->query("SELECT COUNT(*) FROM PortalAccount WHERE email = 'bot@spam.example'")->fetchColumn() === 0, $res[2]);
+
+$res = call('POST', '/api/portal/verify-info', ['token' => $verifyToken]);
+check('Bestätigungsseite wird mit Name, Firma und Adresse vorbelegt', $res[0] === 200 && $res[1] === ['name' => 'Max Muster', 'company' => 'Muster GmbH', 'email' => 'max@muster.example'], $res[2]);
+expect('Ungültiger Bestätigungslink → 400', call('POST', '/api/portal/verify-info', ['token' => str_repeat('a', 43)]), 400);
+expect('Zu kurzes Passwort → 400', call('POST', '/api/portal/verify', ['token' => $verifyToken, 'password' => 'kurz123']), 400);
+expect('Passwort gleich E-Mail-Adresse → 400', call('POST', '/api/portal/verify', ['token' => $verifyToken, 'password' => 'max@muster.example']), 400);
+$before = count(mails());
+$res = call('POST', '/api/portal/verify', ['token' => $verifyToken, 'password' => 'sehr-sicheres-passwort', 'name' => 'Maximilian Muster']);
+check('Bestätigen + Passwort festlegen: angemeldet (Sitzung, 14 Tage)', $res[0] === 200 && strlen($res[1]['token']) === 43 && $res[1]['name'] === 'Maximilian Muster' && $res[1]['expiresAt'] > gmdate('Y-m-d\TH:i:s', strtotime('+13 days')), $res[2]);
+$sessionToken = $res[1]['token'];
+$S = ["X-Portal-Token: $sessionToken"];
+$newClient = $accountDb->query("SELECT * FROM Client WHERE email = 'max@muster.example'")->fetch(PDO::FETCH_ASSOC);
+check('Jetzt wurde der Kunde angelegt: Status Lead, Quelle „Portal-Registrierung“, Firma und geänderter Name', $newClient !== false && $newClient['status'] === 'LEAD' && $newClient['source'] === 'Portal-Registrierung' && $newClient['company'] === 'Muster GmbH' && $newClient['name'] === 'Maximilian Muster', $newClient);
+$notify = array_values(array_filter(array_slice(mails(), $before), static fn ($m) => str_contains($m['head'], 'X-Envelope-To: hallo@ralph-design.de')));
+check('Firma wird über die Registrierung per E-Mail informiert', count($notify) === 1 && str_contains(mailText($notify[0]), 'Muster GmbH') && str_contains(mailText($notify[0]), 'neuer Kunde'), count($notify));
+expect('Bestätigungslink ist nur einmal nutzbar → 400', call('POST', '/api/portal/verify', ['token' => $verifyToken, 'password' => 'anderes-passwort-123']), 400);
+$res = call('GET', '/api/portal/me', null, null, $S);
+check('Sitzung funktioniert in allen Portal-Funktionen (Daten des neuen Kunden)', $res[0] === 200 && $res[1]['client']['name'] === 'Maximilian Muster' && $res[1]['summary']['open'] == 0, $res[2]);
+expect('Sitzung sieht den Katalog', call('GET', '/api/portal/products', null, null, $S), 200);
+$res = call('GET', "/api/clients/{$newClient['id']}/portal", null, $token);
+check('Mitarbeiter sieht das Konto beim Kunden (bestätigt, aktiv)', $res[0] === 200 && count($res[1]['accounts']) === 1 && $res[1]['accounts'][0]['email'] === 'max@muster.example' && $res[1]['accounts'][0]['active'] == 1 && $res[1]['accounts'][0]['verifiedAt'] !== null && !isset($res[1]['accounts'][0]['passwordHash']), $res[2]);
+
+// Anmelden und Abmelden
+expect('Anmeldung mit falschem Passwort → 401', call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'falsch-falsch-falsch']), 401);
+$res = call('POST', '/api/portal/login', ['email' => ' MAX@muster.EXAMPLE ', 'password' => 'sehr-sicheres-passwort']);
+check('Anmeldung: Adresse ohne Beachtung von Groß-/Kleinschreibung und Leerzeichen', $res[0] === 200 && strlen($res[1]['token']) === 43 && $res[1]['token'] !== $sessionToken, $res[2]);
+$S2 = ["X-Portal-Token: {$res[1]['token']}"];
+$a = call('POST', '/api/portal/login', ['email' => 'unbekannt@muster.example', 'password' => 'sehr-sicheres-passwort']);
+$b = call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'falsch-falsch-falsch']);
+check('Unbekannte Adresse und falsches Passwort sind nicht zu unterscheiden', $a[0] === 401 && $b[0] === 401 && $a[1]['error'] === $b[1]['error'], [$a[2], $b[2]]);
+expect('Abmelden', call('POST', '/api/portal/logout', [], null, $S2), 204);
+expect('Nach dem Abmelden ist die Sitzung ungültig → 401', call('GET', '/api/portal/me', null, null, $S2), 401);
+expect('Die andere Sitzung bleibt bestehen', call('GET', '/api/portal/me', null, null, $S), 200);
+
+// Bestellen mit Konto, Kunde wird nach Annahme aktiv
+$res = call('POST', '/api/portal/orders', ['productId' => $pWeb, 'quantity' => 1], null, $S);
+expect('Kunde mit Konto bestellt', $res, 201);
+$accOrder = $res[1];
+call('POST', "/api/orders/{$accOrder['id']}/accept", [], $token);
+check('Nach der ersten angenommenen Bestellung wird aus dem Lead ein aktiver Kunde', $accountDb->query("SELECT status FROM Client WHERE id = '{$newClient['id']}'")->fetchColumn() === 'ACTIVE');
+
+// Sperren durch den Admin
+$acctId = $accountDb->query("SELECT id FROM PortalAccount WHERE email = 'max@muster.example'")->fetchColumn();
+expect('Konto sperren: unbekanntes Konto → 404', call('POST', '/api/portal-accounts/gibtsnicht/active', ['active' => false], $token), 404);
+expect('Konto sperren braucht Login → 401', call('POST', "/api/portal-accounts/$acctId/active", ['active' => false]), 401);
+expect('Konto sperren', call('POST', "/api/portal-accounts/$acctId/active", ['active' => false], $token), 200);
+expect('Gesperrt: bestehende Sitzung endet sofort → 401', call('GET', '/api/portal/me', null, null, $S), 401);
+$res = call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'sehr-sicheres-passwort']);
+check('Gesperrt: Anmeldung verweigert (403) mit verständlicher Meldung', $res[0] === 403 && str_contains($res[1]['error'], 'gesperrt'), $res[2]);
+call('POST', "/api/portal-accounts/$acctId/active", ['active' => true], $token);
+$res = call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'sehr-sicheres-passwort']);
+check('Entsperrt: Anmeldung klappt wieder', $res[0] === 200, $res[2]);
+$S3 = ["X-Portal-Token: {$res[1]['token']}"];
+call('DELETE', "/api/clients/{$newClient['id']}/portal", null, $token);
+expect('„Zugang sperren“ beim Kunden beendet auch angemeldete Sitzungen → 401', call('GET', '/api/portal/me', null, null, $S3), 401);
+
+// Passwort vergessen
+$before = count(mails());
+$res = call('POST', '/api/portal/forgot', ['email' => 'unbekannt@muster.example']);
+check('Passwort vergessen (unbekannte Adresse): gleiche neutrale Antwort, keine Mail', $res[0] === 202 && $res[1]['ok'] === true && count(mails()) === $before, $res[2]);
+$res = call('POST', '/api/portal/forgot', ['email' => 'max@muster.example']);
+$mail = $mailTo('max@muster.example');
+$resetToken = $mail ? $linkFrom($mail, 'reset') : null;
+check('Passwort vergessen (bekannte Adresse): gleiche Antwort + Mail mit Zurücksetzen-Link', $res[0] === 202 && count(mails()) === $before + 1 && $resetToken !== null && str_contains(mailText($mail), 'zwei Stunden'), $res[2]);
+$res = call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'sehr-sicheres-passwort']);
+$S4 = ["X-Portal-Token: {$res[1]['token']}"];
+expect('Zurücksetzen mit zu kurzem Passwort → 400', call('POST', '/api/portal/reset', ['token' => $resetToken, 'password' => 'kurz']), 400);
+expect('Zurücksetzen mit ungültigem Link → 400', call('POST', '/api/portal/reset', ['token' => str_repeat('b', 43), 'password' => 'neues-passwort-123']), 400);
+expect('Passwort zurücksetzen', call('POST', '/api/portal/reset', ['token' => $resetToken, 'password' => 'neues-passwort-123']), 200);
+expect('Zurücksetzen beendet alle bisherigen Sitzungen → 401', call('GET', '/api/portal/me', null, null, $S4), 401);
+expect('Altes Passwort gilt nicht mehr → 401', call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'sehr-sicheres-passwort']), 401);
+$res = call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'neues-passwort-123']);
+expect('Neues Passwort funktioniert', $res, 200);
+$S5 = ["X-Portal-Token: {$res[1]['token']}"];
+expect('Zurücksetzen-Link nur einmal nutzbar → 400', call('POST', '/api/portal/reset', ['token' => $resetToken, 'password' => 'noch-ein-passwort-1']), 400);
+call('POST', '/api/portal/forgot', ['email' => 'max@muster.example']);
+$accountDb->exec("UPDATE PortalAccount SET resetExpiresAt = '2020-01-01T00:00:00.000Z' WHERE email = 'max@muster.example'");
+$expiredToken = $linkFrom($mailTo('max@muster.example'), 'reset');
+expect('Abgelaufener Zurücksetzen-Link → 400', call('POST', '/api/portal/reset', ['token' => $expiredToken, 'password' => 'noch-ein-passwort-1']), 400);
+
+// Passwort ändern
+$res = call('POST', '/api/portal/login', ['email' => 'max@muster.example', 'password' => 'neues-passwort-123']);
+$S6 = ["X-Portal-Token: {$res[1]['token']}"];
+expect('Passwort ändern mit falschem aktuellem Passwort → 400', call('POST', '/api/portal/password', ['current' => 'falsch-falsch-1', 'password' => 'drittes-passwort-123'], null, $S6), 400);
+expect('Passwort ändern: neues zu kurz → 400', call('POST', '/api/portal/password', ['current' => 'neues-passwort-123', 'password' => 'kurz'], null, $S6), 400);
+expect('Passwort ändern', call('POST', '/api/portal/password', ['current' => 'neues-passwort-123', 'password' => 'drittes-passwort-123'], null, $S6), 200);
+expect('Die aktuelle Sitzung bleibt nach dem Ändern bestehen', call('GET', '/api/portal/me', null, null, $S6), 200);
+expect('Andere Sitzungen enden nach dem Ändern → 401', call('GET', '/api/portal/me', null, null, $S5), 401);
+$res = call('POST', '/api/portal/password', ['current' => 'x', 'password' => 'viertes-passwort-123'], null, ["X-Portal-Token: {$oAccess['token']}"]);
+check('Passwort ändern mit Zugangslink (ohne Konto) nicht möglich', in_array($res[0], [401, 403], true), $res[2]);
+
+// Bestehender Kunde wird verknüpft
+$res = call('POST', '/api/clients', ['name' => 'Erna Altkunde', 'company' => 'Altkunde AG', 'email' => 'erna@altkunde.example'], $token);
+$oldClient = $res[1]['id'];
+$res = call('POST', '/api/invoices', ['clientId' => $oldClient, 'status' => 'SENT', 'items' => [['description' => 'Alte Rechnung', 'unitPrice' => 100]]], $token);
+$clientsBefore = (int) $accountDb->query('SELECT COUNT(*) FROM Client')->fetchColumn();
+$register(['name' => 'Erna', 'email' => 'ERNA@altkunde.example']);
+$tok = $linkFrom($mailTo('erna@altkunde.example'), 'verify');
+$res = call('POST', '/api/portal/verify', ['token' => $tok, 'password' => 'ernas-passwort-123']);
+$E = ["X-Portal-Token: {$res[1]['token']}"];
+check('Gleiche E-Mail wie ein bestehender Kunde: Konto wird mit ihm verknüpft (kein Duplikat)', $res[0] === 200 && (int) $accountDb->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientsBefore && $accountDb->query("SELECT clientId FROM PortalAccount WHERE email = 'erna@altkunde.example'")->fetchColumn() === $oldClient, $res[2]);
+$res = call('GET', '/api/portal/invoices', null, null, $E);
+check('… und sie sieht die Rechnungen des bestehenden Kunden', count($res[1]) === 1 && $res[1][0]['items'][0]['description'] === 'Alte Rechnung', $res[2]);
+$log = json_encode(call('GET', "/api/clients/$oldClient", null, $token)[1]['activities'], JSON_UNESCAPED_UNICODE);
+check('Aktivitätsprotokoll: „mit bestehendem Kunden verknüpft“', str_contains($log, 'mit bestehendem Kunden verknüpft'), $log);
+
+// Doppelte Registrierung
+$before = count(mails());
+$res = $register(['name' => 'Erna Zweitversuch', 'email' => 'erna@altkunde.example']);
+$mail = $mailTo('erna@altkunde.example');
+check('Erneute Registrierung einer bekannten Adresse: gleiche Antwort, Mail „Konto besteht bereits“, kein zweites Konto', $res[0] === 202 && count(mails()) === $before + 1 && str_contains(mailText($mail), 'bereits ein Konto') && (int) $accountDb->query("SELECT COUNT(*) FROM PortalAccount WHERE email = 'erna@altkunde.example'")->fetchColumn() === 1, $res[2]);
+
+// Unbestätigte Registrierung wiederholen
+$register(['name' => 'Uwe Unsicher', 'email' => 'uwe@unsicher.example']);
+$first = $linkFrom($mailTo('uwe@unsicher.example'), 'verify');
+$register(['name' => 'Anderer Name', 'email' => 'uwe@unsicher.example']);
+$second = $linkFrom($mailTo('uwe@unsicher.example'), 'verify');
+check('Zweite Registrierung vor dem Bestätigen: neuer Link, alter wird ungültig, Daten bleiben', $first !== $second && call('POST', '/api/portal/verify-info', ['token' => $first])[0] === 400 && call('POST', '/api/portal/verify-info', ['token' => $second])[1]['name'] === 'Uwe Unsicher');
+
+// Sperre gegen Durchprobieren und Massenregistrierung
+$lock = [];
+for ($i = 0; $i < 6; $i++) {
+    $lock[] = call('POST', '/api/portal/login', ['email' => 'erna@altkunde.example', 'password' => "falsch-$i-falsch"])[0];
+}
+$res = call('POST', '/api/portal/login', ['email' => 'erna@altkunde.example', 'password' => 'ernas-passwort-123']);
+check('Nach 5 Fehlversuchen wird die Anmeldung dieses Kontos gebremst (429), selbst mit richtigem Passwort', $lock[4] === 401 && $res[0] === 429, [$lock, $res[2]]);
+$codes = [];
+for ($i = 0; $i < 6; $i++) {
+    $codes[] = $register(['name' => "Massen $i", 'email' => "massen$i@spam.example"])[0];
+}
+check('Registrierungen pro IP und Stunde sind begrenzt (429)', in_array(429, $codes, true) && $codes[0] === 202, $codes);
+$accountDb->exec("DELETE FROM PortalAccount WHERE email LIKE '%@spam.example'");
+
 echo "Kundenportal\n";
 $portalDb = new PDO('sqlite:' . "$tmp/test.db");
 $res = call('GET', "/api/clients/$clientId/portal", null, $token);
@@ -977,7 +1143,7 @@ $check = new PDO('sqlite:' . $dbCopy);
 check('Backup-Datenbank ist intakt und enthält alle Daten (Kunden, Rechnungen, Mahnungen, Abos)', $check->query('PRAGMA integrity_check')->fetchColumn() === 'ok' && (int) $check->query('SELECT COUNT(*) FROM Client')->fetchColumn() === $clientTotal && (int) $check->query('SELECT COUNT(*) FROM Invoice')->fetchColumn() === $invoiceTotal && (int) $check->query('SELECT COUNT(*) FROM Reminder')->fetchColumn() >= 1 && (int) $check->query('SELECT COUNT(*) FROM Recurring')->fetchColumn() >= 1, [$clientTotal, $invoiceTotal]);
 check('Dokument im Backup hat den richtigen Inhalt', $zip->getFromName("uploads/$uploadedName") === 'Sicherungstest');
 $manifest = json_decode((string) $zip->getFromName('manifest.json'), true);
-check('Manifest: Prüfsumme passt zur Datenbank, Migrationen aufgelistet', $manifest['database']['sha256'] === hash('sha256', (string) $zip->getFromName('database.sqlite')) && $manifest['uploads'] === 1 && count($manifest['migrations']) === 4, $manifest);
+check('Manifest: Prüfsumme passt zur Datenbank, Migrationen aufgelistet', $manifest['database']['sha256'] === hash('sha256', (string) $zip->getFromName('database.sqlite')) && $manifest['uploads'] === 1 && count($manifest['migrations']) === count(glob("$root/database/migrations/*.sql")), $manifest);
 $zip->close();
 unset($check);
 

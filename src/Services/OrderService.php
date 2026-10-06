@@ -132,6 +132,8 @@ final class OrderService
             }
 
             Db::update('ProductOrder', $id, ['status' => 'ACCEPTED', 'decidedAt' => Dates::now()] + $links);
+            // Wer etwas bestellt hat und angenommen wurde, ist kein Interessent mehr
+            Db::run('UPDATE "Client" SET "status" = \'ACTIVE\', "updatedAt" = ? WHERE "id" = ? AND "status" = \'LEAD\'', [Dates::now(), $o['clientId']]);
             Activity::log('ORDER_ACCEPTED', "Bestellung {$o['number']} angenommen", $o['clientId'], $links['projectId'] ?? null, $userId);
             return ['links' => $links, 'start' => $start ?? null];
         });

@@ -40,6 +40,7 @@ final class PortalController
         return Response::json(PortalService::status($client['id']) + [
             'mailConfigured' => Mailer::configured(),
             'recipient' => MailTemplates::recipient($client),
+            'accounts' => Db::all('SELECT "id", "email", "name", "active", "verifiedAt", "lastLoginAt", "createdAt" FROM "PortalAccount" WHERE "clientId" = ? ORDER BY "createdAt" ASC', [$client['id']]),
         ]);
     }
 
@@ -83,7 +84,8 @@ final class PortalController
 
     public static function me(Request $r): Response
     {
-        $client = PortalService::authenticate($r);
+        $auth = PortalService::authenticateFull($r);
+        $client = $auth['client'];
         $invoices = self::invoices($client['id']);
         $open = $overdue = 0.0;
         foreach ($invoices as $inv) {
@@ -98,6 +100,7 @@ final class PortalController
 
         return Response::json([
             'client' => ['name' => $client['name'], 'company' => $client['company']],
+            'account' => $auth['account'] ? ['email' => $auth['account']['email'], 'name' => $auth['account']['name']] : null,
             'company' => [
                 'name' => $co['name'],
                 'address' => array_values(array_filter(array_map('trim', explode('|', $co['address'])))),

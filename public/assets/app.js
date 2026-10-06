@@ -230,8 +230,12 @@
         '<div class="card"><h2>Rechnungen</h2><div class="list">' + (invoices.length ? invoices.map(function (i) {
           return '<div><div class="grow"><button class="link mono" data-act="open-invoice" data-id="' + esc(i.id) + '">' + esc(i.number) + '</button><div class="sub">' + fdate(i.issueDate) + '</div></div><span class="num">' + eur(i.totals.total) + '</span>' + pill(INVOICE_STATUS, shownStatus(i)) + '</div>';
         }).join('') : '<div class="empty">Noch keine Rechnungen.</div>') + '</div></div></div>' +
-        '<div class="card"><h2>Kundenportal ' + (portal.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Kein Zugang</span>') + '</h2>' +
-        '<p class="sub" style="margin:0 0 12px">Im Portal sieht ' + esc(c.name) + ' die eigenen Rechnungen und Angebote, lädt sie als PDF herunter und kann Angebote annehmen. Der Zugang läuft über einen persönlichen Link, ein Passwort ist nicht nötig.</p>' +
+        '<div class="card"><h2>Kundenportal ' + (portal.active || portal.accounts.some(function (a) { return a.active; }) ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Kein Zugang</span>') + '</h2>' +
+        '<p class="sub" style="margin:0 0 12px">Im Portal sieht ' + esc(c.name) + ' die eigenen Rechnungen und Angebote, lädt sie als PDF herunter und kann Angebote annehmen. Der Zugang läuft über einen persönlichen Link oder über ein Konto, das sich der Kunde selbst im Portal anlegt.</p>' +
+        (portal.accounts.length ? '<div class="list" style="margin-bottom:12px">' + portal.accounts.map(function (a) {
+          return '<div><div class="grow"><b>' + esc(a.email) + '</b><div class="sub">Konto' + (a.verifiedAt ? ' · bestätigt' : ' · unbestätigt') + ' · zuletzt angemeldet ' + (a.lastLoginAt ? fdate(a.lastLoginAt) : 'noch nie') + '</div></div>' + (a.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Gesperrt</span>') +
+            '<button class="btn sm" data-act="acct-toggle" data-id="' + esc(a.id) + '" data-active="' + (a.active ? '1' : '0') + '">' + (a.active ? 'Sperren' : 'Entsperren') + '</button>' + (portal.mailConfigured ? '<button class="btn sm ghost" data-act="acct-reset" data-id="' + esc(a.id) + '">Passwort-Link senden</button>' : '') + '<button class="btn sm ghost danger" data-act="acct-del" data-id="' + esc(a.id) + '" aria-label="Konto löschen">Löschen</button></div>';
+        }).join('') + '</div>' : '') +
         (portal.active ? '<dl class="kv" style="margin-bottom:12px"><dt>Erstellt</dt><dd>' + fdate(portal.createdAt) + '</dd><dt>Gültig bis</dt><dd>' + (portal.expiresAt ? fdate(portal.expiresAt) : 'unbegrenzt') + '</dd><dt>Zuletzt genutzt</dt><dd>' + (portal.lastUsedAt ? fdate(portal.lastUsedAt) : 'noch nie') + '</dd></dl>' : '') +
         '<div class="row"><button class="btn primary" data-act="portal-issue" data-id="' + esc(c.id) + '">' + (portal.active ? 'Neuen Link erstellen' : 'Zugang erstellen') + '</button>' + (portal.active ? '<button class="btn danger" data-act="portal-revoke" data-id="' + esc(c.id) + '">Zugang sperren</button>' : '') + '</div></div>' +
         '<div class="grid two-eq"><div class="card"><h2>Angebote <button class="btn sm" data-act="new-quote" data-id="' + esc(c.id) + '">+ Angebot</button></h2><div class="list">' + (quotes.length ? quotes.map(function (q) {
@@ -938,6 +942,9 @@
       case 'order-reject': return api('GET', '/api/orders/' + ui.orderId).then(rejectOrderDialog).catch(fail);
       case 'copy-text': return copyText(el.dataset.text, 'Link kopiert');
       case 'portal-issue': return portalDialog(id);
+      case 'acct-toggle': return api('POST', '/api/portal-accounts/' + id + '/active', { active: el.dataset.active !== '1' }).then(function () { done(el.dataset.active === '1' ? 'Konto gesperrt' : 'Konto entsperrt'); }).catch(fail);
+      case 'acct-reset': return api('POST', '/api/portal-accounts/' + id + '/reset', {}).then(function () { toast('Link zum Zurücksetzen gesendet'); }).catch(fail);
+      case 'acct-del': return confirmDialog('Das Konto wird gelöscht. Der Kunde und seine Daten bleiben erhalten, er kann sich aber nicht mehr mit diesem Konto anmelden.', 'Konto löschen', function () { return api('DELETE', '/api/portal-accounts/' + id).then(function () { done('Konto gelöscht'); }); });
       case 'portal-revoke': return confirmDialog('Der Kunde kann das Portal danach nicht mehr öffnen. Du kannst jederzeit einen neuen Link erstellen.', 'Zugang sperren', function () { return api('DELETE', '/api/clients/' + id + '/portal').then(function () { done('Portalzugang gesperrt'); }); });
       case 'backup-create': el.disabled = true; return api('POST', '/api/backups', {}).then(function (b) { done('Backup erstellt (' + fsize(b.size) + ')'); }).catch(function (err) { el.disabled = false; toast(err.message); });
       case 'backup-dl': return downloadPdf(el, '/api/backups/' + encodeURIComponent(el.dataset.name));

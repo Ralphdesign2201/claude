@@ -15,6 +15,7 @@ use App\Controllers\DocumentsController;
 use App\Controllers\InvoicesController;
 use App\Controllers\NotesController;
 use App\Controllers\OrdersController;
+use App\Controllers\PortalAuthController;
 use App\Controllers\PortalController;
 use App\Controllers\ProjectsController;
 use App\Controllers\QuotesController;
@@ -156,6 +157,18 @@ final class App
         $r->add('POST', '/api/recurring/:id/run', [RecurringController::class, 'run']);
         $r->add('POST', '/api/cron/run', [CronController::class, 'run'], $pub);
 
+        $r->add('GET', '/api/portal/config', [PortalAuthController::class, 'config'], $pub);
+        $r->add('POST', '/api/portal/register', [PortalAuthController::class, 'register'], $pub);
+        $r->add('POST', '/api/portal/verify-info', [PortalAuthController::class, 'verifyInfo'], $pub);
+        $r->add('POST', '/api/portal/verify', [PortalAuthController::class, 'verify'], $pub);
+        $r->add('POST', '/api/portal/login', [PortalAuthController::class, 'login'], $pub);
+        $r->add('POST', '/api/portal/logout', [PortalAuthController::class, 'logout'], $pub);
+        $r->add('POST', '/api/portal/forgot', [PortalAuthController::class, 'forgot'], $pub);
+        $r->add('POST', '/api/portal/reset', [PortalAuthController::class, 'reset'], $pub);
+        $r->add('POST', '/api/portal/password', [PortalAuthController::class, 'changePassword'], $pub);
+        $r->add('POST', '/api/portal-accounts/:id/active', [PortalAuthController::class, 'setActive']);
+        $r->add('POST', '/api/portal-accounts/:id/reset', [PortalAuthController::class, 'sendReset']);
+        $r->add('DELETE', '/api/portal-accounts/:id', [PortalAuthController::class, 'deleteAccount']);
         $r->add('GET', '/api/portal/me', [PortalController::class, 'me'], $pub);
         $r->add('GET', '/api/portal/invoices', [PortalController::class, 'invoiceList'], $pub);
         $r->add('GET', '/api/portal/invoices/:id/pdf', [PortalController::class, 'invoicePdf'], $pub);

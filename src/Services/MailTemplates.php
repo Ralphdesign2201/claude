@@ -60,6 +60,49 @@ final class MailTemplates
         ];
     }
 
+    /** E-Mail-Bestätigung für ein neues Konto. @return array{subject:string,message:string} */
+    public static function accountVerify(string $name, string $link): array
+    {
+        $company = DocumentPdf::company()['name'];
+        return [
+            'subject' => "Bitte bestätigen Sie Ihre E-Mail-Adresse – $company",
+            'message' => "Guten Tag $name,\n\nvielen Dank für Ihre Registrierung im Kundenportal von $company. Bitte bestätigen Sie Ihre E-Mail-Adresse und legen Sie Ihr Passwort fest:\n\n$link\n\n"
+                . "Der Link ist 48 Stunden gültig. Wenn Sie sich nicht registriert haben, können Sie diese E-Mail ignorieren.",
+        ];
+    }
+
+    /** Hinweis, wenn sich jemand mit einer bereits registrierten Adresse anmelden will. @return array{subject:string,message:string} */
+    public static function accountExists(string $name, string $portalUrl): array
+    {
+        $company = DocumentPdf::company()['name'];
+        return [
+            'subject' => "Ihr Kundenportal bei $company",
+            'message' => "Guten Tag $name,\n\nfür diese E-Mail-Adresse besteht bereits ein Konto im Kundenportal. Sie können sich hier anmelden:\n\n$portalUrl\n\n"
+                . "Falls Sie Ihr Passwort vergessen haben, nutzen Sie dort „Passwort vergessen“. Wenn Sie sich nicht registriert haben, können Sie diese E-Mail ignorieren.",
+        ];
+    }
+
+    /** @return array{subject:string,message:string} */
+    public static function accountReset(string $name, string $link): array
+    {
+        $company = DocumentPdf::company()['name'];
+        return [
+            'subject' => "Passwort zurücksetzen – $company",
+            'message' => "Guten Tag $name,\n\nüber diesen Link können Sie ein neues Passwort für Ihr Kundenportal festlegen:\n\n$link\n\n"
+                . "Der Link ist zwei Stunden gültig. Wenn Sie das nicht angefordert haben, können Sie diese E-Mail ignorieren – Ihr Passwort bleibt dann unverändert.",
+        ];
+    }
+
+    /** Benachrichtigung an die Firma über ein neues Kundenkonto. @return array{subject:string,message:string} */
+    public static function accountNotify(string $name, string $company, string $email, bool $existing): array
+    {
+        return [
+            'subject' => 'Neue Registrierung im Kundenportal: ' . ($company !== '' ? $company : $name),
+            'message' => "$name" . ($company !== '' ? " ($company)" : '') . " hat sich mit $email im Kundenportal registriert.\n\n"
+                . ($existing ? 'Die Adresse gehörte bereits zu einem bestehenden Kunden, das Konto wurde mit ihm verknüpft.' : 'Es wurde ein neuer Kunde (Status „Lead“) angelegt.'),
+        ];
+    }
+
     /** @param array<string,mixed> $o Bestellung (Schnappschuss) */
     private static function orderLine(array $o): string
     {
