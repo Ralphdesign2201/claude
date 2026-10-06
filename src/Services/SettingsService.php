@@ -62,6 +62,15 @@ final class SettingsService
                 $f('PORTAL_TOKEN_DAYS', 'Portal-Links gültig (Tage, 0 = unbegrenzt)', 'int', ['min' => 0, 'max' => 3650, 'default' => '365']),
                 $f('PORTAL_SESSION_DAYS', 'Anmeldung gültig (Tage)', 'int', ['min' => 1, 'max' => 365, 'default' => '14']),
             ]],
+            ['id' => 'support', 'title' => 'Support', 'intro' => 'Kunden erreichen den Support im Kundenportal. Die Zeiten steuern die Fälligkeitsanzeige (SLA); bei „Hoch“ gilt die halbe, bei „Dringend“ ein Viertel der Zeit, bei „Niedrig“ die doppelte.', 'fields' => [
+                $f('TICKET_CATEGORIES', 'Kategorien (kommagetrennt)', 'text', ['max' => 400, 'default' => 'Allgemein,Rechnung & Zahlung,Technik,Lizenz,Bestellung']),
+                $f('TICKET_FIRST_RESPONSE_HOURS', 'Erste Antwort innerhalb (Stunden)', 'int', ['min' => 1, 'max' => 720, 'default' => '24']),
+                $f('TICKET_RESOLVE_HOURS', 'Lösung innerhalb (Stunden)', 'int', ['min' => 1, 'max' => 2160, 'default' => '72']),
+                $f('TICKET_AUTOCLOSE_DAYS', 'Gelöste Tickets schließen nach (Tage, 0 = nie)', 'int', ['min' => 0, 'max' => 365, 'default' => '7']),
+                $f('TICKET_PENDING_DAYS', '„Wartet auf Kunde“ als gelöst markieren nach (Tage, 0 = nie)', 'int', ['min' => 0, 'max' => 365, 'default' => '14']),
+                $f('TICKET_NOTIFY_EMAIL', 'Benachrichtigung über neue Tickets an', 'email', ['help' => 'Leer = Firmen-E-Mail. Der zugewiesene Mitarbeiter bekommt zusätzlich eine Mail.']),
+                $f('TICKET_ATTACHMENT_MB', 'Größe eines Anhangs (MB)', 'int', ['min' => 1, 'max' => 50, 'default' => '5', 'help' => 'Zusätzlich begrenzt durch die PHP-Einstellung upload_max_filesize deines Servers.']),
+            ]],
             ['id' => 'license', 'title' => 'Lizenzen', 'fields' => [
                 $f('LICENSE_GRACE_DAYS', 'Kulanzfrist bei Mietlizenzen (Tage)', 'int', ['min' => 0, 'max' => 365, 'default' => '14']),
                 $f('LICENSE_CACHE_HOURS', 'Prüfergebnis zwischenspeichern (Stunden)', 'int', ['min' => 1, 'max' => 720, 'default' => '24']),

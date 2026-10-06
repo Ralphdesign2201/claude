@@ -25,6 +25,7 @@ final class CronController
         }
 
         $results = RecurringService::runDue();
+        $tickets = \App\Services\TicketService::autoClose();
         $backup = null;
         $backupError = null;
         try {
@@ -32,6 +33,6 @@ final class CronController
         } catch (\Throwable $e) {
             $backupError = $e->getMessage();
         }
-        return Response::json(['created' => count($results), 'runs' => $results, 'backup' => $backup, 'backupError' => $backupError]);
+        return Response::json(['created' => count($results), 'runs' => $results, 'tickets' => $tickets, 'backup' => $backup, 'backupError' => $backupError]);
     }
 }

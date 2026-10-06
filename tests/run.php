@@ -1521,6 +1521,233 @@ for ($i = 0; $i < 40 && $last !== 429; $i++) {
 }
 check('Durchprobieren unbekannter Schlüssel wird gebremst (429)', $last === 429, $i);
 
+echo "Support\n";
+/** Multipart-Body für Formulare mit Dateien: [body, header] */
+$mp = static function (array $fields, array $files = []): array {
+    $b = 'XBOUNDARY' . bin2hex(random_bytes(6));
+    $out = '';
+    foreach ($fields as $k => $v) {
+        $out .= "--$b\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n$v\r\n";
+    }
+    foreach ($files as [$name, $content]) {
+        $out .= "--$b\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"$name\"\r\nContent-Type: application/octet-stream\r\n\r\n$content\r\n";
+    }
+    return [$out . "--$b--\r\n", "Content-Type: multipart/form-data; boundary=$b"];
+};
+$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+$pcall = static function (string $path, array $fields, array $files, array $auth) use ($mp): array {
+    [$body, $ct] = $mp($fields, $files);
+    return call('POST', $path, $body, null, array_merge($auth, [$ct]));
+};
+$acall = static function (string $path, array $fields, array $files = []) use ($mp, $token): array {
+    [$body, $ct] = $mp($fields, $files);
+    return call('POST', $path, $body, $token, [$ct]);
+};
+$dbs = $dbx();
+$dbs->exec('DELETE FROM RateLimit');
+call('POST', '/api/users', ['name' => 'Sabine Support', 'email' => 'sabine@example.com', 'password' => 'support12345'], $token);
+$agentToken = call('POST', '/api/auth/login', ['email' => 'sabine@example.com', 'password' => 'support12345'])[1]['token'];
+$agentId = call('GET', '/api/tickets/meta', null, $agentToken)[1]['agents'];
+$agentId = array_values(array_filter($agentId, static fn ($a) => $a['name'] === 'Sabine Support'))[0]['id'];
+
+expect('Portal-Tickets ohne Zugang → 401', call('GET', '/api/portal/tickets'), 401);
+expect('Tickets-Verwaltung ohne Login → 401', call('GET', '/api/tickets'), 401);
+$res = $pcall('/api/portal/tickets', ['message' => 'Hilfe'], [], $LP);
+expect('Ticket ohne Betreff → 400', $res, 400);
+expect('Ticket mit ungültiger Kategorie → 400', $pcall('/api/portal/tickets', ['subject' => 'Test', 'message' => 'Hilfe', 'category' => 'Quatsch'], [], $LP), 400);
+expect('Ticket mit Lizenz eines anderen Kunden → 400', $pcall('/api/portal/tickets', ['subject' => 'Test', 'message' => 'Hilfe', 'licenseId' => $lic4['id']], [], $OTP), 400);
+$before = count(mails());
+$res = $pcall('/api/portal/tickets', ['subject' => 'Kontaktformular sendet nichts', 'message' => "Hallo, seit gestern kommen keine Mails mehr an.\nBitte um Hilfe!", 'category' => 'Technik', 'priority' => 'HIGH', 'licenseId' => $lic2['id']], [['fehler.png', $png], ['log.txt', 'Zeile 1']], $LP);
+expect('Kunde eröffnet ein Ticket (mit Bild und Log-Datei)', $res, 201);
+$t1 = $res[1];
+check('Ticket: Nummer TK-JJJJ-0001, offen, Lizenz verknüpft, Nachricht + 2 Anhänge', $t1['number'] === "TK-$year-0001" && $t1['status'] === 'OPEN' && $t1['priority'] === 'HIGH' && $t1['license']['domain'] === 'agentur.de' && count($t1['messages']) === 1 && count($t1['messages'][0]['attachments']) === 2, $res[2]);
+check('Kundensicht ohne interne Felder (Zuweisung, Quelle, interne Zeiten)', !isset($t1['assigneeId'], $t1['unreadStaff'], $t1['source'], $t1['tags'], $t1['firstResponseAt']) && !isset($t1['messages'][0]['authorId']), array_keys($t1));
+$recent = array_slice(mails(), $before);
+$heads = implode("\n", array_column($recent, 'head'));
+check('E-Mails: Bestätigung an den Kunden, Hinweis an die Firma', count($recent) === 2 && str_contains($heads, 'X-Envelope-To: lia@lizenz.de') && str_contains($heads, 'X-Envelope-To: hallo@ralph-design.de'), count($recent));
+$attId = $t1['messages'][0]['attachments'][0]['id'];
+$h = get_headers($base . "/api/portal/attachments/$attId", true, stream_context_create(['http' => ['header' => $LP[0]]]));
+$dl = call('GET', "/api/portal/attachments/$attId", null, null, $LP);
+check('Anhang: Kunde lädt ihn herunter (Bild unverändert, nosniff, nicht im Cache)', $dl[0] === 200 && $dl[2] === $png && ($h['X-Content-Type-Options'] ?? '') === 'nosniff' && str_contains((string) ($h['Cache-Control'] ?? ''), 'no-store'), $h);
+expect('Anhang: fremder Kunde → 404', call('GET', "/api/portal/attachments/$attId", null, null, $OTP), 404);
+expect('Anhang ohne Zugang → 401', call('GET', "/api/portal/attachments/$attId"), 401);
+$dl = call('GET', "/api/tickets/attachments/$attId", null, $token);
+check('Anhang: Mitarbeiter lädt ihn herunter', $dl[0] === 200 && $dl[2] === $png);
+$stored = (string) $dbs->query("SELECT storedName FROM TicketAttachment WHERE id = '$attId'")->fetchColumn();
+expect('Anhänge sind nicht über /uploads erreichbar', call('GET', "/uploads/$stored"), 404);
+check('Anhang liegt im nicht öffentlichen Unterordner', is_file("$tmp/uploads/tickets/$stored"));
+expect('Gefährlicher Dateityp (html) → 400', $pcall('/api/portal/tickets', ['subject' => 'Test 2', 'message' => 'x'], [['boese.html', '<script>1</script>']], $LP), 400);
+expect('Bild, das keins ist → 400', $pcall('/api/portal/tickets', ['subject' => 'Test 2', 'message' => 'x'], [['fake.png', 'kein bild']], $LP), 400);
+expect('Zu viele Dateien → 400', $pcall('/api/portal/tickets', ['subject' => 'Test 2', 'message' => 'x'], array_fill(0, 6, ['a.txt', 'x']), $LP), 400);
+check('Fehlgeschlagene Tickets hinterlassen nichts', (int) $dbs->query('SELECT COUNT(*) FROM Ticket')->fetchColumn() === 1);
+
+$res = call('GET', '/api/portal/tickets', null, null, $LP);
+check('Portal-Liste: das Ticket, nicht ungelesen, mit Vorschau und Kategorien', $res[0] === 200 && count($res[1]['tickets']) === 1 && $res[1]['tickets'][0]['unread'] === false && str_contains($res[1]['tickets'][0]['preview'], 'keine Mails') && in_array('Technik', $res[1]['categories'], true), $res[2]);
+check('Mandantentrennung: der andere Kunde sieht keine Tickets', call('GET', '/api/portal/tickets', null, null, $OTP)[1]['tickets'] === []);
+expect('Mandantentrennung: fremdes Ticket öffnen → 404', call('GET', "/api/portal/tickets/{$t1['id']}", null, null, $OTP), 404);
+expect('Mandantentrennung: auf fremdes Ticket antworten → 404', $pcall("/api/portal/tickets/{$t1['id']}/messages", ['message' => 'Hallo'], [], $OTP), 404);
+expect('Mandantentrennung: fremdes Ticket schließen → 404', call('POST', "/api/portal/tickets/{$t1['id']}/close", [], null, $OTP), 404);
+expect('Mandantentrennung: fremdes Ticket bewerten → 404', call('POST', "/api/portal/tickets/{$t1['id']}/rating", ['rating' => 5], null, $OTP), 404);
+
+// Verwaltung
+$res = call('GET', '/api/tickets', null, $token);
+$row = $res[1]['items'][0] ?? [];
+check('Verwaltung: Liste mit Kunde, SLA, Vorschau, Nachrichtenzahl; ungelesen', $res[0] === 200 && $res[1]['meta']['total'] === 1 && $row['client']['name'] === 'Lia Lizenz' && $row['assignee'] === null && $row['unreadStaff'] === 1 && $row['messageCount'] === 1 && $row['lastKind'] === 'CUSTOMER' && isset($row['sla']['firstDueAt']) && $row['sla']['overdue'] === false, $res[2]);
+check('Hohe Priorität halbiert die Reaktionszeit (12 statt 24 Stunden)', abs((strtotime($row['sla']['firstDueAt']) - strtotime($row['createdAt'])) / 3600 - 12) < 0.1);
+check('Menü-Zähler: neues Ticket wird gemeldet', call('GET', '/api/settings', null, $agentToken)[1]['newTickets'] === 1);
+$res = call('GET', "/api/tickets/{$t1['id']}", null, $agentToken);
+check('Mitarbeiter öffnet das Ticket: Kunde, Lizenzen, Verlauf; als gelesen markiert', $res[0] === 200 && $res[1]['client']['email'] === 'lia@lizenz.de' && count($res[1]['licenses']) >= 3 && $res[1]['unreadStaff'] === 0 && call('GET', '/api/settings', null, $agentToken)[1]['newTickets'] === 0, $res[2]);
+$s = call('GET', '/api/tickets/stats', null, $token)[1];
+check('Statistik: offen, unzugewiesen, Kategorien', $s['open'] === 1 && $s['unassigned'] === 1 && $s['overdue'] === 0 && $s['created30'] === 1 && $s['byCategory'][0]['category'] === 'Technik', $s);
+
+// Zuweisung, Priorität, Verlauf
+$before = count(mails());
+$res = call('PATCH', "/api/tickets/{$t1['id']}", ['assigneeId' => $agentId, 'priority' => 'URGENT', 'category' => 'Lizenz', 'tags' => 'wichtig, mail'], $token);
+$ev = array_values(array_filter($res[1]['messages'], static fn ($m) => $m['kind'] === 'EVENT'));
+check('Ticket zuweisen und einstufen; Änderungen stehen im Verlauf', $res[0] === 200 && $res[1]['assignee']['name'] === 'Sabine Support' && $res[1]['priority'] === 'URGENT' && $res[1]['category'] === 'Lizenz' && count($ev) === 4, $res[2]);
+$recent = array_slice(mails(), $before);
+check('Zugewiesener Mitarbeiter bekommt eine E-Mail', count($recent) === 1 && str_contains($recent[0]['head'], 'X-Envelope-To: sabine@example.com'), count($recent));
+expect('Ungültige Priorität → 400', call('PATCH', "/api/tickets/{$t1['id']}", ['priority' => 'MEGA'], $token), 400);
+expect('Unbekannter Mitarbeiter → 400', call('PATCH', "/api/tickets/{$t1['id']}", ['assigneeId' => 'gibtsnicht'], $token), 400);
+$otherLic = call('POST', '/api/licenses', ['clientId' => $otherC, 'productName' => 'Fremd', 'domain' => 'fremd-lizenz.de'], $token)[1]['id'];
+expect('Lizenz eines anderen Kunden → 400', call('PATCH', "/api/tickets/{$t1['id']}", ['licenseId' => $otherLic], $token), 400);
+check('Ohne Änderung kein Verlaufseintrag', count(array_filter(call('PATCH', "/api/tickets/{$t1['id']}", ['priority' => 'URGENT'], $token)[1]['messages'], static fn ($m) => $m['kind'] === 'EVENT')) === 4);
+check('Filter „mir zugewiesen“ / „nicht zugewiesen“', call('GET', '/api/tickets?assigneeId=me', null, $agentToken)[1]['meta']['total'] === 1 && call('GET', '/api/tickets?assigneeId=me', null, $token)[1]['meta']['total'] === 0 && call('GET', '/api/tickets?assigneeId=none', null, $token)[1]['meta']['total'] === 0);
+
+// Antwort an den Kunden, interne Notiz
+$before = count(mails());
+$res = $acall("/api/tickets/{$t1['id']}/messages", ['kind' => 'STAFF', 'body' => 'Wir schauen uns das an – bitte prüfen Sie Ihren Spam-Ordner.', 'status' => 'PENDING'], [['anleitung.pdf', '%PDF-1.4 test']]);
+expect('Antwort an den Kunden mit Anhang', $res, 201);
+check('Status wechselt auf „Wartet auf Kunde“, erste Antwortzeit gesetzt', $res[1]['status'] === 'PENDING' && $res[1]['firstResponseAt'] !== null && $res[1]['firstResponseMinutes'] !== null && $res[1]['unreadCustomer'] === 1 && $res[1]['unreadStaff'] === 0, $res[2]);
+$recent = array_slice(mails(), $before);
+check('Kunde bekommt die Antwort per E-Mail mit Portal-Link', count($recent) === 1 && str_contains($recent[0]['head'], 'X-Envelope-To: lia@lizenz.de') && str_contains(mailText($recent[0]), 'Spam-Ordner') && str_contains(mailText($recent[0]), 'https://crm.example.com/portal'), count($recent));
+$before = count(mails());
+$res = $acall("/api/tickets/{$t1['id']}/messages", ['kind' => 'NOTE', 'body' => 'INTERN: Kunde hat Mail-Server von Anbieter X.']);
+check('Interne Notiz: keine E-Mail, Status unverändert', $res[0] === 201 && count(mails()) === $before && $res[1]['status'] === 'PENDING');
+$res = call('GET', '/api/portal/tickets', null, null, $LP);
+check('Portal zeigt „ungelesen“ für die Antwort', $res[1]['tickets'][0]['unread'] === true && $res[1]['tickets'][0]['status'] === 'PENDING');
+$res = call('GET', "/api/portal/tickets/{$t1['id']}", null, null, $LP);
+$kinds = array_column($res[1]['messages'], 'kind');
+check('Kunde sieht Antworten, aber weder Notizen noch Verlauf; Mitarbeiter nur mit Vornamen', $res[0] === 200 && $kinds === ['CUSTOMER', 'STAFF'] && !str_contains($res[2], 'INTERN') && !str_contains($res[2], 'Zugewiesen an') && $res[1]['messages'][1]['authorName'] === 'Ralph' && $res[1]['messages'][1]['attachments'][0]['fileName'] === 'anleitung.pdf', $res[2]);
+check('Lesen im Portal hebt „ungelesen“ auf', call('GET', '/api/portal/tickets', null, null, $LP)[1]['tickets'][0]['unread'] === false);
+$staffAtt = $res[1]['messages'][1]['attachments'][0]['id'];
+check('Kunde lädt den Anhang des Teams', call('GET', "/api/portal/attachments/$staffAtt", null, null, $LP)[2] === '%PDF-1.4 test');
+$noteAtt = $acall("/api/tickets/{$t1['id']}/messages", ['kind' => 'NOTE', 'body' => 'Mit Datei'], [['intern.txt', 'geheim']]);
+$noteAttId = end($noteAtt[1]['messages'])['attachments'][0]['id'] ?? '';
+expect('Anhang einer internen Notiz ist für den Kunden unsichtbar → 404', call('GET', "/api/portal/attachments/$noteAttId", null, null, $LP), 404);
+expect('Antwort ohne Text → 400', $acall("/api/tickets/{$t1['id']}/messages", ['kind' => 'STAFF', 'body' => '   ']), 400);
+expect('Ungültiger Nachrichtentyp → 400', $acall("/api/tickets/{$t1['id']}/messages", ['kind' => 'EVENT', 'body' => 'x']), 400);
+
+// Antwort des Kunden öffnet das Ticket wieder
+$before = count(mails());
+$res = $pcall("/api/portal/tickets/{$t1['id']}/messages", ['message' => 'Im Spam war nichts, es geht weiterhin nicht.'], [], $LP);
+check('Kunde antwortet: Ticket wieder „Offen“, Team benachrichtigt', $res[0] === 201 && $res[1]['status'] === 'OPEN' && count($res[1]['messages']) === 3, $res[2]);
+$recent = array_slice(mails(), $before);
+$to = implode(' ', array_column($recent, 'head'));
+check('Benachrichtigung an Firma und zugewiesene Mitarbeiterin', count($recent) === 2 && str_contains($to, 'hallo@ralph-design.de') && str_contains($to, 'sabine@example.com'), $to);
+check('Verwaltung: wieder ungelesen, mit Verlaufseintrag', call('GET', '/api/tickets?view=unread', null, $token)[1]['meta']['total'] === 1 && str_contains(json_encode(call('GET', "/api/tickets/{$t1['id']}", null, $token)[1]['messages']), 'Antwort des Kunden'));
+
+// Suche und Filter
+check('Suche im Nachrichtentext (Kunden- und Teamantworten)', call('GET', '/api/tickets?search=Spam-Ordner', null, $token)[1]['meta']['total'] === 1 && call('GET', '/api/tickets?search=' . rawurlencode('Mail-Server von Anbieter'), null, $token)[1]['meta']['total'] === 1);
+check('Suche nach Nummer, Betreff, Kunde; keine Treffer', call('GET', "/api/tickets?search={$t1['number']}", null, $token)[1]['meta']['total'] === 1 && call('GET', '/api/tickets?search=Kontaktformular', null, $token)[1]['meta']['total'] === 1 && call('GET', '/api/tickets?search=Lizenz', null, $token)[1]['meta']['total'] === 1 && call('GET', '/api/tickets?search=gibtsnirgends', null, $token)[1]['meta']['total'] === 0);
+check('Suche behandelt % und _ wörtlich', call('GET', '/api/tickets?search=' . rawurlencode('%'), null, $token)[1]['meta']['total'] === 0);
+check('Statusfilter', call('GET', '/api/tickets?status=OPEN', null, $token)[1]['meta']['total'] === 1 && call('GET', '/api/tickets?status=CLOSED', null, $token)[1]['meta']['total'] === 0 && call('GET', '/api/tickets?status=all', null, $token)[1]['meta']['total'] === 1);
+expect('Ungültiger Statusfilter → 400', call('GET', '/api/tickets?status=kaputt', null, $token), 400);
+
+// SLA / überfällig
+$dbs->exec("UPDATE Ticket SET createdAt = '" . gmdate('Y-m-d\TH:i:s.000\Z', time() - 5 * 86400) . "', firstResponseAt = NULL WHERE id = '{$t1['id']}'");
+$res = call('GET', '/api/tickets?view=overdue', null, $token);
+check('Überfällige Tickets: Filter und Statistik', $res[1]['meta']['total'] === 1 && $res[1]['items'][0]['sla']['overdue'] === true && call('GET', '/api/tickets/stats', null, $token)[1]['overdue'] === 1, $res[2]);
+call('PATCH', "/api/tickets/{$t1['id']}", ['status' => 'ON_HOLD'], $token);
+check('„Zurückgestellt“ stoppt die Uhr (nicht überfällig)', call('GET', '/api/tickets?view=overdue', null, $token)[1]['meta']['total'] === 0);
+call('PATCH', "/api/tickets/{$t1['id']}", ['status' => 'OPEN'], $token);
+
+// Lösen, bewerten
+expect('Bewerten vor dem Lösen → 409', call('POST', "/api/portal/tickets/{$t1['id']}/rating", ['rating' => 5], null, $LP), 409);
+$before = count(mails());
+$res = $acall("/api/tickets/{$t1['id']}/messages", ['kind' => 'STAFF', 'body' => 'Das war ein DNS-Eintrag – ist korrigiert.', 'status' => 'RESOLVED']);
+check('Antwort mit Status „Gelöst“; Mail nennt die automatische Schließung und Bewertung', $res[1]['status'] === 'RESOLVED' && $res[1]['resolvedAt'] !== null && str_contains(mailText(array_slice(mails(), $before)[0]), 'gelöst') && str_contains(mailText(array_slice(mails(), $before)[0]), 'bewerten'), $res[2]);
+expect('Bewertung 0 → 400', call('POST', "/api/portal/tickets/{$t1['id']}/rating", ['rating' => 0], null, $LP), 400);
+expect('Bewertung 6 → 400', call('POST', "/api/portal/tickets/{$t1['id']}/rating", ['rating' => 6], null, $LP), 400);
+$res = call('POST', "/api/portal/tickets/{$t1['id']}/rating", ['rating' => 4, 'comment' => 'Schnell und freundlich'], null, $LP);
+check('Kunde bewertet mit 4 Sternen und Kommentar', $res[0] === 200 && $res[1]['rating'] === 4 && $res[1]['ratingComment'] === 'Schnell und freundlich', $res[2]);
+$s = call('GET', '/api/tickets/stats', null, $token)[1];
+check('Statistik: Durchschnittsbewertung, Lösungen, Reaktionszeit', $s['avgRating'] == 4.0 && $s['ratings'] === 1 && $s['resolved30'] === 1, $s);
+
+// Kunde schließt und öffnet wieder
+$res = call('POST', "/api/portal/tickets/{$t1['id']}/close", [], null, $LP);
+check('Kunde schließt das Ticket', $res[0] === 200 && $res[1]['status'] === 'CLOSED', $res[2]);
+$res = call('POST', "/api/portal/tickets/{$t1['id']}/reopen", [], null, $LP);
+check('Kunde öffnet es wieder', $res[0] === 200 && $res[1]['status'] === 'OPEN', $res[2]);
+expect('Öffnen eines offenen Tickets → 409', call('POST', "/api/portal/tickets/{$t1['id']}/reopen", [], null, $LP), 409);
+call('POST', "/api/portal/tickets/{$t1['id']}/close", [], null, $LP);
+$res = $pcall("/api/portal/tickets/{$t1['id']}/messages", ['message' => 'Doch noch eine Frage.'], [], $LP);
+check('Antwort auf ein geschlossenes Ticket öffnet es wieder', $res[1]['status'] === 'OPEN' && $res[1]['closedAt'] === null, $res[2]);
+
+// Automatisches Schließen (Cron)
+call('PATCH', "/api/tickets/{$t1['id']}", ['status' => 'RESOLVED'], $token);
+$t2 = $pcall('/api/portal/tickets', ['subject' => 'Frage zur Rechnung', 'message' => 'Wann kommt die Rechnung?', 'category' => 'Rechnung & Zahlung'], [], $LP)[1];
+call('PATCH', "/api/tickets/{$t2['id']}", ['status' => 'PENDING'], $token);
+$dbs->exec("UPDATE Ticket SET lastActivityAt = '" . gmdate('Y-m-d\TH:i:s.000\Z', time() - 10 * 86400) . "' WHERE id = '{$t1['id']}'");
+$dbs->exec("UPDATE Ticket SET lastActivityAt = '" . gmdate('Y-m-d\TH:i:s.000\Z', time() - 20 * 86400) . "' WHERE id = '{$t2['id']}'");
+$res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron: gelöstes Ticket (10 Tage) wird geschlossen, „Wartet auf Kunde“ (20 Tage) als gelöst markiert', $res[1]['tickets'] === ['closed' => 1, 'resolved' => 1] && call('GET', "/api/tickets/{$t1['id']}", null, $token)[1]['status'] === 'CLOSED' && call('GET', "/api/tickets/{$t2['id']}", null, $token)[1]['status'] === 'RESOLVED', $res[2]);
+$res = call('POST', '/api/cron/run', null, null, ['X-Cron-Token: cron-token-cron-token-123']);
+check('Cron: zweiter Lauf tut nichts mehr', $res[1]['tickets'] === ['closed' => 0, 'resolved' => 0], $res[2]);
+
+// Im Namen des Kunden erfassen
+$before = count(mails());
+$res = $acall('/api/tickets', ['clientId' => $lc, 'subject' => 'Telefonanfrage Relaunch', 'body' => 'Kunde möchte ein Angebot für einen Relaunch.', 'priority' => 'LOW', 'category' => 'Allgemein', 'assigneeId' => $agentId, 'notifyCustomer' => 'true']);
+$t3 = $res[1];
+check('Mitarbeiter erfasst ein Ticket telefonisch; Kunde wird benachrichtigt', $res[0] === 201 && $t3['source'] === 'ADMIN' && $t3['assignee']['name'] === 'Sabine Support' && str_contains(json_encode($t3['messages']), 'im Namen des Kunden erfasst') && count(array_slice(mails(), $before)) === 1, $res[2]);
+check('Für Telefon-Tickets steht kein „ungelesen“ an', $t3['unreadStaff'] === 0);
+expect('Ticket für unbekannten Kunden → 404', $acall('/api/tickets', ['clientId' => 'gibtsnicht', 'subject' => 'Test', 'body' => 'x']), 404);
+
+// Sammelaktionen
+$res = call('POST', '/api/tickets/bulk', ['ids' => [$t2['id'], $t3['id']], 'action' => 'priority', 'value' => 'HIGH'], $agentToken);
+check('Sammelaktion: Priorität für mehrere Tickets', $res[0] === 200 && $res[1]['done'] === 2 && call('GET', "/api/tickets/{$t3['id']}", null, $token)[1]['priority'] === 'HIGH');
+check('Sammelaktion: zuweisen und Status', call('POST', '/api/tickets/bulk', ['ids' => [$t2['id'], $t3['id']], 'action' => 'assign', 'value' => $agentId], $agentToken)[1]['done'] === 2 && call('POST', '/api/tickets/bulk', ['ids' => [$t2['id']], 'action' => 'status', 'value' => 'CLOSED'], $agentToken)[1]['done'] === 1);
+expect('Sammelaktion ohne Auswahl → 400', call('POST', '/api/tickets/bulk', ['ids' => [], 'action' => 'status', 'value' => 'OPEN'], $token), 400);
+expect('Sammelaktion mit ungültigem Wert → 400', call('POST', '/api/tickets/bulk', ['ids' => [$t2['id']], 'action' => 'status', 'value' => 'X'], $token), 400);
+expect('Löschen: Mitarbeiter → 403', call('DELETE', "/api/tickets/{$t3['id']}", null, $agentToken), 403);
+expect('Sammel-Löschen: Mitarbeiter → 403', call('POST', '/api/tickets/bulk', ['ids' => [$t3['id']], 'action' => 'delete'], $agentToken), 403);
+
+// Textbausteine und Hilfe-Artikel
+$res = call('POST', '/api/canned', ['title' => 'Spam-Ordner prüfen', 'body' => 'Hallo {kunde}, bitte prüfen Sie den Spam-Ordner. Ticket {ticket}.'], $agentToken);
+expect('Textbaustein anlegen (auch als Mitarbeiter)', $res, 201);
+$cid = $res[1]['id'];
+check('Textbaustein ändern, lesen, löschen', call('PATCH', "/api/canned/$cid", ['title' => 'Spam prüfen'], $token)[1]['title'] === 'Spam prüfen' && count(call('GET', '/api/canned', null, $agentToken)[1]) === 1 && call('DELETE', "/api/canned/$cid", null, $token)[0] === 204 && call('GET', '/api/canned', null, $token)[1] === []);
+expect('Textbaustein ohne Titel → 400', call('POST', '/api/canned', ['body' => 'x'], $token), 400);
+$f1 = call('POST', '/api/faq', ['title' => 'Wie ändere ich meine Domain?', 'body' => "Im Portal unter „Lizenzen“.\nDort auf „Domain ändern“ klicken.", 'category' => 'Lizenz', 'published' => true], $token);
+$f2 = call('POST', '/api/faq', ['title' => 'Interner Entwurf', 'body' => 'noch nicht fertig', 'published' => false], $token);
+expect('Hilfe-Artikel anlegen', $f1, 201);
+$res = call('GET', '/api/portal/faq', null, null, $LP);
+check('Portal zeigt nur veröffentlichte Hilfe-Artikel', $res[0] === 200 && count($res[1]) === 1 && $res[1][0]['title'] === 'Wie ändere ich meine Domain?' && !str_contains($res[2], 'Entwurf'), $res[2]);
+expect('Hilfe-Artikel im Portal ohne Zugang → 401', call('GET', '/api/portal/faq'), 401);
+check('Hilfe-Artikel veröffentlichen/ändern/löschen', call('PATCH', "/api/faq/{$f2[1]['id']}", ['published' => true, 'title' => 'Fertig'], $token)[1]['published'] == 1 && count(call('GET', '/api/portal/faq', null, null, $LP)[1]) === 2 && call('DELETE', "/api/faq/{$f2[1]['id']}", null, $token)[0] === 204 && count(call('GET', '/api/faq', null, $token)[1]) === 1);
+expect('Hilfe-Artikel ohne Text → 400', call('POST', '/api/faq', ['title' => 'Nur Titel'], $token), 400);
+
+// Backup enthält Anhänge, Löschen räumt auf
+$res = call('POST', '/api/backups', [], $token);
+$bz = new ZipArchive();
+$bz->open("$tmp/backups/{$res[1]['name']}");
+check('Backup enthält die Ticket-Anhänge', $bz->locateName("uploads/tickets/$stored") !== false && $bz->getFromName("uploads/tickets/$stored") === $png, $res[2]);
+$bz->close();
+$res = call('DELETE', "/api/tickets/{$t1['id']}", null, $token);
+check('Ticket löschen entfernt Nachrichten, Anhänge und Dateien', $res[0] === 204 && (int) $dbs->query("SELECT COUNT(*) FROM TicketMessage WHERE ticketId = '{$t1['id']}'")->fetchColumn() === 0 && (int) $dbs->query("SELECT COUNT(*) FROM TicketAttachment WHERE ticketId = '{$t1['id']}'")->fetchColumn() === 0 && !is_file("$tmp/uploads/tickets/$stored"));
+expect('Gelöschtes Ticket → 404', call('GET', "/api/tickets/{$t1['id']}", null, $token), 404);
+check('Bulk-Löschen durch Admin', call('POST', '/api/tickets/bulk', ['ids' => [$t2['id'], $t3['id']], 'action' => 'delete'], $token)[1]['done'] === 2 && (int) $dbs->query('SELECT COUNT(*) FROM Ticket')->fetchColumn() === 0);
+
+// Missbrauchsbremse
+$dbs->exec('DELETE FROM RateLimit');
+$codes = [];
+for ($i = 0; $i < 17; $i++) {
+    $codes[] = $pcall('/api/portal/tickets', ['subject' => "Spam $i", 'message' => 'x'], [], $OTP)[0];
+}
+check('Zu viele neue Tickets in einer Stunde werden gebremst (429)', $codes[14] === 201 && $codes[15] === 429, $codes);
+$dbs->exec("DELETE FROM Ticket WHERE clientId = '$otherC'");
+$dbs->exec('DELETE FROM RateLimit');
+
 echo "Einstellungen und Datenbankwechsel\n";
 call('POST', '/api/users', ['name' => 'Einstellungs-Aushilfe', 'email' => 'einst@example.com', 'password' => 'aushilfe123'], $token);
 $memberToken = call('POST', '/api/auth/login', ['email' => 'einst@example.com', 'password' => 'aushilfe123'])[1]['token'];
@@ -1540,7 +1767,7 @@ $fld = static function (array $groups, string $key): ?array {
     return null;
 };
 $groups = $res[1]['groups'] ?? [];
-check('Einstellungen: Gruppen Firma, Zahlung, E-Mail, Portal, Lizenzen, Backup', $res[0] === 200 && array_column($groups, 'id') === ['company', 'billing', 'mail', 'portal', 'license', 'backup'], $res[2]);
+check('Einstellungen: Gruppen Firma, Zahlung, E-Mail, Portal, Support, Lizenzen, Backup', $res[0] === 200 && array_column($groups, 'id') === ['company', 'billing', 'mail', 'portal', 'support', 'license', 'backup'], $res[2]);
 check('Geheimnisse (SMTP-Passwort) werden nie ausgeliefert, nur „gesetzt“', $fld($groups, 'SMTP_PASSWORD')['isSet'] === true && $fld($groups, 'SMTP_PASSWORD')['value'] === '' && !str_contains($res[2], '"value":"secret') && !str_contains($res[2], 'test-secret'), $fld($groups, 'SMTP_PASSWORD'));
 check('Von der Server-Umgebung vorgegebene Werte sind gesperrt', $fld($groups, 'COMPANY_NAME')['locked'] === true && $fld($groups, 'COMPANY_NAME')['value'] === 'Ralph Design' && $fld($groups, 'COMPANY_PHONE')['locked'] === false, $fld($groups, 'COMPANY_NAME'));
 

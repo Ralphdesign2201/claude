@@ -293,9 +293,10 @@ final class BackupService
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $entry = (string) $zip->getNameIndex($i);
             // Nur flache, harmlose Dateinamen unter uploads/ (Schutz vor „Zip Slip“)
-            if (preg_match('#^uploads/([A-Za-z0-9][A-Za-z0-9._-]*)$#', $entry, $m)) {
+            if (preg_match('#^uploads/((?:tickets/)?[A-Za-z0-9][A-Za-z0-9._-]*)$#', $entry, $m)) {
                 $data = $zip->getFromIndex($i);
                 if ($data !== false) {
+                    self::ensureDir(dirname($uploadDir . '/' . $m[1]));
                     file_put_contents($uploadDir . '/' . $m[1], $data);
                     $restored++;
                 }
@@ -341,6 +342,13 @@ final class BackupService
         foreach (is_dir($dir) ? (scandir($dir) ?: []) : [] as $file) {
             if ($file[0] !== '.' && is_file($dir . '/' . $file)) {
                 $files[] = $file;
+            }
+        }
+        // Ticket-Anhänge liegen in einem eigenen Unterordner (nicht öffentlich abrufbar)
+        $sub = $dir . '/tickets';
+        foreach (is_dir($sub) ? (scandir($sub) ?: []) : [] as $file) {
+            if ($file[0] !== '.' && is_file($sub . '/' . $file)) {
+                $files[] = 'tickets/' . $file;
             }
         }
         return $files;

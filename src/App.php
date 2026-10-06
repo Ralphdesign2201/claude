@@ -19,6 +19,8 @@ use App\Controllers\NotesController;
 use App\Controllers\OrdersController;
 use App\Controllers\PortalAuthController;
 use App\Controllers\PortalController;
+use App\Controllers\PortalSupportController;
+use App\Controllers\TicketsController;
 use App\Controllers\ProjectsController;
 use App\Controllers\QuotesController;
 use App\Controllers\RecurringController;
@@ -213,6 +215,35 @@ final class App
         $r->add('GET', '/api/orders/:id', [OrdersController::class, 'show']);
         $r->add('POST', '/api/orders/:id/accept', [OrdersController::class, 'accept']);
         $r->add('POST', '/api/orders/:id/reject', [OrdersController::class, 'reject']);
+
+
+        $r->add('GET', '/api/tickets/meta', [TicketsController::class, 'meta']);
+        $r->add('GET', '/api/tickets/stats', [TicketsController::class, 'stats']);
+        $r->add('POST', '/api/tickets/bulk', [TicketsController::class, 'bulk']);
+        $r->add('GET', '/api/tickets/attachments/:attId', [TicketsController::class, 'attachment']);
+        $r->add('GET', '/api/tickets', [TicketsController::class, 'index']);
+        $r->add('POST', '/api/tickets', [TicketsController::class, 'create']);
+        $r->add('GET', '/api/tickets/:id', [TicketsController::class, 'show']);
+        $r->add('PATCH', '/api/tickets/:id', [TicketsController::class, 'update']);
+        $r->add('DELETE', '/api/tickets/:id', [TicketsController::class, 'delete']);
+        $r->add('POST', '/api/tickets/:id/messages', [TicketsController::class, 'message']);
+        $r->add('GET', '/api/canned', [TicketsController::class, 'canned']);
+        $r->add('POST', '/api/canned', [TicketsController::class, 'cannedCreate']);
+        $r->add('PATCH', '/api/canned/:id', [TicketsController::class, 'cannedUpdate']);
+        $r->add('DELETE', '/api/canned/:id', [TicketsController::class, 'cannedDelete']);
+        $r->add('GET', '/api/faq', [TicketsController::class, 'faq']);
+        $r->add('POST', '/api/faq', [TicketsController::class, 'faqCreate']);
+        $r->add('PATCH', '/api/faq/:id', [TicketsController::class, 'faqUpdate']);
+        $r->add('DELETE', '/api/faq/:id', [TicketsController::class, 'faqDelete']);
+        $r->add('GET', '/api/portal/tickets', [PortalSupportController::class, 'list'], $pub);
+        $r->add('POST', '/api/portal/tickets', [PortalSupportController::class, 'create'], $pub);
+        $r->add('GET', '/api/portal/tickets/:id', [PortalSupportController::class, 'show'], $pub);
+        $r->add('POST', '/api/portal/tickets/:id/messages', [PortalSupportController::class, 'message'], $pub);
+        $r->add('POST', '/api/portal/tickets/:id/close', [PortalSupportController::class, 'close'], $pub);
+        $r->add('POST', '/api/portal/tickets/:id/reopen', [PortalSupportController::class, 'reopen'], $pub);
+        $r->add('POST', '/api/portal/tickets/:id/rating', [PortalSupportController::class, 'rate'], $pub);
+        $r->add('GET', '/api/portal/attachments/:attId', [PortalSupportController::class, 'attachment'], $pub);
+        $r->add('GET', '/api/portal/faq', [PortalSupportController::class, 'faq'], $pub);
 
         $r->add('GET', '/api/settings', [SettingsController::class, 'show']);
         $r->add('GET', '/api/settings/all', [SettingsController::class, 'all'], $admin);

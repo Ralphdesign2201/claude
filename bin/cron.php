@@ -22,6 +22,12 @@ if ($results !== []) {
     echo count($results) . " Rechnung(en) erzeugt.\n";
 }
 
+// Support: gelöste Tickets schließen, lange unbeantwortete „Wartet auf Kunde“-Tickets als gelöst markieren
+$tickets = App\Services\TicketService::autoClose();
+if ($tickets['closed'] + $tickets['resolved'] > 0) {
+    echo "Tickets: {$tickets['closed']} geschlossen, {$tickets['resolved']} als gelöst markiert.\n";
+}
+
 // Tägliche Sicherung: nur wenn das letzte Backup älter als BACKUP_INTERVAL_HOURS ist
 $status = 0;
 try {

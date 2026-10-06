@@ -72,6 +72,49 @@ final class MailTemplates
         ];
     }
 
+    /** Eingangsbestätigung für ein Support-Ticket. @return array{subject:string,message:string} */
+    public static function ticketCreated(array $client, array $t): array
+    {
+        return [
+            'subject' => "Ihre Anfrage {$t['number']}: {$t['subject']}",
+            'message' => self::greeting($client) . "\n\nvielen Dank für Ihre Nachricht, wir haben Ihr Support-Ticket {$t['number']} angelegt und melden uns so schnell wie möglich.\n\n"
+                . "Betreff: {$t['subject']}\n\nDen Verlauf sehen Sie, und Sie können jederzeit antworten, in Ihrem Kundenportal: " . PortalService::baseUrl() . '/portal',
+        ];
+    }
+
+    /** Hinweis an das Team: neues Ticket bzw. Antwort des Kunden. @return array{subject:string,message:string} */
+    public static function ticketNotify(array $client, array $t, string $body, bool $isNew, bool $reopened = false): array
+    {
+        $who = $client['company'] ?: $client['name'];
+        $excerpt = mb_strlen($body) > 1500 ? mb_substr($body, 0, 1500) . ' …' : $body;
+        return [
+            'subject' => ($isNew ? 'Neues Ticket ' : 'Neue Antwort zu ') . "{$t['number']} von $who: {$t['subject']}",
+            'message' => ($isNew ? "$who hat ein Support-Ticket eröffnet" : "$who hat geantwortet" . ($reopened ? ' (das Ticket war gelöst/geschlossen und ist wieder offen)' : '')) . " – {$t['number']}, Priorität "
+                . (TicketService::PRIORITIES[$t['priority']] ?? $t['priority']) . ":\n\n$excerpt\n\nBitte im System unter „Support“ bearbeiten.",
+        ];
+    }
+
+    /** Antwort des Teams an den Kunden. @return array{subject:string,message:string} */
+    public static function ticketReply(array $client, array $t, string $body, bool $resolved): array
+    {
+        $days = \App\Support\Env::int('TICKET_AUTOCLOSE_DAYS', 7);
+        return [
+            'subject' => "Antwort zu Ihrer Anfrage {$t['number']}: {$t['subject']}",
+            'message' => self::greeting($client) . "\n\n$body\n\n---\nTicket {$t['number']}: " . ($resolved
+                ? "Wir haben es als gelöst markiert. Antworten Sie im Kundenportal, falls noch etwas offen ist" . ($days > 0 ? " – sonst wird es nach $days Tagen automatisch geschlossen. Dort können Sie uns auch bewerten." : '.')
+                : 'Antworten können Sie in Ihrem Kundenportal: ') . PortalService::baseUrl() . '/portal',
+        ];
+    }
+
+    /** Zuweisung an einen Mitarbeiter. @return array{subject:string,message:string} */
+    public static function ticketAssigned(array $user, array $t, array $client, string $by): array
+    {
+        return [
+            'subject' => "Ticket {$t['number']} wurde dir zugewiesen",
+            'message' => "Hallo {$user['name']},\n\n$by hat dir das Ticket {$t['number']} von " . ($client['company'] ?: $client['name']) . " zugewiesen:\n\n{$t['subject']}\n\nPriorität: " . (TicketService::PRIORITIES[$t['priority']] ?? $t['priority']),
+        ];
+    }
+
     /** E-Mail-Bestätigung für ein neues Konto. @return array{subject:string,message:string} */
     public static function accountVerify(string $name, string $link): array
     {
