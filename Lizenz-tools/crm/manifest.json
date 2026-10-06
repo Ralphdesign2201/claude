@@ -1,0 +1,432 @@
+{
+    "product": "crm",
+    "version": "1.0.0",
+    "builtAt": "2026-10-06T03:00:49Z",
+    "minPhp": "8.1",
+    "files": [
+        {
+            "path": ".env.example",
+            "sha256": "f2326215f3523199a15c8a8b98046d4429fd66597bc464930115c760e32b0aa9"
+        },
+        {
+            "path": ".htaccess",
+            "sha256": "0dc9ef46fe290f6793f8fae86a067b8196326e3167cd08b6634db40950c515bd"
+        },
+        {
+            "path": "README.md",
+            "sha256": "3e6ad904ca338e899c0853907cb75e828a9574ab6e6b347d9f6027d51fad0f53"
+        },
+        {
+            "path": "VERSION",
+            "sha256": "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03"
+        },
+        {
+            "path": "bin/.htaccess",
+            "sha256": "099f3c5713339a6264719a99c62db5e58d9103879aba1c1217c24099bbea38b8"
+        },
+        {
+            "path": "bin/backup.php",
+            "sha256": "d6b83decb81adbe5ae2f38db81e840c8b64cfd29929c904c06c3358142dc3a13"
+        },
+        {
+            "path": "bin/cron.php",
+            "sha256": "aa3f5733fe4e35a14b8102cb24fb25cfbc36b9e76e55af360d55588fbcdba1b4"
+        },
+        {
+            "path": "bin/migrate.php",
+            "sha256": "0599f33676135e237d5b335c2ae4ec044c19d1c7186215aed62f385179d12963"
+        },
+        {
+            "path": "bin/restore.php",
+            "sha256": "a36986895e7706c24e18092b50527d67d4019c849e63161f9c9418fa8dccc825"
+        },
+        {
+            "path": "bin/seed-catalog.php",
+            "sha256": "fe1290f8a3e58ef380aceedb49d27805d50d27641c2a5f5432dd75fccef719d7"
+        },
+        {
+            "path": "bin/seed.php",
+            "sha256": "ae8c1fd93cfa6d5988861fcf11585f02cfb2c10808290d402a9663f170a79a0f"
+        },
+        {
+            "path": "bin/update.php",
+            "sha256": "b158b448d716647425ae53d6b690da51a91d5dc00e69e1e02f277ef19370cd1f"
+        },
+        {
+            "path": "composer.json",
+            "sha256": "3c601672e2877917eb39bd2ae43fecb0ee60ff7369fa3c5619ea564dd3618237"
+        },
+        {
+            "path": "database/migrations/001_init.sql",
+            "sha256": "5b8ffb7280ceaa06c37a7629527af82df667a27f7a088176aed1c84c7df1dc96"
+        },
+        {
+            "path": "database/migrations/002_quotes_recurring_reminders.sql",
+            "sha256": "9c5c64157983333b9d679fc6fd9fb0583c40fa07c20b037d92ffab9e3b025f94"
+        },
+        {
+            "path": "database/migrations/003_portal.sql",
+            "sha256": "09e10e159d1dd25298bd30e7bda63760b2591a0219ae9bb6a40aff62b8198843"
+        },
+        {
+            "path": "database/migrations/004_catalog_orders.sql",
+            "sha256": "1b5e24bb2923e04813adf17867428bb34e9456ddae3fc6c891aaaf25f342a704"
+        },
+        {
+            "path": "database/migrations/005_accounts_licenses.sql",
+            "sha256": "1b79729a1ddb0a8a3357fa6cf0c1cd601ec4b1df3adde7a37a65fb450a533d1d"
+        },
+        {
+            "path": "database/migrations/006_support.sql",
+            "sha256": "f1892ec7f908f556f9fceb2e4bbd557b9654cf22ee919d09eb9d49de86cf3cfc"
+        },
+        {
+            "path": "database/migrations/007_usernames.sql",
+            "sha256": "0a73ec4c11bcaa788fcf8240816b17a2a43b4ee85420163895537e82f9765f68"
+        },
+        {
+            "path": "database/migrations/008_entitlements_updates.sql",
+            "sha256": "abc8509c78c10dea78e3fe670398b2fda23566bdbdc2fa9ae3b8ab9ebb65eb55"
+        },
+        {
+            "path": "examples/.htaccess",
+            "sha256": "099f3c5713339a6264719a99c62db5e58d9103879aba1c1217c24099bbea38b8"
+        },
+        {
+            "path": "examples/license-client/LicenseClient.php",
+            "sha256": "b28ded5f7087817164782434433fef4dae63efee4f0badd95a87bcc45576b488"
+        },
+        {
+            "path": "public/.htaccess",
+            "sha256": "435184c868910f416a277b666851f36f40ce74c9d12af07838c6ba9778c4e095"
+        },
+        {
+            "path": "public/.user.ini",
+            "sha256": "96d9ed9bab479a67c0fbf07917bcc5c04cf41c6cca49719e51d7cbf5390a21f5"
+        },
+        {
+            "path": "public/assets/app.css",
+            "sha256": "548c52dfbb49d2fa784b46ea95dea31ec6a16aabd81225246ca6fbf8f7daa082"
+        },
+        {
+            "path": "public/assets/app.js",
+            "sha256": "f2af7716e72fbcd4a88af47e3bd7343de5a75b11067223be642b6054211e54dc"
+        },
+        {
+            "path": "public/assets/index.html",
+            "sha256": "d7f17f48b8612289d3919d24e389fa07c2505331203304a67c09a516de8b3cda"
+        },
+        {
+            "path": "public/assets/portal.html",
+            "sha256": "1fa55e69100a63796a2ce10b9fde377f279e0c2a74cf58721e1e706ab89e6c84"
+        },
+        {
+            "path": "public/assets/portal.js",
+            "sha256": "c00590e895f756b6ca2f15b8abfa2ffd9f90155e0df1d147672ed380b57fb4db"
+        },
+        {
+            "path": "public/index.php",
+            "sha256": "ca25c2e544df491856ac8af6636e39c162728eb91197e1ca6ac4bbe36a29115c"
+        },
+        {
+            "path": "src/.htaccess",
+            "sha256": "099f3c5713339a6264719a99c62db5e58d9103879aba1c1217c24099bbea38b8"
+        },
+        {
+            "path": "src/App.php",
+            "sha256": "0cd725abc07631dc90a5dfde2c3334d53d957fcdcc33afbea6a8866b39ac776d"
+        },
+        {
+            "path": "src/Controllers/AuthController.php",
+            "sha256": "7b20f9f218b9eb6dca3d68faf432ddf4e3c27e8b05a155535e2e152f64c93bbb"
+        },
+        {
+            "path": "src/Controllers/BackupController.php",
+            "sha256": "3e38a5d45dde2a56b171e8aa2c38179211db2768c19f7990f14216b7f36da6a1"
+        },
+        {
+            "path": "src/Controllers/Casts.php",
+            "sha256": "fe40eda10da14df0101d97a6346c029827d199a69e59938cdaa867aeacba6824"
+        },
+        {
+            "path": "src/Controllers/CatalogController.php",
+            "sha256": "0fe50341dbb3980d11e75a00ed249be7a2f02abf88dd6421fb5487f5714bb07c"
+        },
+        {
+            "path": "src/Controllers/ClientsController.php",
+            "sha256": "b1b32ca93f5cfc390cb40f8eb88c2dd791f426145f6dce0c9a9ebf5eeef2d879"
+        },
+        {
+            "path": "src/Controllers/ContractsController.php",
+            "sha256": "cc05d2a9661e4b0f8deed031110b48daac9ad9b7cc671c4d4045824b0ad47019"
+        },
+        {
+            "path": "src/Controllers/CronController.php",
+            "sha256": "7c4ecc30416e9cfb5e4b18dcd87b452268e127d6053be0bd6e36c637d3693c78"
+        },
+        {
+            "path": "src/Controllers/DashboardController.php",
+            "sha256": "ef613438d4641888333d151880edae5432bb90e107469ed76116265cbe93e09b"
+        },
+        {
+            "path": "src/Controllers/DocumentsController.php",
+            "sha256": "020df351557fd9d8f8dee7d04b5dc7fd8636e3cab42a5de640b48be907767137"
+        },
+        {
+            "path": "src/Controllers/InvoicesController.php",
+            "sha256": "10e7c00cf4477b68b3ef44f40a083140aba15d7454056baa7dc5e8284c43f732"
+        },
+        {
+            "path": "src/Controllers/LicenseApiController.php",
+            "sha256": "4b968a59129b1534a6a855509d6975281ee6daf0a3a662b159c93540cb120ad8"
+        },
+        {
+            "path": "src/Controllers/LicensesController.php",
+            "sha256": "c87bee3d2596cf256094b0860ae341139ec7c53264184cccf7a6f4a3e356f92e"
+        },
+        {
+            "path": "src/Controllers/NotesController.php",
+            "sha256": "d46fbec2b28a8b46527d389cfd020b308fd0aef38de60eb0bae2c3e426a24c94"
+        },
+        {
+            "path": "src/Controllers/OrdersController.php",
+            "sha256": "5af4d84918bddce457f07e5430fe3f86d50d71a4b30ea9b3f04387fcfbc1c4e2"
+        },
+        {
+            "path": "src/Controllers/PortalAuthController.php",
+            "sha256": "767bd153d05f5b9fb315176ada2262c2710d8afbba2f0f4fa0bbf59fa08a2a93"
+        },
+        {
+            "path": "src/Controllers/PortalController.php",
+            "sha256": "fa8ea046052b4105afdb2d13a93b47b7331d7477f474b05c4ad9b2756adc8a0b"
+        },
+        {
+            "path": "src/Controllers/PortalSupportController.php",
+            "sha256": "9451e86642eec425ff820696b5b701a1b3f9c5ea9081fccadd6dc8a03d3d5ddd"
+        },
+        {
+            "path": "src/Controllers/ProjectsController.php",
+            "sha256": "b18b0f82ebeb9d2c83c732285f99a7d992082e22225d68f2f65048266caeda70"
+        },
+        {
+            "path": "src/Controllers/QuotesController.php",
+            "sha256": "9632260d59f469b34850a54db37978370b7105872668c0699804b1dea412ceff"
+        },
+        {
+            "path": "src/Controllers/RecurringController.php",
+            "sha256": "7c344a10ae78b61b0d58f3ca84769cc8ff8cbf67e09c5e3321f96b4b48560cb4"
+        },
+        {
+            "path": "src/Controllers/ReleasesController.php",
+            "sha256": "839b28818e0a16f4d63fa0d98ef4bf63266a30ef030f62affff1b7c579848121"
+        },
+        {
+            "path": "src/Controllers/RemindersController.php",
+            "sha256": "c1d1f04d02e9ff0f87ce74bf7b9f803af1f0257cd790feef22f10d2715447dae"
+        },
+        {
+            "path": "src/Controllers/SettingsController.php",
+            "sha256": "47c69ccb361677f0ae53af9b70af0516212ae7a425ad0374d8e4666bf42dbb74"
+        },
+        {
+            "path": "src/Controllers/SystemController.php",
+            "sha256": "3c5d9b7ca08319115fdae02400f568ceee7f13732d1b9bef24bc3b605007f7a3"
+        },
+        {
+            "path": "src/Controllers/TasksController.php",
+            "sha256": "136fe5282a6c119cf93a88843915c1fec02b821c5b3d09e6dd9bc6339361d679"
+        },
+        {
+            "path": "src/Controllers/TicketsController.php",
+            "sha256": "6f483792f98a8078f222888d4d5a098a6e7ee708b496daab406407526976bcd3"
+        },
+        {
+            "path": "src/Controllers/TimeEntriesController.php",
+            "sha256": "ac7075a81aa0723279d7be74c1649ff3d97e6374c89ab70e596d26de32ee2e5b"
+        },
+        {
+            "path": "src/Controllers/UsersController.php",
+            "sha256": "fff68f7ab09adb9dc93a7f1ef84a38bbb7a24fe60fd8c1a7ba10bbefd3fad27d"
+        },
+        {
+            "path": "src/Http/ApiError.php",
+            "sha256": "cc1774093458c935449da600acc8f742ec4a5518b3da8b6b727e59f1328a3511"
+        },
+        {
+            "path": "src/Http/Request.php",
+            "sha256": "d512f6f78245caf9f190b6325595c6d5df7b0f0016700778910d5bc43ea301c1"
+        },
+        {
+            "path": "src/Http/Response.php",
+            "sha256": "671b8bdf481746e4dc43499c6e5219d3cdd02425b93f04529fad9bdb92db701f"
+        },
+        {
+            "path": "src/Http/Router.php",
+            "sha256": "ca4051be39d04be62576bb12905e1e61af4e6a1e1766e45122191883bb67eb98"
+        },
+        {
+            "path": "src/Mail/MailException.php",
+            "sha256": "3abeb40d91d374467c207bd2c4a8be5b13c70e0c6b7f3fad4e09b18cdea4322d"
+        },
+        {
+            "path": "src/Mail/Mailer.php",
+            "sha256": "f5aa9aaf04df210dc5626313c878c27cd0dfa84ed07ef3c9022c2dc786d193af"
+        },
+        {
+            "path": "src/Pdf/DocumentPdf.php",
+            "sha256": "c4cfa27bdb7cc04dfaaffe9246b433c7446d615b22d7cce1576643dddc133f45"
+        },
+        {
+            "path": "src/Pdf/FontMetrics.php",
+            "sha256": "fe08d534748df59fd5ec86999821616b0c9d0b0519abad600ccda58338a4d807"
+        },
+        {
+            "path": "src/Pdf/InvoicePdf.php",
+            "sha256": "c02a7f31b18cd51d5ca1a571973c71ccd9395b7d8f9fee20dffd41699181081b"
+        },
+        {
+            "path": "src/Pdf/Pdf.php",
+            "sha256": "9eb37fcb9dc442e5fd52a52f95f978fe2feffc61bda9c6367fa038d781c97f0d"
+        },
+        {
+            "path": "src/Pdf/ReminderPdf.php",
+            "sha256": "26714cd6df6f36d0fc9a10d22fbbede699d6404be10dc6a3eb93c4b5b74d2741"
+        },
+        {
+            "path": "src/Services/AccountService.php",
+            "sha256": "e96a912d385808e60f78dcf60f3e08b4a6dcb8c18c3f2f96095ec7c1d15bb95a"
+        },
+        {
+            "path": "src/Services/BackupService.php",
+            "sha256": "6ab0a65efe9332eceb304b2ef110765772e15db2c9d76c537da48b91d23c8628"
+        },
+        {
+            "path": "src/Services/DatabaseSwitch.php",
+            "sha256": "8daaa3e9046a45769d1f43c874ea3c636d9d187dc9d324c8c1a529cedb5d68c9"
+        },
+        {
+            "path": "src/Services/Entitlements.php",
+            "sha256": "526514c3d4793e9261ff38793532804f9ab6dfdb48b700e94fb4a98e6e5efb96"
+        },
+        {
+            "path": "src/Services/InvoiceService.php",
+            "sha256": "e783dbb5074c2da000b23529089efda4c78496cdc037726ee9ffea3aa7152d5b"
+        },
+        {
+            "path": "src/Services/LicenseService.php",
+            "sha256": "e126b9c3844ee8531a60ee8b1571e4550c4286d247804084ed662875fc68de83"
+        },
+        {
+            "path": "src/Services/MailService.php",
+            "sha256": "a1849dd7af58151fdc45e45460cdfe2fa5755be0026ea867432294cffacce081"
+        },
+        {
+            "path": "src/Services/MailTemplates.php",
+            "sha256": "240b3157dcfe4e15d04ad620774f1fe17b6232ad0a237d30203f2506f598e896"
+        },
+        {
+            "path": "src/Services/Numbering.php",
+            "sha256": "cf211fb0db533d97019c7b80adfd88edd2e63f5c9478088a3d12b6331f0a8b7c"
+        },
+        {
+            "path": "src/Services/OrderService.php",
+            "sha256": "83ca04431d88a8adf3bf91d1ad2440ef48775f6d04fe04ae011e2a199028aede"
+        },
+        {
+            "path": "src/Services/PortalService.php",
+            "sha256": "eec16d1b3d50055a52c5e6fcfd37564f56e00165a96f954cede424bfcdb84097"
+        },
+        {
+            "path": "src/Services/ProductLicense.php",
+            "sha256": "a2f185d94816c01c99f24051981f802effd328e315041ce214d31a1a2e14a23d"
+        },
+        {
+            "path": "src/Services/RecurringService.php",
+            "sha256": "da7a55a73444869484663290616f6b910c80824d26b4a8c9d9658287a64d1a32"
+        },
+        {
+            "path": "src/Services/ReleaseService.php",
+            "sha256": "a02f9b2c5431be2e4248fc7f888580a56d9bed979ace4618b9057cb1f05c7547"
+        },
+        {
+            "path": "src/Services/SettingsService.php",
+            "sha256": "1ba1a0ec7e96fc32888159ba8f161133f0705962b9585584e42cfd05316ffc9a"
+        },
+        {
+            "path": "src/Services/TicketService.php",
+            "sha256": "44326bee7c7d22a8cafe410b17a36278faed23ff8c6472b3491faab49dd498e4"
+        },
+        {
+            "path": "src/Services/UpdateService.php",
+            "sha256": "9ccd74d6f2b6885c20d1a54bf3b7b4b50ec00ce78e8c2c05b02139bce1dc5fbd"
+        },
+        {
+            "path": "src/Support/Activity.php",
+            "sha256": "3f6025fbc82177dc9f308a7baaa6479fe54e293632ae16ca95fa34d6029c056d"
+        },
+        {
+            "path": "src/Support/Auth.php",
+            "sha256": "22a59a5e244caea5b7f3d6ec26b5d2a28cd0d3cdc855d3f2cbbae249851a4f08"
+        },
+        {
+            "path": "src/Support/DatabaseTransfer.php",
+            "sha256": "5dfa340856a5f5e31ff8b33cc64c5a8bb8a05197667b008f6859f28c40a711f2"
+        },
+        {
+            "path": "src/Support/Dates.php",
+            "sha256": "0eb09e94393b3f970e1ffc771e7bc4f977f547603a9abfcca109247c4edf57d1"
+        },
+        {
+            "path": "src/Support/Db.php",
+            "sha256": "830da1cddbee3dd500c6f112f9315ac1e6c98232bb478dce4932ad2e5f78df92"
+        },
+        {
+            "path": "src/Support/Env.php",
+            "sha256": "79d302bba17465e75590d1aec4d6f7e9644c5227900adaa60d4a6356c287e1be"
+        },
+        {
+            "path": "src/Support/Format.php",
+            "sha256": "30ee48fd17559e6434d69ce4db1756394e83d845bd22c9eb71e9a2f73a9a602f"
+        },
+        {
+            "path": "src/Support/InvoiceMath.php",
+            "sha256": "46f631761bc4c7a565fdf8029de81a86ff7922eb1a5dd30f1384032a4b29d8bc"
+        },
+        {
+            "path": "src/Support/Jwt.php",
+            "sha256": "a85ac53b3c98ca057afe19af0504d7262bd30350f49e2a3de40bf60a58ae4910"
+        },
+        {
+            "path": "src/Support/Migrator.php",
+            "sha256": "0797e01c6c78d6c5c3e5efe8b58747fc0a294e620b772ab6cdccb723c0914c87"
+        },
+        {
+            "path": "src/Support/Pagination.php",
+            "sha256": "1017394def5ac2b22a27acfc2a7493777ed7c160e0d218ecd0944c26a433006e"
+        },
+        {
+            "path": "src/Support/Product.php",
+            "sha256": "708618fab429d641adefbb7454e9dd999f40646e5f60d231a96ab5c22c5762d4"
+        },
+        {
+            "path": "src/Support/ProductGate.php",
+            "sha256": "f24c5cd2cce23b4b2e8ee0ee61baee5b91f1497d588c990273ccb70ed79ab8fb"
+        },
+        {
+            "path": "src/Support/RateLimit.php",
+            "sha256": "59b16dd596fa52c96aa0d5a7b2bf20fcb4f140a259e31e181535ceab7301c8d1"
+        },
+        {
+            "path": "src/Support/Validator.php",
+            "sha256": "fc9b7906a5a6c175ca4a8d29a061d082625406520d99c4e0a1cdb78f67fa5858"
+        },
+        {
+            "path": "src/Support/Where.php",
+            "sha256": "769e8fb092ae34e248b05afa219c9dd12d545eaf69dbd43a50852e7fa96bddf4"
+        },
+        {
+            "path": "src/bootstrap.php",
+            "sha256": "8d831369d11d7a6a9c893724653e64c71fc3a1f23fc14a46d7ed44d9fa227e94"
+        }
+    ]
+}

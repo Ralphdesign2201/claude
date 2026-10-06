@@ -219,21 +219,6 @@ Backups bleiben auch unter MySQL portable SQLite-Dateien und lassen sich in beid
 Ohne Oberfläche geht es auch per Umgebung: `DB_DRIVER=mysql`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, danach `php bin/migrate.php` – dann ist die Datenbank allerdings „vom Server festgelegt“ und in der Oberfläche nicht umschaltbar. Daten übernimmst du in dem Fall über einen vorherigen Wechsel in der Oberfläche oder ein Backup/Restore.
 Die Tests laufen gegen beide: `php tests/run.php` und `TEST_DB=mysql php tests/run.php` (MySQL-Zugang über `TEST_MYSQL_HOST/PORT/USER/PASSWORD`).
 
-## Lizenz-Tools: Produkt, Support-Anspruch und Updates
-
-Das CRM selbst ist das erste lizenzierte Produkt. Ordner **`Lizenz-tools/`** (siehe dort die README): `build-product.php` baut die auslieferbare, lizenzgeschützte Fassung (`Lizenz-tools/crm/`), `build-release.php` baut Update-Pakete.
-Dein Server ist der Lizenzserver; die Kopie beim Kunden enthält `product.json` (Server, öffentlicher Schlüssel) und prüft ihre Lizenz dort.
-
-- **Berechtigungen je Lizenz:** Paket (Starter, Pro, Agency), Funktionen (`support`, `shop`, `recurring`, `licenses`), Support-Zeitraum, Update-Zeitraum und eine Produkt-Kennung (`crm`). Am Produkt (Lizenz-Optionen) legst du sie fest, in der Lizenz kannst du sie je Kunde ändern. Sie stehen in der **signierten** Prüfantwort – die Software kann sie nicht selbst ändern.
-- **In der Produktversion:** Nicht enthaltene Funktionen sind gesperrt und im Menü ausgeblendet. Bei ungültiger Lizenz (widerrufen, abgelaufen, falsche Domain, kein Schlüssel) läuft die Software im **Nur-Lesen-Modus**: Daten bleiben les- und exportierbar (auch Backups), Änderungen sind gesperrt, Abos werden nicht abgerechnet. Server-Ausfälle überbrückt eine Kulanzfrist (`LICENSE_OFFLINE_DAYS`, 7 Tage). Im Programm: Einstellungen → **Lizenz & Updates**.
-- **Support-Anspruch:** Ist der Support-Zeitraum einer Lizenz abgelaufen, können Kunden zu dieser Lizenz keine Tickets mehr eröffnen (`TICKET_REQUIRE_SUPPORT`); das Portal zeigt Support- und Update-Ende je Lizenz.
-- **Updates:** Releases hochladen (Lizenzen → Releases & Updates), der Server signiert sie. Die Software lädt nur mit gültiger Lizenz und Update-Anspruch (kurzlebiges Token), prüft SHA-256 und Signatur, erlaubt nur Code-Ordner, sichert vorher Code und Daten und macht bei Fehlern alles rückgängig (`php bin/update.php --check|--install|--rollback=…`). Kanal „Beta“ per `UPDATE_CHANNEL`.
-- **API-Sicherheit:** signierte Antworten (Ed25519, mit Schlüsselkennung für Schlüsselwechsel), Zeitstempel + einmaliger Zufallswert gegen Replay, HTTPS-Pflicht (`LICENSE_REQUIRE_HTTPS`, standardmäßig an, wenn `APP_URL` mit https beginnt) mit HSTS, Bremsen je IP und **je Lizenz** (`LICENSE_MAX_CHECKS_HOUR`), Protokoll der Domains, auf denen ein Schlüssel benutzt wird.
-- **Installer:** In der Produktversion fragt `install.php` den Lizenzschlüssel ab und prüft ihn vorher.
-
-Ehrlich: Wer den PHP-Code beim Kunden verändert, kann die Prüfung entfernen. Durchsetzen lässt sich nur, was dein Server liefert (signierte Updates, Support, Berechtigungen). Die Pakete der Releases liegen in `uploads/releases/` und sind nicht im Backup – bewahre die ZIP-Dateien aus `Lizenz-tools/releases/` selbst auf.
-Tests: `php tests/run.php` (Anwendung) und `php tests/product.php` (Lizenzserver + Produkt + Updates + Installer).
-
 ## Datensicherung (Backup)
 
 Ein Backup ist eine ZIP-Datei mit einem **konsistenten Schnappschuss der Datenbank** (auch bei laufendem Betrieb), allen **hochgeladenen Dokumenten** und
@@ -292,7 +277,6 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Kundenkonten  | Portal: `GET /api/portal/config`, `POST /api/portal/register`, `/verify-info`, `/verify`, `/login`, `/logout`, `/forgot`, `/reset`, `/password`; Verwaltung: `POST /api/portal-accounts/:id/active`, `/reset`, `DELETE /api/portal-accounts/:id` |
 | Lizenzen      | `GET/POST /api/licenses`, `GET/PATCH/DELETE /api/licenses/:id`, `POST /api/licenses/:id/regenerate`, `POST /api/licenses/:id/send`; öffentlich: `POST /api/license/verify`, `GET /api/license/public-key`, `GET /license/client.php`; Portal: `GET /api/portal/licenses`, `POST /api/portal/licenses/:id/domain` |
 | Support       | Team: `GET/POST /api/tickets`, `GET /api/tickets/stats|meta`, `GET/PATCH/DELETE /api/tickets/:id`, `POST /api/tickets/:id/messages` (multipart), `POST /api/tickets/bulk`, `GET /api/tickets/attachments/:id`, `/api/canned`, `/api/faq`; Portal: `GET/POST /api/portal/tickets`, `GET /api/portal/tickets/:id`, `POST …/messages|close|reopen|rating`, `GET /api/portal/attachments/:id`, `GET /api/portal/faq` |
-| Lizenz-Updates | Software: `POST /api/license/update-check`, `POST /api/license/download`; Team (Admin): `GET/POST /api/releases`, `PATCH/DELETE /api/releases/:id`, `GET /api/releases/:id/file`, `GET /api/license-entitlements`; Produkt (Admin): `GET /api/system/status`, `POST /api/system/license/refresh|key`, `POST /api/system/update/check|install` |
 | Einstellungen | `GET/PUT /api/settings/all`, `POST /api/settings/test-mail`, `POST /api/settings/database/test`, `POST /api/settings/database/switch` (nur Admin) |
 | Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
 | Einstellungen | `GET /api/settings` (Mail eingerichtet? Firmendaten gesetzt?) |

@@ -1,0 +1,7 @@
+Webdesigner CRM 1.0.0 – Installation
+
+1. Diesen Ordnerinhalt auf deinen Webspace hochladen (am besten in eine eigene Subdomain, z. B. crm.deine-domain.de, mit https).
+2. https://deine-domain/install.php im Browser öffnen und den Anweisungen folgen. Dein Lizenzschlüssel wird dort abgefragt.
+3. Danach install.php löschen.
+
+Updates: im Programm unter Einstellungen → Lizenz & Updates oder per Kommandozeile: php bin/update.php --check | --install

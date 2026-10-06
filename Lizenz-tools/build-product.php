@@ -6,6 +6,7 @@ declare(strict_types=1);
 //   php Lizenz-tools/build-product.php crm [--server=https://lizenz.deine-domain.de] [--public-key=BASE64 ...] [--key-file=pfad/zu/license.key]
 // Ergebnis: Lizenz-tools/crm/ (Ordner) und Lizenz-tools/dist/crm-<version>.zip (zum Weitergeben an Kunden).
 // Server-Adresse und öffentlicher Schlüssel werden in Lizenz-tools/vendor.json gemerkt (beides ist nicht geheim).
+// --draft baut ohne Server/Schlüssel (Platzhalter), z. B. zum Ansehen oder Testen.
 
 require __DIR__ . '/lib.php';
 
@@ -30,13 +31,19 @@ if (is_string($args['key-file'] ?? null)) {
     }
     $vendor['publicKeys'] = [base64_encode(sodium_crypto_sign_publickey_from_secretkey($secret))];
 }
-if (!preg_match('#^https://[^\s/]+#', (string) $vendor['server']) && !str_starts_with((string) $vendor['server'], 'http://127.0.0.1')) {
+$draft = isset($args['draft']);
+if ($draft && $vendor['server'] === '') {
+    $vendor['server'] = 'https://lizenz.example.com';
+}
+if (!$draft && !preg_match('#^https://[^\s/]+#', (string) $vendor['server']) && !str_starts_with((string) $vendor['server'], 'http://127.0.0.1')) {
     fail('Bitte die Adresse deines Lizenzservers angeben: --server=https://lizenz.deine-domain.de');
 }
-if ($vendor['publicKeys'] === []) {
+if (!$draft && $vendor['publicKeys'] === []) {
     fail('Bitte den öffentlichen Schlüssel angeben: --public-key=… (zu finden unter https://dein-server/api/license/public-key) oder --key-file=…');
 }
-file_put_contents(TOOLS_ROOT . '/vendor.json', json_encode($vendor, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+if (!$draft) {
+    file_put_contents(TOOLS_ROOT . '/vendor.json', json_encode($vendor, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+}
 
 $version = currentVersion();
 $out = TOOLS_ROOT . '/' . $product;
@@ -95,3 +102,6 @@ $zip->close();
 
 echo "Produkt gebaut: Lizenz-tools/$product/ (" . count($files) . " Dateien) und Lizenz-tools/dist/$product-$version.zip\n";
 echo "Lizenzserver: {$vendor['server']}\n";
+if ($draft) {
+    echo "ENTWURF: Server und öffentlicher Schlüssel sind Platzhalter. Vor der Auslieferung neu bauen mit:\n  php Lizenz-tools/build-product.php crm --server=https://lizenz.deine-domain.de --key-file=pfad/zu/license.key\n";
+}

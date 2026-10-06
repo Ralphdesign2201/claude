@@ -1492,6 +1492,31 @@ check('Bezahlte zweite Rechnung verlängert um einen Monat', $diff >= 28 && $dif
 call('PATCH', "/api/invoices/$inv3b", ['status' => 'PAID'], $token);
 check('Erneutes Markieren als bezahlt verlängert nicht doppelt', call('GET', "/api/licenses/{$acc3['license']['id']}", null, $token)[1]['paidThrough'] === $l3['paidThrough']);
 
+// Berechtigungen aus dem Produkt: Paket, Funktionen, Support- und Update-Zeitraum
+expect('Ungültige Produkt-Kennung → 400', $mk(['name' => 'Kennung falsch', 'licenseSlug' => 'Böse Kennung']), 400);
+expect('Negative Support-Tage → 400', $mk(['name' => 'Tage falsch', 'licenseSupportDays' => -1]), 400);
+$res = $mk(['name' => 'Zeitprodukt mit Rest', 'type' => 'HOURLY', 'licensePlan' => 'pro', 'licenseSlug' => 'x', 'licenseSupportDays' => 5]);
+check('Zeitprodukte verlieren alle Lizenzangaben', $res[0] === 201 && $res[1]['licensePlan'] === null && $res[1]['licenseSlug'] === null && $res[1]['licenseSupportDays'] === null, $res[2]);
+$pEnt = $mk(['name' => 'Tool mit Berechtigungen', 'licensePayFirst' => false, 'licensePlan' => 'pro', 'licenseSlug' => 'tool', 'licenseFeatures' => 'support,shop', 'licenseSupportDays' => 30, 'licenseUpdateDays' => 0]);
+expect('Produkt mit Paket, Funktionen und Zeiträumen anlegen', $pEnt, 201);
+$oEnt = call('POST', '/api/portal/orders', ['productId' => $pEnt[1]['id'], 'domain' => 'tool-kunde.de'], null, $LP)[1];
+$lEnt = call('POST', "/api/orders/{$oEnt['id']}/accept", [], $token)[1]['license'];
+$dEnt = call('GET', "/api/licenses/{$lEnt['id']}", null, $token)[1];
+$supDays = (strtotime($dEnt['supportUntil']) - time()) / 86400;
+check('Lizenz übernimmt Paket, Kennung, Funktionen; Support 30 Tage, Updates „nicht enthalten“', $dEnt['plan'] === 'pro' && $dEnt['slug'] === 'tool' && $dEnt['resolvedFeatures'] === ['support', 'shop'] && $supDays > 29 && $supDays < 31 && $dEnt['supportActive'] === true && $dEnt['updatesActive'] === false, $dEnt);
+$pl = $verify($dEnt['licenseKey'], 'tool-kunde.de');
+[, $pp2] = $decode($pl);
+check('Signierte Antwort enthält Funktionen und Zeiträume', $pp2['plan'] === 'pro' && $pp2['features'] === ['support', 'shop'] && $pp2['supportUntil'] === $dEnt['supportUntil'] && $pp2['slug'] === 'tool', $pp2);
+$tb = 'XBL' . bin2hex(random_bytes(4));
+$res = call('POST', '/api/portal/tickets', "--$tb\r\nContent-Disposition: form-data; name=\"subject\"\r\n\r\nFrage\r\n--$tb\r\nContent-Disposition: form-data; name=\"message\"\r\n\r\nHallo\r\n--$tb\r\nContent-Disposition: form-data; name=\"licenseId\"\r\n\r\n{$dEnt['id']}\r\n--$tb--\r\n", null, array_merge($LP, ["Content-Type: multipart/form-data; boundary=$tb"]));
+check('Ticket zu dieser Lizenz ist erlaubt (Support läuft)', $res[0] === 201, $res[2]);
+call('DELETE', "/api/tickets/{$res[1]['id']}", null, $token);
+$o2 = call('POST', '/api/portal/orders', ['productId' => $pLicRent, 'domain' => 'miete-support.de'], null, $LP)[1];
+$a2 = call('POST', "/api/orders/{$o2['id']}/accept", [], $token)[1];
+call('POST', "/api/invoices/{$a2['invoice']['id']}/payments", ['amount' => 11.9], $token);
+$d2 = call('GET', "/api/licenses/{$a2['license']['id']}", null, $token)[1];
+check('Mietlizenz: Support und Updates laufen mit dem bezahlten Zeitraum', $d2['supportUntil'] === $d2['paidThrough'] && $d2['updatesUntil'] === $d2['paidThrough'], [$d2['supportUntil'], $d2['paidThrough']]);
+
 // Kostenloses Produkt und manuelle Ausstellung
 $before = count(mails());
 $o4 = call('POST', '/api/portal/orders', ['productId' => $pLicFree, 'domain' => 'gratis.de'], null, $LP)[1];
@@ -1502,7 +1527,7 @@ check('Lizenz manuell ausstellen (sofort aktiv)', $res[0] === 201 && $res[1]['st
 expect('Manuelle Lizenz mit ungültiger Domain → 400', call('POST', '/api/licenses', ['clientId' => $lc, 'productName' => 'X', 'domain' => '###'], $token), 400);
 expect('Lizenzverwaltung ohne Login → 401', call('GET', '/api/licenses'), 401);
 $res = call('GET', "/api/licenses?clientId=$lc", null, $token);
-check('Lizenzliste je Kunde', $res[1]['meta']['total'] === 5, $res[2]);
+check('Lizenzliste je Kunde', $res[1]['meta']['total'] === 7, $res[2]);
 $res = call('GET', '/api/licenses?search=agentur', null, $token);
 check('Suche in Lizenzen', $res[1]['meta']['total'] === 1, $res[2]);
 check('Lizenz nur über Produkt-Bestellung ohne Domain-Feld nicht möglich (Bestellung ohne Lizenz-Produkt ignoriert Domain)', call('POST', '/api/portal/orders', ['productId' => $pWeb, 'domain' => 'egal.de'], null, $LP)[1]['licenseEnabled'] === false);
