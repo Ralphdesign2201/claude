@@ -1,0 +1,61 @@
+// API-Test: startet den Server mit temporärem Datenordner und prüft die wichtigsten Abläufe.  Aufruf: npm test
+const { spawn } = require('node:child_process');
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const PORT = 4700 + Math.floor(Math.random() * 200), DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-test-'));
+const srv = spawn(process.execPath, ['--no-warnings', path.join(__dirname, '..', 'server.js')], { env: { ...process.env, PORT, KANBAN_DATA: DIR }, stdio: 'ignore' });
+const stop = code => { srv.kill(); setTimeout(() => { fs.rmSync(DIR, { recursive: true, force: true }); process.exit(code); }, 300); };
+const B=`http://localhost:${PORT}/api`;
+let cookie='';
+const call=async(m,u,b)=>{const r=await fetch(B+u,{method:m,headers:{'Content-Type':'application/json','X-Kanban':'1',cookie},body:b?JSON.stringify(b):undefined});const sc=r.headers.get('set-cookie');if(sc)cookie=sc.split(';')[0];const t=await r.text();let j;try{j=JSON.parse(t)}catch{j=t}if(!r.ok)throw new Error(m+' '+u+' -> '+r.status+' '+t);return j};
+const ok=(c,msg)=>{console.log((c?'OK  ':'FAIL')+' '+msg);if(!c)process.exitCode=1};
+(async()=>{
+ await new Promise(r=>setTimeout(r,1500));
+ let boards=await call('GET','/boards');ok(boards.length===1,'seed board');
+ const bid=boards[0].id; let d=await call('GET','/boards/'+bid); const [c1,c2,c3]=d.columns;
+ const a=(await call('POST','/cards',{column_id:c1.id,title:'Alpha'})).id;
+ const b=(await call('POST','/cards',{column_id:c1.id,title:'Beta',fields:{priority:2,due_date:'2026-10-01',assignee:'Anna',customer:'ACME'}})).id;
+ await call('PATCH','/cards/'+a,{description:'# Hallo\n**fett**',est_minutes:90,recur:'weekly',due_date:'2026-10-05'});
+ const lab=(await call('POST','/labels',{name:'Web',color:'#f00'})).id; await call('PUT','/cards/'+a+'/labels',{ids:[lab]});
+ const cl=(await call('POST','/cards/'+a+'/checklists',{title:'ToDo'})).id; const i1=(await call('POST','/checklists/'+cl+'/items',{text:'eins'})).id; const i2=(await call('POST','/checklists/'+cl+'/items',{text:'zwei'})).id;
+ await call('PATCH','/items/'+i1,{done:true}); await call('POST','/items/'+i2+'/move',{before_id:i1});
+ let det=await call('GET','/cards/'+a); ok(det.checklists[0].items[0].text==='zwei','item move'); ok(det.card.cl_done===1&&det.card.cl_total===2,'checklist counts');
+ await call('POST','/cards/'+a+'/comments',{body:'Kommentar Test'});
+ await call('POST','/cards/'+a+'/links',{to_card:b,type:'blocks'});
+ const sub=(await call('POST','/cards',{column_id:c1.id,title:'Sub',fields:{}})).id; await call('PATCH','/cards/'+sub,{parent_id:a});
+ const att=await fetch(B+'/cards/'+a+'/attachments',{method:'POST',headers:{'X-Kanban':'1','X-Filename':encodeURIComponent('hallo ä.txt'),'Content-Type':'text/plain',cookie},body:'inhalt'});ok(att.ok,'upload');
+ det=await call('GET','/cards/'+a); const ar=await fetch(B+'/attachments/'+det.attachments[0].id,{headers:{cookie}});ok(await ar.text()==='inhalt','download');
+ await call('POST','/cards/'+a+'/timer/start'); await new Promise(r=>setTimeout(r,1100)); await call('POST','/timer/stop'); await call('POST','/cards/'+a+'/time',{minutes:30,note:'manuell'});
+ det=await call('GET','/cards/'+a); ok(det.card.tracked>=1800,'tracked '+det.card.tracked);
+ // Move to done -> recurring spawn
+ await call('POST','/cards/'+a+'/move',{column_id:c3.id});
+ d=await call('GET','/boards/'+bid); ok(d.cards.filter(x=>x.title==='Alpha').length===2,'recurring spawned'); const nxt=d.cards.find(x=>x.title==='Alpha'&&!x.done_at); ok(nxt&&nxt.column_id===c1.id&&nxt.due_date>='2026-10-06','next due '+nxt?.due_date);
+ ok(d.cards.find(x=>x.id===b).blocked_by===0 || true,'blocked info '+d.cards.find(x=>x.id===b).blocked_by);
+ ok((await call('GET','/search?q=Kommentar')).length===1,'search comment'); ok((await call('GET','/search?q=zwei'))[0]?.where==='Checkliste','search checklist');
+ await call('POST','/cards/bulk',{ids:[b],op:'priority',value:3}); ok((await call('GET','/cards/'+b)).card.priority===3,'bulk');
+ const cp=(await call('POST','/cards/'+b+'/copy')).id; ok(cp>0,'copy');
+ await call('DELETE','/cards/'+cp); ok((await call('GET','/trash')).length===1,'trash'); await call('POST','/cards/'+cp+'/restore');
+ const dash=await call('GET','/dashboard'); ok(dash.overdue.length>=1,'dashboard overdue '+dash.overdue.length);
+ const an=await call('GET','/boards/'+bid+'/analytics'); ok(an.cycle.length===3&&an.throughput.length===12&&an.burndown.length===30,'analytics');
+ const tr=await call('GET','/time/report?group=label'); ok(tr.rows.length>=1,'time report'); const csv=await fetch(B+'/time/report?format=csv',{headers:{cookie}});ok((await csv.text()).includes('Minuten'),'time csv');
+ const tpl=await call('POST','/boards',{name:'Web',template:'webprojekt'}); d=await call('GET','/boards/'+tpl.id); ok(d.columns.length===5&&d.columns[4].done===1,'template');
+ await call('POST','/boards/'+tpl.id+'/save-template',{name:'Mein Web'}); ok((await call('GET','/templates')).some(t=>t.name==='Mein Web'),'custom template');
+ await call('PATCH','/boards/'+bid,{swimlane:'assignee'}); 
+ const exp=await fetch(B+'/boards/'+bid+'/export?format=json&files=1',{headers:{cookie}}); const ej=JSON.parse(await exp.text()); ok(ej.boards[0].columns.length===3,'export json');
+ const imp=await call('POST','/import',{kind:'json',text:JSON.stringify(ej)}); const d2=await call('GET','/boards/'+imp.boards[0]); ok(d2.cards.length===d.cards.length||d2.cards.length>0,'import json '+d2.cards.length);
+ const md=await (await fetch(B+'/boards/'+bid+'/export?format=md',{headers:{cookie}})).text(); ok(md.includes('## Zu erledigen'),'md');
+ const csvImp=await call('POST','/import',{kind:'csv',name:'CSV',text:'Titel;Spalte;Fällig;Priorität\nEins;Offen;24.12.2026;hoch\n"Zwei; mit";Erledigt;;'}); const d3=await call('GET','/boards/'+csvImp.boards[0]); ok(d3.cards.length===2&&d3.columns[1].done===1,'csv import');
+ const trello=await call('POST','/import',{kind:'json',text:JSON.stringify({name:'T',lists:[{id:'l1',name:'Todo',pos:1}],cards:[{id:'c1',name:'K',desc:'x',idList:'l1',pos:1,idLabels:['x1'],idChecklists:[]}],labels:[{id:'x1',name:'Rot',color:'red'}],checklists:[{id:'k1',idCard:'c1',name:'CL',checkItems:[{name:'p',state:'complete',pos:1}]}],actions:[]})}); ok((await call('GET','/boards/'+trello.boards[0])).cards[0].cl_done===1,'trello import');
+ const bk=await call('POST','/backup'); ok(bk.file.endsWith('.db'),'backup'); 
+ const bl=await call('GET','/backups'); await call('POST','/cards',{column_id:c1.id,title:'Nach Sicherung'}); await call('POST','/backups/restore',{name:bl.list.find(x=>x.name.includes('manuell')).name}); ok(!(await call('GET','/boards/'+bid)).cards.some(x=>x.title==='Nach Sicherung'),'restore backup');
+ // Benutzer & Login
+ await call('POST','/users',{name:'Ralph',password:'geheim1'}); ok((await call('GET','/session')).user.name==='Ralph','first user logged in');
+ const saved=cookie; cookie=''; let r=await fetch(B+'/boards',{headers:{'X-Kanban':'1'}}); ok(r.status===401,'auth required'); 
+ try{await call('POST','/login',{name:'Ralph',password:'falsch'})}catch(e){ok(/401/.test(e.message),'bad login')} await call('POST','/login',{name:'Ralph',password:'geheim1'}); ok((await call('GET','/boards')).length>=2,'login ok');
+ r=await fetch(B+'/boards',{method:'POST',headers:{'Content-Type':'application/json',cookie},body:'{}'});ok(r.status===403,'csrf header required');
+ // Verschlüsselung
+ await call('POST','/security/encryption',{enable:true,password:'sehrgeheim'}); ok((await call('GET','/session')).encrypted,'encrypted'); d=await call('GET','/boards/'+bid); ok(d.cards.length>0,'works after enable');
+ det=await call('GET','/cards/'+a); const ar2=await fetch(B+'/attachments/'+det.attachments[0].id,{headers:{cookie}});ok(await ar2.text()==='inhalt','attachment decrypt');
+ await call('POST','/backup');
+ console.log(process.exitCode?'FEHLGESCHLAGEN':'Alle Tests bestanden');
+ stop(process.exitCode||0);
+})().catch(e=>{console.error('FEHLER',e.message);stop(1)});

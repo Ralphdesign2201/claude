@@ -1,186 +1,105 @@
-// Lokales Kanban – Server ohne Abhängigkeiten (Node 22+, eingebautes SQLite)
+// Lokales Kanban – Server ohne Abhängigkeiten (Node 22.13+, eingebautes SQLite)
+const [maj, min] = process.versions.node.split('.').map(Number);
+if (maj < 22 || (maj === 22 && min < 13)) { console.error(`Node.js ${process.version} ist zu alt. Bitte Node.js 22.13 oder neuer installieren (https://nodejs.org).`); process.exit(1); }
+process.removeAllListeners('warning'); process.on('warning', w => { if (w.name !== 'ExperimentalWarning') console.warn(w); });
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
+const S = require('./server/store');
+const R = require('./server/runtime');
+const C = require('./server/crypto');
+const { routes, HttpError } = require('./server/router');
+require('./server/core'); require('./server/stats'); require('./server/io'); require('./server/admin');
 
 const PORT = Number(process.env.PORT || 4545);
-const DATA = path.resolve(process.env.KANBAN_DATA || path.join(__dirname, 'daten'));
-const BACKUPS = path.join(DATA, 'sicherungen');
-const KEEP = Number(process.env.KANBAN_BACKUPS || 7);
-fs.mkdirSync(BACKUPS, { recursive: true });
-
-const db = new DatabaseSync(path.join(DATA, 'kanban.db'));
-db.exec(`
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-CREATE TABLE IF NOT EXISTS boards (
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL, color TEXT DEFAULT '#4f7cff',
-  icon TEXT DEFAULT '▦', pos REAL DEFAULT 0, archived INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS columns (
-  id INTEGER PRIMARY KEY, board_id INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
-  name TEXT NOT NULL, pos REAL DEFAULT 0, wip_limit INTEGER, collapsed INTEGER DEFAULT 0,
-  archived INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS cards (
-  id INTEGER PRIMARY KEY, column_id INTEGER NOT NULL REFERENCES columns(id) ON DELETE CASCADE,
-  title TEXT NOT NULL, description TEXT DEFAULT '', priority INTEGER DEFAULT 0,
-  due_date TEXT, pos REAL DEFAULT 0, archived INTEGER DEFAULT 0, deleted_at TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
-`);
-
-const now = () => new Date().toISOString();
-const all = (sql, ...p) => db.prepare(sql).all(...p);
-const get = (sql, ...p) => db.prepare(sql).get(...p);
-const run = (sql, ...p) => db.prepare(sql).run(...p);
-
-const TEMPLATES = {
-  leer: ['Zu erledigen', 'In Arbeit', 'Erledigt'],
-  webprojekt: ['Briefing', 'Design', 'Umsetzung', 'Test', 'Fertig'],
-};
-
-function createBoard(b) {
-  const pos = (get('SELECT MAX(pos) m FROM boards').m || 0) + 1;
-  const id = Number(run('INSERT INTO boards (name,color,icon,pos) VALUES (?,?,?,?)',
-    String(b.name || 'Neues Board'), b.color || '#4f7cff', b.icon || '▦', pos).lastInsertRowid);
-  (TEMPLATES[b.template] || TEMPLATES.leer).forEach((n, i) =>
-    run('INSERT INTO columns (board_id,name,pos) VALUES (?,?,?)', id, n, i + 1));
-  return id;
-}
-if (!get('SELECT 1 x FROM boards')) createBoard({ name: 'Mein Board' });
-
-function boardData(id) {
-  const board = get('SELECT * FROM boards WHERE id=?', id);
-  if (!board) return null;
-  const columns = all('SELECT * FROM columns WHERE board_id=? AND archived=0 ORDER BY pos', id);
-  const cards = all(`SELECT c.* FROM cards c JOIN columns k ON k.id=c.column_id
-    WHERE k.board_id=? AND c.archived=0 AND c.deleted_at IS NULL ORDER BY c.pos`, id);
-  return { board, columns, cards };
-}
-
-// Neu nummerieren: ids in Reihenfolge -> pos 1..n
-function renumber(table, ids, extra = '') {
-  ids.forEach((id, i) => run(`UPDATE ${table} SET pos=? ${extra} WHERE id=?`, i + 1, id));
-}
-function pick(obj, allowed) {
-  const out = {};
-  for (const k of allowed) if (k in obj) out[k] = obj[k];
-  return out;
-}
-function update(table, id, fields) {
-  const keys = Object.keys(fields);
-  if (!keys.length) return;
-  run(`UPDATE ${table} SET ${keys.map(k => k + '=?').join(',')} WHERE id=?`, ...keys.map(k => fields[k]), id);
-}
-
-function backup(label = '') {
-  const d = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
-  const file = path.join(BACKUPS, `kanban-${d}${label}.db`);
-  db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
-  const files = fs.readdirSync(BACKUPS).filter(f => f.endsWith('.db')).sort();
-  files.slice(0, Math.max(0, files.length - KEEP)).forEach(f => fs.unlinkSync(path.join(BACKUPS, f)));
-  return file;
-}
-function dailyBackup() {
-  const today = new Date().toISOString().slice(0, 10);
-  if (!fs.readdirSync(BACKUPS).some(f => f.startsWith('kanban-' + today))) backup();
-}
-dailyBackup();
-setInterval(dailyBackup, 3600e3).unref();
-
-const routes = [];
-const route = (m, re, fn) => routes.push([m, new RegExp('^' + re + '$'), fn]);
-
-route('GET', '/api/boards', () => all('SELECT * FROM boards WHERE archived=0 ORDER BY pos'));
-route('POST', '/api/boards', (_, b) => ({ id: createBoard(b) }));
-route('GET', '/api/boards/(\\d+)', (m) => boardData(m[1]));
-route('PATCH', '/api/boards/(\\d+)', (m, b) => { update('boards', m[1], pick(b, ['name', 'color', 'icon', 'archived'])); return {}; });
-route('POST', '/api/boards/(\\d+)/duplicate', (m) => {
-  const src = boardData(m[1]);
-  const id = createBoard({ name: src.board.name + ' (Kopie)', color: src.board.color, icon: src.board.icon, template: '' });
-  run('DELETE FROM columns WHERE board_id=?', id);
-  for (const c of src.columns) {
-    const cid = Number(run('INSERT INTO columns (board_id,name,pos,wip_limit) VALUES (?,?,?,?)', id, c.name, c.pos, c.wip_limit).lastInsertRowid);
-    for (const k of src.cards.filter(k => k.column_id === c.id))
-      run('INSERT INTO cards (column_id,title,description,priority,due_date,pos) VALUES (?,?,?,?,?,?)', cid, k.title, k.description, k.priority, k.due_date, k.pos);
-  }
-  return { id };
-});
-route('POST', '/api/columns', (_, b) => {
-  const pos = (get('SELECT MAX(pos) m FROM columns WHERE board_id=?', b.board_id).m || 0) + 1;
-  return { id: Number(run('INSERT INTO columns (board_id,name,pos) VALUES (?,?,?)', b.board_id, String(b.name || 'Neue Spalte'), pos).lastInsertRowid) };
-});
-route('PATCH', '/api/columns/(\\d+)', (m, b) => { update('columns', m[1], pick(b, ['name', 'wip_limit', 'collapsed', 'archived'])); return {}; });
-route('POST', '/api/columns/(\\d+)/move', (m, b) => {
-  const col = get('SELECT * FROM columns WHERE id=?', m[1]);
-  const ids = all('SELECT id FROM columns WHERE board_id=? AND archived=0 AND id<>? ORDER BY pos', col.board_id, col.id).map(r => r.id);
-  ids.splice(Math.max(0, Math.min(ids.length, b.index)), 0, col.id);
-  renumber('columns', ids);
-  return {};
-});
-route('POST', '/api/cards', (_, b) => {
-  const pos = (get('SELECT MAX(pos) m FROM cards WHERE column_id=?', b.column_id).m || 0) + 1;
-  return { id: Number(run('INSERT INTO cards (column_id,title,pos) VALUES (?,?,?)', b.column_id, String(b.title || 'Neue Karte'), pos).lastInsertRowid) };
-});
-route('PATCH', '/api/cards/(\\d+)', (m, b) => {
-  const f = pick(b, ['title', 'description', 'priority', 'due_date', 'archived']);
-  f.updated_at = now();
-  update('cards', m[1], f);
-  return {};
-});
-route('POST', '/api/cards/(\\d+)/move', (m, b) => {
-  const ids = all('SELECT id FROM cards WHERE column_id=? AND archived=0 AND deleted_at IS NULL AND id<>? ORDER BY pos', b.column_id, m[1]).map(r => r.id);
-  ids.splice(Math.max(0, Math.min(ids.length, b.index)), 0, Number(m[1]));
-  run('UPDATE cards SET column_id=?, updated_at=? WHERE id=?', b.column_id, now(), m[1]);
-  renumber('cards', ids);
-  return {};
-});
-route('DELETE', '/api/cards/(\\d+)', (m) => { run('UPDATE cards SET deleted_at=? WHERE id=?', now(), m[1]); return {}; });
-route('POST', '/api/cards/(\\d+)/restore', (m) => { run('UPDATE cards SET deleted_at=NULL WHERE id=?', m[1]); return {}; });
-route('GET', '/api/search', (_, __, q) => {
-  const term = (q.get('q') || '').trim();
-  if (!term) return [];
-  const like = '%' + term.replace(/[\\%_]/g, '\\$&') + '%';
-  return all(`SELECT c.id, c.title, c.column_id, k.name AS column_name, k.board_id, b.name AS board_name
-    FROM cards c JOIN columns k ON k.id=c.column_id JOIN boards b ON b.id=k.board_id
-    WHERE c.deleted_at IS NULL AND (c.title LIKE ? ESCAPE '\\' OR c.description LIKE ? ESCAPE '\\')
-    ORDER BY c.updated_at DESC LIMIT 50`, like, like);
-});
-route('GET', '/api/trash', () => all(`SELECT c.id, c.title, c.deleted_at, k.board_id FROM cards c JOIN columns k ON k.id=c.column_id WHERE c.deleted_at IS NOT NULL ORDER BY c.deleted_at DESC`));
-route('POST', '/api/backup', () => ({ file: backup('-manuell') }));
-route('GET', '/api/export', () => ({
-  version: 1, exported_at: now(),
-  boards: all('SELECT * FROM boards'), columns: all('SELECT * FROM columns'), cards: all('SELECT * FROM cards'),
-}));
-
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
 const PUBLIC = path.join(__dirname, 'public');
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
+const CSP = "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-src 'self'; object-src 'self'; base-uri 'none'; form-action 'self'";
 
-http.createServer((req, res) => {
+try { S.start(); S.acquireLock(PORT); } catch (e) { console.error('\n' + e.message + '\n'); process.exit(1); }
+if (S.db) { require('./server/core').seed(); S.dailyBackup(); }
+setInterval(() => { try { S.dailyBackup(); } catch (e) { console.error('Sicherung fehlgeschlagen:', e.message); } }, 3600e3).unref();
+
+// ----- Sitzungen -----
+const parseCookies = h => Object.fromEntries((h || '').split(/;\s*/).filter(Boolean).map(p => { const i = p.indexOf('='); return [p.slice(0, i), decodeURIComponent(p.slice(i + 1))]; }));
+function userOf(req) {
+  const t = parseCookies(req.headers.cookie).kb, s = t && R.sessions.get(t);
+  if (!s || S.isLocked()) return null;
+  return S.get('SELECT * FROM users WHERE id=?', s.id) || null;
+}
+
+// ----- Live-Aktualisierung -----
+const clients = new Set();
+const broadcast = (src) => { for (const c of clients) c.write(`data: ${JSON.stringify({ t: 'change', src })}\n\n`); };
+setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 25000).unref();
+
+const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  const send = (code, body, type = 'application/json; charset=utf-8') => {
-    res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
-    res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
-  };
-  if (url.pathname.startsWith('/api/')) {
-    // Nur Anfragen von der eigenen Seite zulassen (Schutz vor fremden Webseiten)
-    const host = req.headers.host || '';
-    if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) return send(403, { error: 'verboten' });
-    let raw = '';
-    req.on('data', d => { raw += d; if (raw.length > 5e6) req.destroy(); });
-    req.on('end', () => {
-      for (const [method, re, fn] of routes) {
-        const m = req.method === method && url.pathname.match(re);
-        if (!m) continue;
-        try {
-          const out = fn(m, raw ? JSON.parse(raw) : {}, url.searchParams);
-          return out === null ? send(404, { error: 'nicht gefunden' }) : send(200, out);
-        } catch (e) { return send(500, { error: String(e.message || e) }); }
-      }
-      send(404, { error: 'nicht gefunden' });
-    });
-    return;
+  const headers = (type, extra = {}) => ({ 'Content-Type': type, 'Cache-Control': 'no-store', 'Content-Security-Policy': CSP, 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'SAMEORIGIN', ...extra });
+  const send = (code, body, type = 'application/json; charset=utf-8', extra) => { res.writeHead(code, headers(type, extra)); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
+  const lan = !S.isLocked() && S.getSetting('lan', false);
+
+  if (!url.pathname.startsWith('/api/')) {
+    let p = decodeURIComponent(url.pathname); if (p === '/') p = '/index.html';
+    const file = path.join(PUBLIC, p);
+    if (!file.startsWith(PUBLIC + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(404, 'Nicht gefunden', 'text/plain; charset=utf-8');
+    return send(200, fs.readFileSync(file), TYPES[path.extname(file)] || 'application/octet-stream');
   }
-  const file = path.join(PUBLIC, url.pathname === '/' ? 'index.html' : url.pathname);
-  if (!file.startsWith(PUBLIC) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(404, 'Nicht gefunden', 'text/plain; charset=utf-8');
-  send(200, fs.readFileSync(file), TYPES[path.extname(file)] || 'application/octet-stream');
-}).listen(PORT, '127.0.0.1', () => console.log(`Lokales Kanban läuft: http://localhost:${PORT}\nDaten: ${DATA}`));
+  // Schutz gegen fremde Webseiten: lokal nur localhost-Host, immer Spezial-Header bei Schreibzugriffen
+  if (!lan && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.headers.host || '')) return send(403, { error: 'verboten' });
+  if (req.method !== 'GET' && req.headers['x-kanban'] !== '1') return send(403, { error: 'verboten' });
+
+  const chunks = []; let size = 0;
+  req.on('data', d => { size += d.length; if (size > 250e6) { req.destroy(); return; } chunks.push(d); });
+  req.on('end', () => {
+    const raw = Buffer.concat(chunks);
+    const found = []; let m, route;
+    for (const r of routes) { if (r.method !== req.method) continue; m = url.pathname.match(r.re); if (m) { route = r; break; } }
+    if (url.pathname === '/api/events' && req.method === 'GET') {
+      if (S.isLocked() || (S.get('SELECT COUNT(*) n FROM users').n > 0 && !userOf(req))) return send(401, { error: 'Anmeldung nötig' });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' }); res.write(': ok\n\n');
+      clients.add(res); res.on('close', () => clients.delete(res)); return;
+    }
+    if (!route) return send(404, { error: 'nicht gefunden' });
+    if (S.isLocked() && !route.opts.public) return send(423, { error: 'Gesperrt', locked: true });
+    let user_row = null;
+    if (!S.isLocked()) {
+      user_row = userOf(req);
+      if (!route.opts.public && S.get('SELECT COUNT(*) n FROM users').n > 0 && !user_row) return send(401, { error: 'Anmeldung nötig', login: true });
+    }
+    const ctx = {
+      req, res, m, q: url.searchParams, raw, user_row,
+      user: user_row?.name || (S.isLocked() ? '' : S.getSetting('display_name', 'Ich')),
+      body: {},
+      sendRaw: (buf, type, extra) => { ctx.sent = true; send(200, buf, type, extra); },
+      setSession: u => { const t = C.randomToken(); R.sessions.set(t, { id: u.id }); ctx.cookie = `kb=${t}; HttpOnly; SameSite=Strict; Path=/`; },
+      clearSession: () => { const t = parseCookies(req.headers.cookie).kb; R.sessions.delete(t); ctx.cookie = 'kb=; Max-Age=0; Path=/'; },
+    };
+    if (!route.opts.raw && raw.length) { try { ctx.body = JSON.parse(raw.toString('utf8')); } catch { return send(400, { error: 'Ungültiges JSON' }); } }
+    try {
+      const out = route.fn(ctx);
+      if (ctx.sent) return;
+      if (req.method !== 'GET' && !route.opts.public) { S.markDirty(); broadcast(req.headers['x-client']); }
+      return send(200, out === undefined ? {} : out, undefined, ctx.cookie ? { 'Set-Cookie': ctx.cookie } : undefined);
+    } catch (e) {
+      if (!(e instanceof HttpError)) console.error(e);
+      return send(e instanceof HttpError ? e.code : 500, { error: e.message });
+    }
+  });
+});
+
+// ----- Netzwerk: standardmäßig nur dieser Rechner -----
+let bound = { host: '127.0.0.1', port: PORT };
+function listen() {
+  const host = !S.isLocked() && S.getSetting('lan', false) && S.get('SELECT COUNT(*) n FROM users').n > 0 ? '0.0.0.0' : '127.0.0.1';
+  bound = { host, port: PORT };
+  server.listen(PORT, host, () => console.log(`Lokales Kanban läuft: http://localhost:${PORT}${host === '0.0.0.0' ? '  (im Heimnetz freigegeben)' : ''}\nDaten: ${S.DATA}${S.isLocked() ? '\nDatei ist verschlüsselt – im Browser entsperren.' : ''}`));
+}
+server.on('error', e => { console.error(e.code === 'EADDRINUSE' ? `Port ${PORT} ist belegt (läuft das Programm schon?). Mit PORT=… anderen Port wählen.` : e.message); shutdown(1); });
+R.bind = () => bound;
+R.relisten = () => { for (const c of clients) c.end(); clients.clear(); server.close(() => listen()); server.closeAllConnections(); };
+R.afterUnlock = () => { try { require('./server/core').seed(); S.dailyBackup(); } catch {} if (S.getSetting('lan', false)) setTimeout(() => R.relisten(), 400); };
+listen();
+
+function shutdown(code = 0) { try { S.closeAll(); } catch {} S.releaseLock(); process.exit(code); }
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => shutdown(0));

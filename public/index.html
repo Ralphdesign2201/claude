@@ -4,33 +4,46 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lokales Kanban</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="app">
 <aside id="side">
-  <h1>Kanban</h1>
+  <h1>▦ Kanban</h1>
   <nav id="boards"></nav>
   <button id="newBoard" class="ghost">+ Neues Board</button>
+  <nav id="gnav"></nav>
   <div class="side-foot">
-    <button id="theme" class="ghost" title="Hell/Dunkel">◐ Darstellung</button>
-    <button id="backup" class="ghost">⤓ Sicherung jetzt</button>
-    <button id="export" class="ghost">⇪ Export (JSON)</button>
-    <button id="trash" class="ghost">🗑 Papierkorb</button>
+    <button id="quickBtn" class="ghost">⚡ Schnellerfassung (q)</button>
+    <button id="openTrash" class="ghost">🗑 Papierkorb &amp; Archiv</button>
+    <button id="openSettings" class="ghost">⚙ Einstellungen</button>
+    <button id="openHelp" class="ghost">⌨ Tastenkürzel (?)</button>
   </div>
 </aside>
 <main>
   <header id="top">
+    <button id="toggleSide" class="ghost menu-btn" title="Menü">☰</button>
     <h2 id="boardTitle"></h2>
     <span id="boardMenu"></span>
+    <nav id="viewtabs"></nav>
+    <span id="timerbox" class="timerbox" hidden></span>
     <input id="search" type="search" placeholder="Suchen in allen Boards ( / )" autocomplete="off">
   </header>
+  <div id="filters" class="filters" hidden></div>
   <div id="results" hidden></div>
-  <section id="board"></section>
+  <div id="content"></div>
+  <div id="selbar" class="selbar" hidden></div>
 </main>
-<dialog id="cardDlg"></dialog>
+</div>
+<div id="gate" hidden></div>
+<dialog id="cardDlg" class="wide"></dialog>
+<dialog id="previewDlg" class="wide"></dialog>
 <dialog id="boardDlg"></dialog>
-<dialog id="trashDlg"></dialog>
+<dialog id="trashDlg" class="wide"></dialog>
+<dialog id="settingsDlg" class="wide"></dialog>
+<dialog id="askDlg"></dialog>
 <div id="toast" hidden></div>
-<script src="app.js"></script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
