@@ -13,6 +13,7 @@
   var TYPE = { ONE_TIME: 'Einmalig', RENTAL: 'Mietprodukt', HOURLY: 'Nach Stunden' };
   var PERIOD = { MONTHLY: 'Monat', QUARTERLY: 'Quartal', HALF_YEARLY: 'Halbjahr', YEARLY: 'Jahr' };
   var RHYTHM = { MONTHLY: 'monatlich', QUARTERLY: 'vierteljährlich', HALF_YEARLY: 'halbjährlich', YEARLY: 'jährlich' };
+  var LSTATUS = { PENDING: ['Wartet auf Zahlung', 'warn'], ACTIVE: ['Aktiv', 'good'], SUSPENDED: ['Gesperrt', 'bad'], REVOKED: ['Widerrufen', 'bad'], EXPIRED: ['Abgelaufen', 'warn'] };
   var qty = function (n) { return Number(n).toLocaleString('de-DE', { maximumFractionDigits: 2 }); };
   var pill = function (map, key) { var m = map[key] || [key, 'neutral']; return '<span class="pill ' + m[1] + '">' + esc(m[0]) + '</span>'; };
 
@@ -41,7 +42,7 @@
     try { sessionStorage.removeItem(KEY); localStorage.removeItem(SESSION_KEY); } catch (e) { /* Speicher nicht verfügbar */ }
   }
 
-  var state = { me: null, invoices: [], quotes: [], products: [], orders: [], tab: 'invoices', open: {}, shopCat: '' };
+  var state = { me: null, invoices: [], quotes: [], products: [], orders: [], licenses: [], tab: 'invoices', open: {}, shopCat: '' };
 
   function api(method, path, body) {
     var headers = { 'X-Portal-Token': token || '' };
@@ -213,7 +214,7 @@
     return '<div class="price">' + eur(p.price) + '<small>' + esc(unit) + '</small></div><div class="sub">zzgl. ' + p.taxRate + ' % MwSt.' + (p.setupFee > 0 ? ' · einmalig ' + eur(p.setupFee) + ' Einrichtung' : '') + '</div>';
   }
   function productCard(p) {
-    return '<div class="card product"><div><span class="tag">' + TYPE[p.type] + (p.type === 'RENTAL' ? ', ' + RHYTHM[p.intervalUnit] : '') + '</span></div><h3>' + esc(p.name) + '</h3>' +
+    return '<div class="card product"><div><span class="tag">' + TYPE[p.type] + (p.type === 'RENTAL' ? ', ' + RHYTHM[p.intervalUnit] : '') + '</span>' + (p.license ? ' <span class="tag">mit Lizenz</span>' : '') + '</div><h3>' + esc(p.name) + '</h3>' +
       (p.description ? '<div class="desc">' + esc(p.description) + '</div>' : '<div class="desc"></div>') + priceHtml(p) +
       '<button class="btn primary" data-act="order" data-id="' + esc(p.id) + '">Bestellen</button></div>';
   }
@@ -231,13 +232,37 @@
   function orderCard(o) {
     var t = o.totals, rental = o.productType === 'RENTAL';
     return '<div class="card doc"><div class="doc-row"><div class="doc-main"><b class="mono">' + esc(o.number) + '</b> ' + pill(ORDER, o.status) +
-      '<div class="sub">' + qty(o.quantity) + (o.unit ? ' ' + esc(o.unit) : '×') + ' ' + esc(o.productName) + ' · bestellt am ' + fdate(o.createdAt) + (o.decidedAt && o.status !== 'PENDING' ? ' · ' + (o.status === 'CANCELLED' ? 'storniert' : 'entschieden') + ' am ' + fdate(o.decidedAt) : '') + '</div></div>' +
+      '<div class="sub">' + qty(o.quantity) + (o.unit ? ' ' + esc(o.unit) : '×') + ' ' + esc(o.productName) + (o.domain ? ' · Domain ' + esc(o.domain) : '') + ' · bestellt am ' + fdate(o.createdAt) + (o.decidedAt && o.status !== 'PENDING' ? ' · ' + (o.status === 'CANCELLED' ? 'storniert' : 'entschieden') + ' am ' + fdate(o.decidedAt) : '') + '</div></div>' +
       '<div style="text-align:right"><div class="doc-amount">' + eur(t.gross) + '</div><div class="sub">brutto' + (rental ? ', erste Zahlung' : o.productType === 'HOURLY' ? ', geschätzt' : '') + '</div></div>' +
       (o.status === 'PENDING' ? '<div class="doc-actions"><button class="btn sm" data-act="order-cancel" data-id="' + esc(o.id) + '">Zurückziehen</button></div>' : '') + '</div>' +
       (rental ? '<div class="sub">Danach ' + eur(t.recurringNet) + ' netto pro ' + PERIOD[o.intervalUnit] + '.</div>' : '') +
       (o.note ? '<div class="sub" style="white-space:pre-wrap"><b>Ihre Anmerkung:</b> ' + esc(o.note) + '</div>' : '') +
       (o.status === 'REJECTED' && o.rejectReason ? '<div class="pay-box"><b>Begründung</b><span>' + esc(o.rejectReason) + '</span></div>' : '') +
       (o.status === 'ACCEPTED' ? '<div class="sub">Wir haben Ihre Bestellung bestätigt. Rechnung und weitere Informationen erhalten Sie von uns.</div>' : '') + '</div>';
+  }
+
+  function licenseCard(l) {
+    var shown = l.licenseKey ? '<div class="pay-box"><b>Lizenzschlüssel</b><dl><dd><span class="mono" style="font-size:15px">' + esc(l.licenseKey) + '</span> <button class="btn sm" data-act="copy-key" data-text="' + esc(l.licenseKey) + '">Kopieren</button></dd></dl></div>' : '<div class="sub">Ihr Schlüssel erscheint hier, sobald die Rechnung bezahlt ist. Sie bekommen ihn dann auch per E-Mail.</div>';
+    var until = l.rental ? (l.status === 'ACTIVE' ? 'läuft, solange Ihre Abo-Rechnungen bezahlt werden' : '') : l.validUntil ? 'gültig bis ' + fdate(l.validUntil) : 'unbefristet';
+    return '<div class="card doc"><div class="doc-row"><div class="doc-main"><b>' + esc(l.productName) + '</b> ' + pill(LSTATUS, l.status) +
+      '<div class="sub">Domain: <b class="mono">' + esc(l.domain) + '</b>' + (l.subdomains ? ' (inkl. Subdomains)' : '') + (until ? ' · ' + until : '') + '</div></div>' +
+      (l.status !== 'REVOKED' ? '<div class="doc-actions"><button class="btn sm" data-act="lic-domain" data-id="' + esc(l.id) + '">Domain ändern</button></div>' : '') + '</div>' + shown + '</div>';
+  }
+  function licensesHtml() {
+    return state.licenses.map(licenseCard).join('') + '<div class="card"><b>So binden Sie die Lizenz ein</b><div class="sub" style="line-height:1.6">Tragen Sie den Lizenzschlüssel in der Einstellung Ihrer Software ein (bzw. wie in deren Anleitung beschrieben). Die Software prüft ihn gelegentlich bei uns. Sie benötigt dafür eine Internetverbindung; kurze Ausfälle überbrückt sie automatisch. Die Lizenz gilt für die genannte Domain; Entwicklungs-Adressen wie <span class="mono">localhost</span> sind erlaubt.</div></div>';
+  }
+  function domainDialog(l) {
+    $('#layer').innerHTML = '<div class="overlay" data-act="overlay"><form class="modal" id="dform" role="dialog" aria-modal="true" aria-labelledby="mt" novalidate><h2 id="mt">Domain ändern</h2>' +
+      '<div class="sub">Aktuelle Domain: <b class="mono">' + esc(l.domain) + '</b>. Sie können die Domain noch <b>' + l.changesLeft + 'x</b> selbst ändern' + (l.changesLeft ? '' : ' – danach melden Sie sich bitte bei uns') + '.</div>' +
+      '<div class="form"><label class="full" for="ldom">Neue Domain<input id="ldom" type="text" placeholder="meine-neue-seite.de" autocapitalize="off" spellcheck="false" autocomplete="off"></label></div>' +
+      '<div id="lmsg"></div><div class="actions"><button type="button" class="btn" data-act="close">Abbrechen</button><button type="submit" class="btn primary"' + (l.changesLeft ? '' : ' disabled') + '>Domain ändern</button></div></form></div>';
+    $('#ldom').focus();
+    $('#dform').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = $('#dform button[type=submit]'); btn.disabled = true;
+      api('POST', '/api/portal/licenses/' + l.id + '/domain', { domain: $('#ldom').value.trim() }).then(function () { $('#layer').innerHTML = ''; toast('Domain geändert'); return load(); })
+        .catch(function (err) { btn.disabled = false; $('#lmsg').innerHTML = notice(err.message); });
+    });
   }
 
   function render() {
@@ -249,6 +274,7 @@
       : state.tab === 'quotes'
         ? (state.quotes.length ? state.quotes.map(quoteCard).join('') : '<div class="card empty">Aktuell liegen keine Angebote für Sie vor.</div>')
         : state.tab === 'shop' ? shopHtml()
+          : state.tab === 'licenses' ? licensesHtml()
           : (state.orders.length ? state.orders.map(orderCard).join('') : '<div class="card empty">Sie haben noch nichts bestellt. Im Reiter „Produkte“ finden Sie unser Angebot.</div>');
     var pendingOrders = state.orders.filter(function (o) { return o.status === 'PENDING'; }).length;
     var productCount = state.products.reduce(function (n, c) { return n + c.products.length; }, 0);
@@ -263,14 +289,15 @@
       '<div class="tabs" role="tablist" style="overflow-x:auto"><button role="tab" data-act="tab" data-tab="invoices" aria-selected="' + (state.tab === 'invoices') + '">Rechnungen (' + state.invoices.length + ')</button>' +
       '<button role="tab" data-act="tab" data-tab="quotes" aria-selected="' + (state.tab === 'quotes') + '">Angebote (' + state.quotes.length + ')' + (waiting ? ' <span class="pill info">' + waiting + ' neu</span>' : '') + '</button>' +
       '<button role="tab" data-act="tab" data-tab="shop" aria-selected="' + (state.tab === 'shop') + '">Produkte' + (productCount ? ' (' + productCount + ')' : '') + '</button>' +
-      '<button role="tab" data-act="tab" data-tab="orders" aria-selected="' + (state.tab === 'orders') + '">Bestellungen (' + state.orders.length + ')' + (pendingOrders ? ' <span class="pill info">' + pendingOrders + ' offen</span>' : '') + '</button></div>' +
+      '<button role="tab" data-act="tab" data-tab="orders" aria-selected="' + (state.tab === 'orders') + '">Bestellungen (' + state.orders.length + ')' + (pendingOrders ? ' <span class="pill info">' + pendingOrders + ' offen</span>' : '') + '</button>' +
+      (state.licenses.length ? '<button role="tab" data-act="tab" data-tab="licenses" aria-selected="' + (state.tab === 'licenses') + '">Lizenzen (' + state.licenses.length + ')</button>' : '') + '</div>' +
       '<div class="stack">' + list + '</div>' +
       '<div class="p-foot">Fragen? ' + [co.email ? esc(co.email) : '', co.phone ? esc(co.phone) : ''].filter(Boolean).join(' · ') + '<br>' + esc(co.name) + (co.address.length ? ' · ' + co.address.map(esc).join(', ') : '') + '</div></div>';
   }
 
   function load() {
-    return Promise.all([api('GET', '/api/portal/me'), api('GET', '/api/portal/invoices'), api('GET', '/api/portal/quotes'), api('GET', '/api/portal/products'), api('GET', '/api/portal/orders')]).then(function (r) {
-      state.me = r[0]; state.invoices = r[1]; state.quotes = r[2]; state.products = r[3]; state.orders = r[4];
+    return Promise.all([api('GET', '/api/portal/me'), api('GET', '/api/portal/invoices'), api('GET', '/api/portal/quotes'), api('GET', '/api/portal/products'), api('GET', '/api/portal/orders'), api('GET', '/api/portal/licenses')]).then(function (r) {
+      state.me = r[0]; state.invoices = r[1]; state.quotes = r[2]; state.products = r[3]; state.orders = r[4]; state.licenses = r[5];
       if (state.tab === 'invoices' && !state.invoices.length && state.quotes.length) state.tab = 'quotes';
       render();
     });
@@ -321,7 +348,8 @@
     var hint = p.type === 'RENTAL' ? 'Wiederkehrende Leistung, Abrechnung ' + RHYTHM[p.intervalUnit] + '. Wir legen Ihr Abo nach der Bestätigung an.' : p.type === 'HOURLY' ? 'Abgerechnet wird nach tatsächlichem Aufwand zum Stundensatz. Die Stundenzahl ist nur eine Schätzung für die Planung.' : 'Einmaliger Auftrag. Sie erhalten nach der Bestätigung eine Rechnung.';
     $('#layer').innerHTML = '<div class="overlay" data-act="overlay"><form class="modal" id="oform" role="dialog" aria-modal="true" aria-labelledby="mt" novalidate><h2 id="mt">' + esc(p.name) + ' bestellen</h2>' +
       (p.description ? '<p style="margin:0;color:var(--muted);white-space:pre-line">' + esc(p.description) + '</p>' : '') + '<div class="sub">' + esc(hint) + '</div>' +
-      '<div class="form"><label for="oqty">' + esc(label) + '<input id="oqty" type="number" inputmode="decimal" min="' + p.minQuantity + '" step="any" value="' + p.minQuantity + '"></label></div>' +
+      '<div class="form"><label for="oqty">' + esc(label) + '<input id="oqty" type="number" inputmode="decimal" min="' + p.minQuantity + '" step="any" value="' + p.minQuantity + '"></label>' +
+      (p.license ? '<label class="full" for="odom">Domain für die Lizenz *<input id="odom" type="text" placeholder="meine-seite.de" autocapitalize="off" spellcheck="false" autocomplete="off"></label><div class="sub full">Die Lizenz gilt für diese Domain' + (p.licenseSubdomains ? ' und ihre Subdomains' : '') + '. ' + (p.licensePayFirst && p.price > 0 ? 'Sie wird nach Bezahlung der Rechnung freigeschaltet. ' : '') + 'Sie können die Domain später im Portal ändern.</div>' : '') + '</div>' +
       '<label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted)" for="onote">Ihre Wünsche und Anmerkungen (optional)<textarea id="onote" rows="3" maxlength="2000" placeholder="z. B. Wunsch-Domain, Format, Termin" style="font-weight:400;color:var(--fg)"></textarea></label>' +
       '<div class="order-sum" id="osum">' + summaryHtml(p, p.minQuantity) + '</div>' +
       '<div class="sub">Mit „Verbindlich bestellen“ geben Sie eine Bestellung ab. Wir prüfen sie und bestätigen Sie Ihnen per E-Mail. Alle Preise netto zzgl. gesetzlicher MwSt.</div>' +
@@ -332,8 +360,9 @@
       e.preventDefault();
       var q = parseFloat($('#oqty').value);
       if (!(q >= p.minQuantity)) { toast('Mindestmenge: ' + qty(p.minQuantity)); return; }
+      if (p.license && !$('#odom').value.trim()) { toast('Bitte geben Sie die Domain für die Lizenz an.'); return; }
       var btn = $('#oform button[type=submit]'); btn.disabled = true;
-      api('POST', '/api/portal/orders', { productId: p.id, quantity: q, note: $('#onote').value.trim() }).then(function (o) {
+      api('POST', '/api/portal/orders', { productId: p.id, quantity: q, note: $('#onote').value.trim(), domain: p.license ? $('#odom').value.trim() : undefined }).then(function (o) {
         $('#layer').innerHTML = '';
         state.tab = 'orders';
         toast('Danke! Ihre Bestellung ' + o.number + ' ist eingegangen.');
@@ -351,12 +380,18 @@
     if (act === 'auth-mode') { loadConfig().then(function () { showAuth(el.dataset.mode); }); return; }
     if (act === 'password') { passwordDialog(); return; }
     if (act === 'logout') {
-      var done = function () { clearToken(); state = { me: null, invoices: [], quotes: [], products: [], orders: [], tab: 'invoices', open: {}, shopCat: '' }; loadConfig().then(function () { showAuth('login', 'Du bist abgemeldet.', 'ok'); }); };
+      var done = function () { clearToken(); state = { me: null, invoices: [], quotes: [], products: [], orders: [], licenses: [], tab: 'invoices', open: {}, shopCat: '' }; loadConfig().then(function () { showAuth('login', 'Du bist abgemeldet.', 'ok'); }); };
       api('POST', '/api/portal/logout', {}).then(done, done);
       return;
     }
     if (act === 'shopcat') { state.shopCat = el.dataset.v; render(); return; }
     if (act === 'order') { orderDialog(id); return; }
+    if (act === 'lic-domain') { var lic = state.licenses.filter(function (x) { return x.id === id; })[0]; if (lic) domainDialog(lic); return; }
+    if (act === 'copy-key') {
+      var key = el.dataset.text;
+      (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(key) : Promise.reject()).then(function () { toast('Schlüssel kopiert'); }, function () { toast('Bitte den Schlüssel von Hand markieren und kopieren'); });
+      return;
+    }
     if (act === 'order-cancel') {
       $('#layer').innerHTML = '<div class="overlay" data-act="overlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Bestellung zurückziehen?</h2><p style="margin:0">Die Bestellung wird storniert. Das können Sie nur tun, solange wir sie noch nicht bestätigt haben.</p><div class="actions"><button class="btn" data-act="close">Zurück</button><button class="btn danger" id="confirm" data-act="cancel-confirm" data-id="' + esc(id) + '">Zurückziehen</button></div></div></div>';
       $('#confirm').focus();

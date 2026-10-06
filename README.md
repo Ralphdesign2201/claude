@@ -113,7 +113,7 @@ und per E-Mail. Solange eine Bestellung offen ist, kann der Kunde sie zurückzie
 ## Kundenportal
 
 Beim Kunden findest du die Karte „Kundenportal“. „Zugang erstellen“ erzeugt einen persönlichen Link der Form
-`https://deine-domain.de/portal#<Schlüssel>`; auf Wunsch geht er direkt per E-Mail an den Kunden. Der Kunde braucht kein Passwort.
+`https://deine-domain.de/portal#<Schlüssel>`; auf Wunsch geht er direkt per E-Mail an den Kunden. Der Kunde braucht dafür kein Passwort (alternativ: Konto, siehe unten).
 
 Im Portal sieht er **nur seine eigenen** Daten:
 - Rechnungen (versendet, überfällig, bezahlt) mit Positionen, Zahlungen und offenem Betrag; **keine Entwürfe und keine stornierten Rechnungen**
@@ -125,6 +125,57 @@ Zur Sicherheit: Der Schlüssel ist 256 Bit lang und wird nur als Hash gespeicher
 Ein neuer Link macht den alten ungültig, „Zugang sperren“ wirkt sofort, Links laufen nach `PORTAL_TOKEN_DAYS` (Standard 365) ab. Der Schlüssel steht im
 Teil nach dem `#` der Adresse und wird so nicht in Server-Protokolle geschrieben. Wiederholte falsche Schlüssel werden gebremst.
 Setze `APP_URL` auf die öffentliche Adresse, sonst wird sie aus der Anfrage abgeleitet.
+
+## Kundenkonten (Registrierung)
+
+Kunden können sich im Portal (`/portal`) auch **selbst registrieren** – das setzt eingerichteten E-Mail-Versand voraus.
+Ablauf: Name und E-Mail eintragen → Bestätigungslink per E-Mail (48 Stunden gültig) → **über den Link das Passwort festlegen** (mind. 10 Zeichen).
+Das Passwort wird bewusst erst nach der Bestätigung gewählt, damit niemand mit einer fremden Adresse ein Konto „vorregistrieren“ kann.
+Erst dann wird der Kunde angelegt (Status „Interessent“, Quelle „Portal-Registrierung“) – oder mit einem **bestehenden Kunden mit derselben E-Mail-Adresse verknüpft**. Nach der ersten angenommenen Bestellung wird er automatisch „Aktiv“.
+Außerdem: Anmelden (optional „angemeldet bleiben“), Passwort vergessen/zurücksetzen (Link 2 Stunden gültig), Passwort ändern (beendet alle anderen Anmeldungen).
+Die Antworten verraten nicht, welche Adressen schon registriert sind; Versuche werden gebremst, ein Honigtopf-Feld hält einfache Bots fern. Beim Kunden kannst du Konten sperren, löschen oder einen Reset-Link senden.
+Die Portal-Links ohne Passwort (siehe oben) funktionieren weiter.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `PORTAL_REGISTRATION` | `off` schaltet die Selbstregistrierung ab (Standard: offen, sobald E-Mail eingerichtet ist) |
+| `TERMS_URL`, `PRIVACY_URL` | Links zu AGB bzw. Datenschutz; sind sie gesetzt, muss der Kunde der Registrierung zustimmen (Zeitpunkt wird gespeichert) |
+| `PORTAL_SESSION_DAYS` | Dauer einer Anmeldung (Standard 14 Tage) |
+| `REGISTER_RATE_LIMIT_MAX`, `LOGIN_RATE_LIMIT_MAX` | Registrierungen je IP und Stunde (Standard 10) bzw. Fehlversuche beim Anmelden (Standard 10) |
+
+## Domain-Lizenzen
+
+Produkte (Einmalkauf oder Miete) können mit einer **Lizenz für eine Domain** verkauft werden – z. B. Skripte, Themes, Plugins.
+Im Produkt-Dialog: „Mit Lizenz für eine Domain verkaufen“, dazu optional Subdomains, „erst nach bezahlter Rechnung freischalten“ (Standard) und bei Einmalkäufen eine Gültigkeit in Tagen.
+Zeitprodukte (nach Stunden) können keine Lizenz haben.
+
+**Ablauf:** Der Kunde gibt beim Bestellen seine Domain an (wird bereinigt: ohne `https://`, Pfad, Port, `www.`; Umlaut-Domains werden zu Punycode) →
+du nimmst die Bestellung an → die Lizenz entsteht mit einem Schlüssel `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` →
+sobald die Rechnung **vollständig bezahlt** ist (Zahlung erfassen oder Status „Bezahlt“), wird sie aktiv und der Kunde bekommt den Schlüssel per E-Mail (und im Portal unter „Lizenzen“).
+Kostenlose Produkte und Produkte ohne „erst nach Zahlung“ sind sofort aktiv. Bei **Mietprodukten** verlängert jede bezahlte Abo-Rechnung die Lizenz um einen Abrechnungszeitraum; zusätzlich gilt eine Kulanzfrist (`LICENSE_GRACE_DAYS`, 14 Tage).
+Jede Rechnung wirkt nur einmal (erneutes Markieren als bezahlt verlängert nicht doppelt). Unter „Lizenzen“ kannst du Domain, Status (aktiv/gesperrt/widerrufen), Ablaufdatum ändern, den Schlüssel neu erzeugen, per E-Mail senden und von Hand Lizenzen ausstellen.
+Der Kunde kann seine Domain im Portal selbst ändern (`LICENSE_DOMAIN_CHANGES`, Standard 2 Mal).
+
+**Prüfung in der verkauften Software:** `examples/license-client/LicenseClient.php` (auch unter `/license/client.php`) in die Software legen:
+
+```php
+require __DIR__ . '/LicenseClient.php';
+$lic = new LicenseClient(
+    'https://crm.example.com',        // dein CRM (APP_URL)
+    'ÖFFENTLICHER-SCHLÜSSEL',         // https://crm.example.com/api/license/public-key
+    $kundenSchluessel,                // vom Kunden eingetragen
+    __DIR__ . '/license.cache'        // beschreibbare Datei
+);
+$lic->require();                      // beendet mit Meldung, wenn die Lizenz nicht gilt (oder: if ($lic->check()) { … })
+```
+
+Technik: `POST /api/license/verify {key, domain, nonce}` antwortet mit einer **Ed25519-signierten** Nutzlast (libsodium). Der Client prüft Signatur, Nonce, Domain und Zeitstempel; eine gefälschte „gültig“-Antwort (z. B. von einem Fake-Server oder aus der Datei `hosts`) wird abgelehnt.
+Gültige Antworten werden `LICENSE_CACHE_HOURS` (24) zwischengespeichert; ist der Server nicht erreichbar, läuft die Software noch `LICENSE_OFFLINE_DAYS` (7) Tage weiter. Der Zwischenspeicher ist signiert und wird bei jedem Lesen neu geprüft.
+Entwicklungsadressen (`localhost`, `*.test`, `*.local`, `127.x`) sind erlaubt (`LICENSE_ALLOW_DEV=false` schaltet das ab). Unbekannte Schlüssel werden pro IP gebremst; abgelehnte Prüfungen siehst du im Lizenz-Detail.
+
+**Der Signaturschlüssel** wird beim ersten Gebrauch erzeugt und in `database/license.key` gespeichert (oder `LICENSE_SECRET_KEY` bzw. `LICENSE_KEY_FILE`). **Geht er verloren, funktioniert keine ausgelieferte Software mehr** – er ist deshalb im Backup enthalten (bei Verschlüsselung: `BACKUP_PASSPHRASE` setzen!). Die Datei gehört nie ins Git.
+
+**Ehrliche Grenzen:** Eine Lizenzprüfung in PHP-Code, den der Kunde besitzt, kann jemand mit Programmierkenntnissen aus der Software entfernen. Sie verhindert Weitergabe an ehrliche Dritte und zeigt dir, wo die Software läuft – echten Schutz bringt nur, was der Kunde nicht selbst ändern kann (Updates, Support, Funktionen über deine API). Sinnvoll ist, die Prüfung an mehreren Stellen einzubauen und Quellcode ggf. zu verschleiern.
 
 ## Datensicherung (Backup)
 
@@ -181,6 +232,8 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Kundenportal  | Verwaltung: `GET/POST/DELETE /api/clients/:id/portal`; Kunden (Header `X-Portal-Token`): `GET /api/portal/me`, `/api/portal/invoices`, `/api/portal/invoices/:id/pdf`, `/api/portal/quotes`, `/api/portal/quotes/:id/pdf`, `POST /api/portal/quotes/:id/accept|decline` |
 | Katalog       | `GET/POST /api/categories`, `PATCH/DELETE /api/categories/:id`, `GET/POST /api/products`, `GET/PATCH/DELETE /api/products/:id`, `POST /api/products/:id/duplicate`, `POST /api/catalog/examples` |
 | Bestellungen  | `GET/POST /api/orders`, `GET /api/orders/:id`, `POST /api/orders/:id/accept`, `POST /api/orders/:id/reject`; Portal: `GET /api/portal/products`, `GET/POST /api/portal/orders`, `POST /api/portal/orders/:id/cancel` |
+| Kundenkonten  | Portal: `GET /api/portal/config`, `POST /api/portal/register`, `/verify-info`, `/verify`, `/login`, `/logout`, `/forgot`, `/reset`, `/password`; Verwaltung: `POST /api/portal-accounts/:id/active`, `/reset`, `DELETE /api/portal-accounts/:id` |
+| Lizenzen      | `GET/POST /api/licenses`, `GET/PATCH/DELETE /api/licenses/:id`, `POST /api/licenses/:id/regenerate`, `POST /api/licenses/:id/send`; öffentlich: `POST /api/license/verify`, `GET /api/license/public-key`, `GET /license/client.php`; Portal: `GET /api/portal/licenses`, `POST /api/portal/licenses/:id/domain` |
 | Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
 | Einstellungen | `GET /api/settings` (Mail eingerichtet? Firmendaten gesetzt?) |
 | Verträge      | `GET/POST /api/contracts`, `GET/PATCH/DELETE /api/contracts/:id` |

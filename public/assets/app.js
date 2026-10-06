@@ -27,6 +27,8 @@
   var TYPES = { ONE_TIME: ['Einmalig', 'info'], RENTAL: ['Miete', 'good'], HOURLY: ['Nach Stunden', 'warn'] };
   var PERIOD = { MONTHLY: 'Monat', QUARTERLY: 'Quartal', HALF_YEARLY: 'Halbjahr', YEARLY: 'Jahr' };
   var ORDER_STATUS = { PENDING: ['Neu', 'warn'], ACCEPTED: ['Angenommen', 'good'], REJECTED: ['Abgelehnt', 'bad'], CANCELLED: ['Storniert', 'neutral'] };
+  var LICENSE_STATUS = { PENDING: ['Wartet auf Zahlung', 'warn'], ACTIVE: ['Aktiv', 'good'], SUSPENDED: ['Gesperrt', 'bad'], REVOKED: ['Widerrufen', 'bad'], EXPIRED: ['Abgelaufen', 'warn'] };
+  var REASONS = { domain: 'falsche Domain', expired: 'abgelaufen', suspended: 'gesperrt', pending: 'noch nicht aktiv' };
   var priceText = function (p) {
     var base = eur(p.price);
     if (p.type === 'RENTAL') return base + ' / ' + PERIOD[p.intervalUnit];
@@ -70,7 +72,7 @@
   var listAll = function (path, params) { return api('GET', path + qs(Object.assign({ pageSize: 100 }, params || {}))).then(function (r) { return r.items; }); };
 
   /* ---------- Zustand ---------- */
-  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', orderId: null, pending: 0 };
+  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', lstatus: '', lsearch: '', orderId: null, pending: 0 };
 
   /* ---------- Rechnungs-Hilfen ---------- */
   function shownStatus(inv) {
@@ -113,7 +115,7 @@
 
   /* ---------- Rahmen ---------- */
   function navItems() {
-    var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
+    var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['licenses', 'Lizenzen'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
     if (me && me.role === 'ADMIN') n.push(['team', 'Team']);
     return n;
   }
@@ -409,7 +411,7 @@
         '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="pfilter" data-v="' + esc(c[0]) + '" aria-pressed="' + (sel === c[0]) + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
         (selCat ? '<div class="card row" style="justify-content:space-between"><div><b>' + esc(selCat.name) + '</b>' + (selCat.description ? '<div class="sub">' + esc(selCat.description) + '</div>' : '') + '</div><div class="row"><button class="btn sm" data-act="new-product" data-cat="' + esc(selCat.id) + '">+ Produkt hier</button><button class="btn sm" data-act="edit-category" data-id="' + esc(selCat.id) + '">Kategorie bearbeiten</button><button class="btn sm ghost danger" data-act="del-category" data-id="' + esc(selCat.id) + '">Löschen</button></div></div>' : '') +
         '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Produkt</th><th>Art</th><th class="r">Preis (netto)</th><th>Kategorie</th><th>Status</th><th></th></tr></thead><tbody>' + (rows.length ? rows.map(function (p) {
-          return '<tr><td><b>' + esc(p.name) + '</b>' + (p.description ? '<div class="sub">' + esc(p.description.length > 90 ? p.description.slice(0, 90) + '…' : p.description) + '</div>' : '') + '</td><td>' + pill(TYPES, p.type) + (p.type === 'RENTAL' ? '<div class="sub">' + INTERVALS[p.intervalUnit] + '</div>' : '') + '</td><td class="r num">' + priceText(p) + (p.setupFee > 0 ? '<div class="sub">+ ' + eur(p.setupFee) + ' Einrichtung</div>' : '') + '</td><td>' + esc(p.category ? p.category.name : '–') + '</td><td>' + (p.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Inaktiv</span>') + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="prod-edit" data-id="' + esc(p.id) + '">Bearbeiten</button><button class="btn sm ghost" data-act="prod-toggle" data-id="' + esc(p.id) + '" data-active="' + (p.active ? '1' : '0') + '">' + (p.active ? 'Deaktivieren' : 'Aktivieren') + '</button><button class="btn sm ghost" data-act="prod-dup" data-id="' + esc(p.id) + '">Kopieren</button><button class="btn sm ghost danger" data-act="prod-del" data-id="' + esc(p.id) + '">Löschen</button></div></td></tr>';
+          return '<tr><td><b>' + esc(p.name) + '</b>' + (p.licenseEnabled ? ' <span class="tag">Lizenz</span>' : '') + (p.description ? '<div class="sub">' + esc(p.description.length > 90 ? p.description.slice(0, 90) + '…' : p.description) + '</div>' : '') + '</td><td>' + pill(TYPES, p.type) + (p.type === 'RENTAL' ? '<div class="sub">' + INTERVALS[p.intervalUnit] + '</div>' : '') + '</td><td class="r num">' + priceText(p) + (p.setupFee > 0 ? '<div class="sub">+ ' + eur(p.setupFee) + ' Einrichtung</div>' : '') + '</td><td>' + esc(p.category ? p.category.name : '–') + '</td><td>' + (p.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Inaktiv</span>') + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="prod-edit" data-id="' + esc(p.id) + '">Bearbeiten</button><button class="btn sm ghost" data-act="prod-toggle" data-id="' + esc(p.id) + '" data-active="' + (p.active ? '1' : '0') + '">' + (p.active ? 'Deaktivieren' : 'Aktivieren') + '</button><button class="btn sm ghost" data-act="prod-dup" data-id="' + esc(p.id) + '">Kopieren</button><button class="btn sm ghost danger" data-act="prod-del" data-id="' + esc(p.id) + '">Löschen</button></div></td></tr>';
         }).join('') : '<tr><td colspan="6" class="empty">' + (all.length ? 'In dieser Kategorie gibt es noch keine Produkte.' : 'Noch keine Produkte. Lege eine Kategorie und dein erstes Produkt an, z. B. „Webseitenerstellung einmalig“, „Webhosting“ oder „Projektarbeit nach Stunden“.') + '</td></tr>') + '</tbody></table></div></div>' +
         (all.length === 0 ? '<div class="card stack"><b>Schnellstart</b><p class="sub" style="margin:0">Lege einen Beispielkatalog an: Einmalleistungen (Webseite, Skripte, Druckaufträge), Mietprodukte (Webhosting, Domain, Miethomepage, Wartung, SEO) und Projektarbeit nach Stunden. Preise und Texte sind Vorschläge, alles ist zunächst inaktiv, bis du es prüfst und aktivierst.</p><div><button class="btn primary" data-act="catalog-examples">Beispielkatalog anlegen</button></div></div>' : '') +
         '<p class="sub">Aktive Produkte können Kunden im Kundenportal bestellen. Inaktive Produkte und Produkte in verborgenen Kategorien sind dort nicht sichtbar, du kannst sie aber weiter in Angebote und Rechnungen einfügen.</p>';
@@ -422,13 +424,20 @@
       return head('Bestellungen', 'Bestellungen aus dem Kundenportal und von dir erfasste Bestellungen.', '<button class="btn primary" data-act="new-order">+ Bestellung erfassen</button>') +
         '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="ofilter" data-v="' + c[0] + '" aria-pressed="' + (ui.ostatus === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>' +
         '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Bestellung</th><th>Kunde</th><th>Produkt</th><th class="r">Betrag (netto)</th><th>Status</th></tr></thead><tbody>' + (res.items.length ? res.items.map(function (o) {
-          return '<tr class="click" data-act="open-order" data-id="' + esc(o.id) + '"><td><button class="link mono" data-act="open-order" data-id="' + esc(o.id) + '">' + esc(o.number) + '</button><div class="sub">' + fdate(o.createdAt) + (o.source === 'ADMIN' ? ' · von dir erfasst' : '') + '</div></td><td>' + esc(o.client.company || o.client.name) + '</td><td>' + qtyText(o) + ' ' + esc(o.productName) + '<div class="sub">' + pill(TYPES, o.productType) + '</div></td><td class="r num">' + eur(o.totals.net) + (o.productType === 'RENTAL' ? '<div class="sub">dann ' + eur(o.totals.recurringNet) + ' / ' + PERIOD[o.intervalUnit] + '</div>' : o.productType === 'HOURLY' ? '<div class="sub">geschätzt</div>' : '') + '</td><td>' + pill(ORDER_STATUS, o.status) + '</td></tr>';
+          return '<tr class="click" data-act="open-order" data-id="' + esc(o.id) + '"><td><button class="link mono" data-act="open-order" data-id="' + esc(o.id) + '">' + esc(o.number) + '</button><div class="sub">' + fdate(o.createdAt) + (o.source === 'ADMIN' ? ' · von dir erfasst' : '') + '</div></td><td>' + esc(o.client.company || o.client.name) + '</td><td>' + qtyText(o) + ' ' + esc(o.productName) + '<div class="sub">' + pill(TYPES, o.productType) + (o.domain ? ' · <span class="mono">' + esc(o.domain) + '</span>' : '') + '</div></td><td class="r num">' + eur(o.totals.net) + (o.productType === 'RENTAL' ? '<div class="sub">dann ' + eur(o.totals.recurringNet) + ' / ' + PERIOD[o.intervalUnit] + '</div>' : o.productType === 'HOURLY' ? '<div class="sub">geschätzt</div>' : '') + '</td><td>' + pill(ORDER_STATUS, o.status) + '</td></tr>';
         }).join('') : '<tr><td colspan="5" class="empty">' + (ui.ostatus ? 'Keine Bestellungen mit diesem Status.' : 'Noch keine Bestellungen. Sobald ein Kunde im Portal bestellt, erscheint sie hier.') + '</td></tr>') + '</tbody></table></div></div>';
     });
   }
   var qtyText = function (o) { return o.quantity.toLocaleString('de-DE') + (o.unit ? ' ' + esc(o.unit) : '×'); };
 
+  function licenseEffect(o) {
+    if (!o.licenseEnabled || !o.domain || o.productType === 'HOURLY') return '';
+    return ' Außerdem wird eine <b>Lizenz für ' + esc(o.domain) + '</b> erstellt' + (o.licensePayFirst && (o.unitPrice * o.quantity > 0) ? ' – sie wird erst nach der bezahlten ' + (o.productType === 'RENTAL' ? 'ersten Abo-Rechnung' : 'Rechnung') + ' freigeschaltet.' : ' und dem Kunden sofort per E-Mail geschickt.');
+  }
   function orderEffect(o) {
+    return orderEffectBase(o) + licenseEffect(o);
+  }
+  function orderEffectBase(o) {
     if (o.productType === 'ONE_TIME') return 'Beim Annehmen wird eine <b>Rechnung (Entwurf)</b> über ' + eur(o.totals.net) + ' netto erstellt.';
     if (o.productType === 'RENTAL') return 'Beim Annehmen wird ein <b>Abo</b> (' + INTERVALS[o.intervalUnit] + ', ' + eur(o.totals.recurringNet) + ' netto) angelegt' + (o.setupFee > 0 ? ' und eine <b>Rechnung für die Einrichtung</b> (' + eur(o.setupFee) + ' netto) erstellt' : '') + '. Auf Wunsch entsteht gleich die erste Abo-Rechnung.';
     return 'Beim Annehmen wird ein <b>Projekt</b> mit Stundensatz ' + eur(o.unitPrice) + ' und Budget ' + eur(o.totals.net) + ' (' + o.quantity.toLocaleString('de-DE') + ' Std. geschätzt) angelegt. Abgerechnet wird später nach den gebuchten Zeiten.';
@@ -441,17 +450,72 @@
       if (o.invoice) made.push('<button class="link mono" data-act="open-invoice" data-id="' + esc(o.invoice.id) + '">Rechnung ' + esc(o.invoice.number) + '</button>');
       if (o.setupInvoice) made.push('<button class="link mono" data-act="open-invoice" data-id="' + esc(o.setupInvoice.id) + '">Einrichtungsrechnung ' + esc(o.setupInvoice.number) + '</button>');
       if (o.recurring) made.push('<button class="link" data-act="nav" data-v="recurring">Abo „' + esc(o.recurring.title) + '“</button>');
+      if (o.license) made.push('<button class="link" data-act="open-license" data-id="' + esc(o.license.id) + '">Lizenz für ' + esc(o.license.domain) + '</button>');
       if (o.project) made.push('<button class="link" data-act="open-project" data-id="' + esc(o.project.id) + '">Projekt „' + esc(o.project.name) + '“</button>');
       return '<button class="btn ghost sm back" data-act="nav" data-v="orders" style="align-self:flex-start">← Alle Bestellungen</button>' +
         head('<span class="mono">' + esc(o.number) + '</span>', pill(ORDER_STATUS, o.status) + ' &nbsp;<button class="link" data-act="open-client" data-id="' + esc(o.client.id) + '">' + esc(o.client.company || o.client.name) + '</button>' + (o.source === 'ADMIN' ? ' · von dir erfasst' : ' · über das Kundenportal'),
           pending ? '<button class="btn primary" data-act="order-accept">Annehmen</button><button class="btn danger" data-act="order-reject">Ablehnen</button>' : '') +
         '<div class="grid two"><div class="card"><h2>Bestellte Leistung</h2><dl class="kv"><dt>Produkt</dt><dd><b>' + esc(o.productName) + '</b> ' + pill(TYPES, o.productType) + '</dd><dt>Menge</dt><dd>' + qtyText(o) + (o.productType === 'HOURLY' ? ' (geschätzt)' : '') + '</dd><dt>Preis</dt><dd class="num">' + priceText({ type: o.productType, price: o.unitPrice, intervalUnit: o.intervalUnit, unit: o.unit }) + ' netto</dd>' +
-          (o.setupFee > 0 ? '<dt>Einrichtung</dt><dd class="num">' + eur(o.setupFee) + ' netto, einmalig</dd>' : '') + '<dt>Bestellt am</dt><dd>' + fdate(o.createdAt) + '</dd>' + (o.decidedAt ? '<dt>Entschieden am</dt><dd>' + fdate(o.decidedAt) + '</dd>' : '') + '</dl>' +
+          (o.setupFee > 0 ? '<dt>Einrichtung</dt><dd class="num">' + eur(o.setupFee) + ' netto, einmalig</dd>' : '') + (o.domain ? '<dt>Domain</dt><dd class="mono">' + esc(o.domain) + '</dd>' : '') + '<dt>Bestellt am</dt><dd>' + fdate(o.createdAt) + '</dd>' + (o.decidedAt ? '<dt>Entschieden am</dt><dd>' + fdate(o.decidedAt) + '</dd>' : '') + '</dl>' +
           '<div class="sums" style="margin-top:12px"><div><span>Netto' + (o.productType === 'RENTAL' ? ' (erste Zahlung)' : '') + '</span><span>' + eur(t.net) + '</span></div><div><span>MwSt. ' + o.taxRate + ' %</span><span>' + eur(t.tax) + '</span></div><div class="tot"><span>Brutto</span><span>' + eur(t.gross) + '</span></div></div></div>' +
         '<div class="card"><h2>Anmerkung des Kunden</h2><p style="margin:0;white-space:pre-wrap">' + (o.note ? esc(o.note) : '<span class="sub">Keine Anmerkung.</span>') + '</p>' + (o.rejectReason ? '<h2 style="margin-top:16px">Grund der Ablehnung</h2><p style="margin:0">' + esc(o.rejectReason) + '</p>' : '') + '</div></div>' +
         (pending ? '<div class="demo"><span>' + orderEffect(o) + '</span></div>' : '') +
         (made.length ? '<div class="card"><h2>Daraus entstanden</h2><div class="row">' + made.join(' · ') + '</div></div>' : '');
     });
+  }
+
+  function vLicenses() {
+    return api('GET', '/api/licenses' + qs({ pageSize: 100, status: ui.lstatus, search: ui.lsearch })).then(function (res) {
+      var chips = [['', 'Alle']].concat(opts(LICENSE_STATUS));
+      return head('Lizenzen', 'Domain-Lizenzen für verkaufte Software. Die Software fragt den Schlüssel bei deinem CRM ab.', '<button class="btn primary" data-act="new-license">+ Lizenz ausstellen</button>') +
+        '<div class="row"><input id="lq" type="search" placeholder="Suchen (Schlüssel, Domain, Produkt)" value="' + esc(ui.lsearch) + '" aria-label="Lizenzen suchen" style="max-width:360px"></div>' +
+        '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="lfilter" data-v="' + c[0] + '" aria-pressed="' + (ui.lstatus === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>' +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Domain</th><th>Produkt</th><th>Kunde</th><th>Gültig bis</th><th>Status</th></tr></thead><tbody>' + (res.items.length ? res.items.map(function (l) {
+          var until = l.paidThrough ? 'bezahlt bis ' + fdate(l.paidThrough) : l.validUntil ? fdate(l.validUntil) : 'unbefristet';
+          return '<tr class="click" data-act="open-license" data-id="' + esc(l.id) + '"><td><button class="link mono" data-act="open-license" data-id="' + esc(l.id) + '">' + esc(l.domain) + '</button>' + (l.subdomains ? '<div class="sub">inkl. Subdomains</div>' : '') + '</td><td>' + esc(l.productName) + '<div class="sub mono">' + esc(l.licenseKey) + '</div></td><td>' + esc(l.client ? (l.client.company || l.client.name) : '–') + '</td><td>' + until + '</td><td>' + pill(LICENSE_STATUS, l.effectiveStatus) + '</td></tr>';
+        }).join('') : '<tr><td colspan="5" class="empty">' + (ui.lstatus || ui.lsearch ? 'Keine Lizenzen für diese Auswahl.' : 'Noch keine Lizenzen. Sie entstehen, wenn du eine Bestellung für ein Lizenzprodukt annimmst – oder du stellst eine von Hand aus.') + '</td></tr>') + '</tbody></table></div></div>' +
+        '<div class="card"><h2>Lizenzprüfung in deine Software einbauen</h2><div class="sub" style="line-height:1.7">Lade die <a href="/license/client.php" download>Prüfklasse (LicenseClient.php)</a> herunter und lege sie in deine Software. Dann:<pre class="mono" style="white-space:pre-wrap;margin:8px 0">require __DIR__ . \'/LicenseClient.php\';\n$lic = new LicenseClient(\'' + esc(location.origin) + '\', \'ÖFFENTLICHER-SCHLÜSSEL\', $kundenSchluessel, __DIR__ . \'/license.cache\');\n$lic->require();</pre>Den öffentlichen Schlüssel findest du unter <a href="/api/license/public-key" target="_blank" rel="noopener">/api/license/public-key</a>. Der Kunde bekommt seinen Schlüssel per E-Mail und im Portal. Hinweis: Wer den PHP-Code ändert, kann die Prüfung entfernen – sie schützt vor Weitergabe, nicht vor Manipulation.</div></div>';
+    });
+  }
+
+  function licenseDialog(id) {
+    api('GET', '/api/licenses/' + id).then(function (l) {
+      var info = '<dl class="kv"><dt>Schlüssel</dt><dd><span class="mono">' + esc(l.licenseKey) + '</span> <button type="button" class="btn sm ghost" data-act="copy-text" data-text="' + esc(l.licenseKey) + '">Kopieren</button></dd>' +
+        '<dt>Produkt</dt><dd>' + esc(l.productName) + '</dd><dt>Kunde</dt><dd>' + (l.client ? esc(l.client.company || l.client.name) : '–') + '</dd>' +
+        '<dt>Status</dt><dd>' + pill(LICENSE_STATUS, l.effectiveStatus) + '</dd>' +
+        (l.order ? '<dt>Bestellung</dt><dd>' + esc(l.order.number) + '</dd>' : '') + (l.invoice ? '<dt>Rechnung</dt><dd>' + esc(l.invoice.number) + ' (' + (INVOICE_STATUS[l.invoice.status] || [l.invoice.status])[0] + ')</dd>' : '') +
+        (l.paidThrough ? '<dt>Bezahlt bis</dt><dd>' + fdate(l.paidThrough) + '</dd>' : '') + '<dt>Letzte Prüfung</dt><dd>' + (l.lastCheckedAt ? ftime(l.lastCheckedAt) + ' (' + l.checkCount + ' Prüfungen)' : 'noch nie') + '</dd>' +
+        '<dt>Domainwechsel</dt><dd>' + l.domainChanges + ' vom Kunden</dd></dl>';
+      var lists = (l.payments.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Bezahlte Rechnungen</h3><div class="sub">' + l.payments.map(function (x) { return esc(x.invoice.number) + ' (' + fdate(x.createdAt) + ')'; }).join(' · ') + '</div>' : '') +
+        (l.attempts.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Abgelehnte Prüfungen</h3><div class="sub">' + l.attempts.slice(0, 8).map(function (x) { return esc(x.domain) + ' – ' + (REASONS[x.reason] || x.reason) + ' (' + ftime(x.createdAt) + ')'; }).join('<br>') + '</div>' : '');
+      modal('Lizenz ' + esc(l.domain), info +
+        '<div class="form" style="margin-top:14px">' + field('ldomain', 'Domain', l.domain, 'text', { attrs: 'autocapitalize="off" spellcheck="false"' }) +
+        selectField('lstatus', 'Status', [['ACTIVE', 'Aktiv'], ['SUSPENDED', 'Gesperrt'], ['REVOKED', 'Widerrufen']].concat(l.status === 'PENDING' ? [['PENDING', 'Wartet auf Zahlung']] : []), l.status) +
+        field('luntil', 'Gültig bis (leer = unbefristet)', l.validUntil ? l.validUntil.slice(0, 10) : '', 'date') +
+        '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="lsubs" type="checkbox"' + (l.subdomains ? ' checked' : '') + '> Subdomains einschließen</label>' +
+        '<label class="full" for="lnote">Notiz (intern)<textarea id="lnote" rows="2">' + esc(l.note || '') + '</textarea></label></div>' + lists +
+        '<div class="row" style="margin-top:12px"><button type="button" class="btn sm" data-act="license-send" data-id="' + esc(l.id) + '">Schlüssel per E-Mail senden</button><button type="button" class="btn sm ghost danger" data-act="license-regen" data-id="' + esc(l.id) + '">Neuen Schlüssel erzeugen</button><button type="button" class="btn sm ghost danger" data-act="license-del" data-id="' + esc(l.id) + '">Löschen</button></div>', 'Speichern',
+        function (f) {
+          var body = { domain: v(f, 'ldomain'), subdomains: f.querySelector('#lsubs').checked, validUntil: v(f, 'luntil') ? v(f, 'luntil') + 'T23:59:59.000Z' : '', note: f.querySelector('#lnote').value.trim() };
+          if (!body.domain) return bad('Bitte eine Domain eingeben.');
+          if (v(f, 'lstatus') !== 'PENDING') body.status = v(f, 'lstatus');
+          return api('PATCH', '/api/licenses/' + l.id, body).then(function () { done('Lizenz gespeichert'); });
+        });
+    }).catch(fail);
+  }
+
+  function newLicenseDialog() {
+    listAll('/api/clients', { sort: 'name' }).then(function (clients) {
+      if (!clients.length) return toast('Lege zuerst einen Kunden an.');
+      modal('Lizenz ausstellen',
+        '<div class="form">' + selectField('nlc', 'Kunde', clientOptions(clients), clients[0].id, true) + field('nlp', 'Produkt / Bezeichnung *', '', 'text', { full: true }) + field('nld', 'Domain *', '', 'text', { full: true, attrs: 'placeholder="meine-seite.de" autocapitalize="off" spellcheck="false"' }) +
+        field('nlu', 'Gültig bis (leer = unbefristet)', '', 'date') + '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="nls" type="checkbox"> Subdomains einschließen</label></div>' +
+        '<div class="sub">Die Lizenz ist sofort aktiv. Den Schlüssel kannst du danach dem Kunden per E-Mail senden.</div>', 'Ausstellen',
+        function (f) {
+          if (!v(f, 'nlp') || !v(f, 'nld')) return bad('Bitte Produkt und Domain eingeben.');
+          return api('POST', '/api/licenses', clean({ clientId: v(f, 'nlc'), productName: v(f, 'nlp'), domain: v(f, 'nld'), subdomains: f.querySelector('#nls').checked, validUntil: v(f, 'nlu') ? v(f, 'nlu') + 'T23:59:59.000Z' : '' })).then(function () { done('Lizenz ausgestellt'); });
+        });
+    }).catch(fail);
   }
 
   var fsize = function (b) { return b >= 1048576 ? (b / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(b / 1024)).toLocaleString('de-DE') + ' KB'; };
@@ -479,7 +543,7 @@
   }
 
   /* ---------- Rendern ---------- */
-  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
+  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
   var seq = 0;
   function render() {
     if (!token || !me) return;
@@ -490,8 +554,9 @@
     if (!main.firstChild) main.innerHTML = '<div class="empty">Lädt …</div>';
     return VIEWS[ui.view]().then(function (html) {
       if (mine !== seq) return;
-      var focusId = document.activeElement && document.activeElement.id === 'q';
+      var focusId = document.activeElement && document.activeElement.id === 'q', focusL = document.activeElement && document.activeElement.id === 'lq';
       main.innerHTML = html;
+      if (focusL) { var lq = $('#lq'); if (lq) { lq.focus(); lq.setSelectionRange(lq.value.length, lq.value.length); } }
       if (focusId) { var q = $('#q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
     }).catch(function (err) {
       if (mine !== seq || !token) return;
@@ -726,6 +791,11 @@
         '<label for="pprice"><span id="plabel">Preis (netto) in €</span><input id="pprice" type="number" min="0" step="0.01" value="' + esc(prod.price) + '"></label>' + field('ptax', 'MwSt. (%)', prod.taxRate, 'number', { attrs: 'min="0" max="100" step="1"' }) +
         '<div class="form full" id="rentalFields" style="padding:0">' + selectField('pint', 'Abrechnung', Object.keys(PERIOD).map(function (k) { return [k, INTERVALS[k]]; }), prod.intervalUnit || 'YEARLY') + field('psetup', 'Einrichtungsgebühr (netto, einmalig)', prod.setupFee || 0, 'number', { attrs: 'min="0" step="0.01"' }) + '</div>' +
         '<div class="form full" id="unitFields" style="padding:0">' + field('punit', 'Einheit (z. B. Stück, Seite)', prod.unit, 'text', { attrs: 'maxlength="50"' }) + field('pmin', 'Mindestmenge', prod.minQuantity, 'number', { attrs: 'min="0.01" step="any"' }) + '</div>' +
+        '<div class="full" id="licFields" style="padding:0;display:grid;gap:8px"><label style="flex-direction:row;align-items:center;gap:8px"><input id="plic" type="checkbox"' + (prod.licenseEnabled ? ' checked' : '') + '> Mit Lizenz für eine Domain verkaufen</label>' +
+        '<div class="form full" id="licOpts" style="padding:0 0 0 24px">' + '<label style="flex-direction:row;align-items:center;gap:8px"><input id="psubs" type="checkbox"' + (prod.licenseSubdomains ? ' checked' : '') + '> Subdomains der Domain einschließen</label>' +
+        '<label style="flex-direction:row;align-items:center;gap:8px"><input id="ppayfirst" type="checkbox"' + (prod.licensePayFirst !== false ? ' checked' : '') + '> Lizenz erst nach bezahlter Rechnung freischalten</label>' +
+        '<span id="pdaysw">' + field('pdays', 'Gültigkeit in Tagen (leer = unbefristet)', prod.licenseDays || '', 'number', { attrs: 'min="1" step="1"' }) + '</span>' +
+        '<div class="sub full" id="licNote">Bei Mietprodukten gilt die Lizenz, solange die Abo-Rechnungen bezahlt werden (plus Kulanzfrist).</div></div></div>' +
         '<label class="full" for="pdesc">Beschreibung (im Portal sichtbar)<textarea id="pdesc" rows="3">' + esc(prod.description || '') + '</textarea></label>' +
         field('psort', 'Reihenfolge', prod.sortOrder, 'number', { attrs: 'step="1"' }) + '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="pactive" type="checkbox"' + (prod.active ? ' checked' : '') + '> Im Portal bestellbar</label></div>', 'Speichern',
         function (f) {
@@ -733,6 +803,8 @@
           var price = parseFloat(v(f, 'pprice'));
           if (isNaN(price) || price < 0) return bad('Bitte einen Preis ab 0 eingeben.');
           var body = { name: v(f, 'pname'), categoryId: v(f, 'pcat'), type: v(f, 'ptype'), price: price, taxRate: num(f, 'ptax'), description: f.querySelector('#pdesc').value.trim(), unit: v(f, 'punit'), minQuantity: num(f, 'pmin'), sortOrder: parseInt(v(f, 'psort'), 10) || 0, active: f.querySelector('#pactive').checked };
+          body.licenseEnabled = body.type !== 'HOURLY' && f.querySelector('#plic').checked;
+          if (body.licenseEnabled) { body.licenseSubdomains = f.querySelector('#psubs').checked; body.licensePayFirst = f.querySelector('#ppayfirst').checked; body.licenseDays = body.type === 'ONE_TIME' && v(f, 'pdays') ? parseInt(v(f, 'pdays'), 10) : ''; }
           if (body.type === 'RENTAL') { body.intervalUnit = v(f, 'pint'); body.setupFee = num(f, 'psetup') || 0; }
           return (prod.id ? api('PATCH', '/api/products/' + prod.id, body) : api('POST', '/api/products', body)).then(function () {
             // Das gespeicherte Produkt soll sichtbar sein: den Filter auf seine Kategorie umstellen, falls ein anderer aktiv ist
@@ -745,8 +817,12 @@
             f.querySelector('#plabel').textContent = t === 'RENTAL' ? 'Preis je Abrechnungszeitraum (netto) in €' : t === 'HOURLY' ? 'Stundensatz (netto) in €' : 'Preis (netto) in €';
             f.querySelector('#rentalFields').hidden = t !== 'RENTAL';
             f.querySelector('#unitFields').hidden = t === 'HOURLY' ? true : false;
+            f.querySelector('#licFields').hidden = t === 'HOURLY';
+            f.querySelector('#licOpts').hidden = !f.querySelector('#plic').checked;
+            f.querySelector('#pdaysw').hidden = t !== 'ONE_TIME';
+            f.querySelector('#licNote').hidden = t !== 'RENTAL';
           };
-          f.querySelector('#ptype').addEventListener('change', sync); sync();
+          f.querySelector('#ptype').addEventListener('change', sync); f.querySelector('#plic').addEventListener('change', sync); sync();
         });
     }).catch(fail);
   }
@@ -760,11 +836,17 @@
       modal('Bestellung erfassen',
         '<div class="form">' + selectField('okc', 'Kunde', clientOptions(clients), clients[0].id, true) +
         selectField('okp', 'Produkt', products.map(function (p) { return [p.id, (p.category ? p.category.name + ' › ' : '') + p.name + ' – ' + priceText(p) + (p.active ? '' : ' (inaktiv)')]; }), products[0].id, true) +
-        field('okq', 'Menge', 1, 'number', { attrs: 'min="0.01" step="any"' }) + '<label class="full" for="okn">Anmerkung<textarea id="okn" rows="3"></textarea></label></div>', 'Bestellung anlegen',
+        field('okq', 'Menge', 1, 'number', { attrs: 'min="0.01" step="any"' }) + '<span class="full" id="okdw">' + field('okd', 'Domain für die Lizenz *', '', 'text', { full: true, attrs: 'placeholder="meine-seite.de" autocapitalize="off" spellcheck="false"' }) + '</span><label class="full" for="okn">Anmerkung<textarea id="okn" rows="3"></textarea></label></div>', 'Bestellung anlegen',
         function (f) {
           var q = num(f, 'okq');
           if (!(q > 0)) return bad('Bitte eine Menge über 0 eingeben.');
-          return api('POST', '/api/orders', { clientId: v(f, 'okc'), productId: v(f, 'okp'), quantity: q, note: f.querySelector('#okn').value.trim() }).then(function (o) { ui.orderId = o.id; ui.view = 'order'; done('Bestellung ' + o.number + ' angelegt'); });
+          var prod = products.filter(function (x) { return x.id === v(f, 'okp'); })[0];
+          var lic = prod && prod.licenseEnabled && prod.type !== 'HOURLY';
+          if (lic && !v(f, 'okd')) return bad('Bitte die Domain für die Lizenz eingeben.');
+          return api('POST', '/api/orders', clean({ clientId: v(f, 'okc'), productId: v(f, 'okp'), quantity: q, note: f.querySelector('#okn').value.trim(), domain: lic ? v(f, 'okd') : '' })).then(function (o) { ui.orderId = o.id; ui.view = 'order'; done('Bestellung ' + o.number + ' angelegt'); });
+        }, function (f) {
+          var sync = function () { var prod = products.filter(function (x) { return x.id === f.querySelector('#okp').value; })[0]; f.querySelector('#okdw').hidden = !(prod && prod.licenseEnabled && prod.type !== 'HOURLY'); };
+          f.querySelector('#okp').addEventListener('change', sync); sync();
         });
     }).catch(fail);
   }
@@ -938,6 +1020,12 @@
       case 'prod-dup': return api('POST', '/api/products/' + id + '/duplicate').then(function () { done('Kopie angelegt (inaktiv)'); }).catch(fail);
       case 'prod-del': return confirmDialog('Das Produkt wird aus dem Katalog gelöscht. Bereits eingegangene Bestellungen behalten Name und Preis.', 'Produkt löschen', function () { return api('DELETE', '/api/products/' + id).then(function () { done('Produkt gelöscht'); }); });
       case 'new-order': return newOrderDialog();
+      case 'lfilter': ui.lstatus = el.dataset.v; return render();
+      case 'open-license': return licenseDialog(id);
+      case 'new-license': return newLicenseDialog();
+      case 'license-send': return api('POST', '/api/licenses/' + id + '/send', {}).then(function () { toast('Schlüssel gesendet'); }).catch(fail);
+      case 'license-regen': return confirmDialog('Der bisherige Schlüssel funktioniert danach nicht mehr. Der Kunde muss den neuen Schlüssel in seiner Software eintragen.', 'Neuen Schlüssel erzeugen', function () { return api('POST', '/api/licenses/' + id + '/regenerate', {}).then(function () { done('Neuer Schlüssel erzeugt'); }); });
+      case 'license-del': return confirmDialog('Die Lizenz wird gelöscht; der Schlüssel funktioniert danach nicht mehr. (Zum Sperren lieber den Status ändern.)', 'Löschen', function () { return api('DELETE', '/api/licenses/' + id).then(function () { done('Lizenz gelöscht'); }); });
       case 'order-accept': return api('GET', '/api/orders/' + ui.orderId).then(acceptOrderDialog).catch(fail);
       case 'order-reject': return api('GET', '/api/orders/' + ui.orderId).then(rejectOrderDialog).catch(fail);
       case 'copy-text': return copyText(el.dataset.text, 'Link kopiert');
@@ -977,7 +1065,9 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('#layer').firstChild) closeModal(); });
 
   var searchTimer = null;
+  var licTimer;
   document.addEventListener('input', function (e) {
+    if (e.target.id === 'lq') { ui.lsearch = e.target.value; clearTimeout(licTimer); licTimer = setTimeout(render, 300); return; }
     if (e.target.id !== 'q') return;
     ui.q = e.target.value;
     clearTimeout(searchTimer);
