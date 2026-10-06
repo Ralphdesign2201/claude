@@ -198,6 +198,10 @@ final class PortalAuthController
     private static function url(string $name): ?string
     {
         $value = trim(Env::get($name, '') ?? '');
-        return preg_match('#^https?://#i', $value) ? $value : null;
+        if (preg_match('#^https?://#i', $value)) {
+            return $value;
+        }
+        $type = $name === 'TERMS_URL' ? 'AGB' : 'DATENSCHUTZ'; // sonst die selbst erstellten, veröffentlichten Seiten
+        return \App\Services\LegalService::isPublished($type) ? \App\Services\LegalService::PATHS[$type] : null;
     }
 }

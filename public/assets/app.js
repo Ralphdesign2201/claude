@@ -76,7 +76,7 @@
   var listAll = function (path, params) { return api('GET', path + qs(Object.assign({ pageSize: 100 }, params || {}))).then(function (r) { return r.items; }); };
 
   /* ---------- Zustand ---------- */
-  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', ltab: 'licenses', license: null, newTickets: 0, company: '', ticketId: null, tview: 'open', tsearch: '', tprio: '', tcat: '', stab: 'tickets', tsel: [], sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
+  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', navOpen: 'start', navView: null, healthRed: 0, healthAt: 0, legalTab: 'IMPRESSUM', ltab: 'licenses', license: null, newTickets: 0, company: '', ticketId: null, tview: 'open', tsearch: '', tprio: '', tcat: '', stab: 'tickets', tsel: [], sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
 
   /* ---------- Rechnungs-Hilfen ---------- */
   function shownStatus(inv) {
@@ -130,12 +130,37 @@
     else if (l.supportUntil && l.supportActive && (new Date(l.supportUntil).getTime() - Date.now()) < 30 * 864e5) html = '<div class="demo" id="lic-banner"><span>Dein Support- und Update-Zeitraum endet am <b>' + fdate(l.supportUntil) + '</b>.</span></div>';
     if (html) main.insertAdjacentHTML('afterbegin', html);
   }
-  function navItems() {
-    var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['support', 'Support'], ['licenses', 'Lizenzen'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
-    if (me && me.role === 'ADMIN') n.push(['team', 'Team']);
+  /* Menü: Gruppen mit Aufklapp-Funktion – es ist immer nur eine Gruppe offen */
+  var NAV_GROUPS = [
+    { id: 'start', title: 'Übersicht', single: 'dashboard', items: [['dashboard', 'Dashboard']] },
+    { id: 'sales', title: 'Kunden & Verkauf', items: [['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['licenses', 'Lizenzen']] },
+    { id: 'support', title: 'Support', items: [['support', 'Tickets & Hilfe']] },
+    { id: 'work', title: 'Projekte & Zeit', items: [['projects', 'Projekte'], ['times', 'Zeiten']] },
+    { id: 'money', title: 'Buchhaltung', items: [['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']] },
+    { id: 'system', title: 'System', items: [['legal', 'Rechtstexte'], ['team', 'Team']] },
+  ];
+  var VIEW_PARENT = { client: 'clients', order: 'orders', ticket: 'support', invoice: 'invoices', quote: 'quotes' };
+  function navGroups() {
     var l = ui.license;
-    if (l && l.enforced) n = n.filter(function (x) { return !NAV_FEATURE[x[0]] || (l.valid && l.features.indexOf(NAV_FEATURE[x[0]]) >= 0); });
-    return n;
+    return NAV_GROUPS.map(function (g) {
+      var items = g.items.filter(function (x) {
+        if (x[0] === 'team' && !(me && me.role === 'ADMIN')) return false;
+        if (x[0] === 'legal' && !(me && me.role === 'ADMIN')) return false;
+        if (l && l.enforced && NAV_FEATURE[x[0]] && !(l.valid && l.features.indexOf(NAV_FEATURE[x[0]]) >= 0)) return false;
+        return true;
+      });
+      return { id: g.id, title: g.title, single: g.single, items: items };
+    }).filter(function (g) { return g.items.length; });
+  }
+  function groupOf(view) {
+    var v = VIEW_PARENT[view] || view, found = null;
+    NAV_GROUPS.forEach(function (g) { g.items.forEach(function (x) { if (x[0] === v) found = g.id; }); });
+    return found;
+  }
+  function navItems() {
+    var out = [];
+    navGroups().forEach(function (g) { g.items.forEach(function (x) { out.push(x); }); });
+    return out;
   }
   function renderShell() {
     if (!$('#main')) {
@@ -156,11 +181,24 @@
       : '';
   }
   function drawNav() {
-    $('#nav').innerHTML = navItems().map(function (n) {
-      var cur = ui.view === n[0] || (n[0] === 'clients' && ui.view === 'client') || (n[0] === 'invoices' && ui.view === 'invoice') || (n[0] === 'quotes' && ui.view === 'quote') || (n[0] === 'orders' && ui.view === 'order') || (n[0] === 'support' && ui.view === 'ticket');
-      var cnt = n[0] === 'orders' ? ui.pending : n[0] === 'support' ? ui.newTickets : 0;
-      var badge = cnt > 0 ? '<span class="count" aria-label="' + cnt + ' neue">' + cnt + '</span>' : '';
-      return '<button data-act="nav" data-v="' + n[0] + '"' + (cur ? ' aria-current="page"' : '') + '>' + n[1] + badge + '</button>';
+    // Beim Wechsel der Ansicht öffnet sich die passende Gruppe, alle anderen klappen zu
+    if (ui.navView !== ui.view) { ui.navView = ui.view; var g0 = groupOf(ui.view); if (g0) ui.navOpen = g0; }
+    var groups = navGroups(), counts = { orders: ui.pending, support: ui.newTickets };
+    $('#nav').innerHTML = groups.map(function (g) {
+      var open = g.id === ui.navOpen;
+      var sum = 0; g.items.forEach(function (x) { sum += counts[x[0]] || 0; });
+      var gbadge = sum > 0 && !open ? '<span class="count" aria-label="' + sum + ' neue">' + sum + '</span>' : '';
+      var healthBadge = g.id === 'start' && ui.healthRed > 0 ? '<span class="count bad" aria-label="' + ui.healthRed + ' wichtige Hinweise">' + ui.healthRed + '</span>' : '';
+      var cur = function (x) { return ui.view === x || VIEW_PARENT[ui.view] === x; };
+      if (g.single) {
+        return '<button class="nav-single" data-act="nav" data-v="' + g.single + '"' + (cur(g.single) ? ' aria-current="page"' : '') + '>' + esc(g.title) + healthBadge + '</button>';
+      }
+      var hasCur = g.items.some(function (x) { return cur(x[0]); });
+      return '<div class="nav-group' + (open ? ' open' : '') + '"><button class="nav-head" data-act="nav-group" data-v="' + g.id + '" aria-expanded="' + open + '" aria-controls="ng-' + g.id + '"' + (hasCur ? ' data-has-current="1"' : '') + '><span>' + esc(g.title) + '</span>' + gbadge + '<svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
+        '<div class="nav-items" id="ng-' + g.id + '"><div>' + g.items.map(function (x) {
+          var cnt = counts[x[0]] || 0;
+          return '<button data-act="nav" data-v="' + x[0] + '"' + (cur(x[0]) ? ' aria-current="page"' : '') + (open ? '' : ' tabindex="-1"') + '>' + esc(x[1]) + (cnt > 0 ? '<span class="count" aria-label="' + cnt + ' neue">' + cnt + '</span>' : '') + '</button>';
+        }).join('') + '</div></div></div>';
     }).join('');
   }
   /** Zählt offene Bestellungen für das Menü, ohne die Ansicht zu blockieren. */
@@ -172,6 +210,10 @@
       if (licChanged) { drawNav(); drawBanner(); }
       if ((st.pendingOrders !== ui.pending || st.newTickets !== ui.newTickets) && $('#nav')) { ui.pending = st.pendingOrders; ui.newTickets = st.newTickets || 0; drawNav(); }
     }).catch(function () { /* Badge ist optional */ });
+    if (me && me.role === 'ADMIN' && Date.now() - ui.healthAt > 60000) {
+      ui.healthAt = Date.now();
+      api('GET', '/api/health').then(function (h) { if (h.red !== ui.healthRed) { ui.healthRed = h.red; if ($('#nav')) drawNav(); } }).catch(function () {});
+    }
   }
   var head = function (title, sub, actions) {
     return '<div class="head"><div><h1>' + title + '</h1>' + (sub ? '<p>' + sub + '</p>' : '') + '</div><div class="row">' + (actions || '') + '</div></div>';
@@ -179,11 +221,24 @@
   var kpi = function (l, v, s, cls) { return '<div class="card kpi ' + (cls || '') + '"><span class="l">' + l + '</span><span class="v">' + v + '</span><span class="s">' + s + '</span></div>'; };
 
   /* ---------- Ansichten ---------- */
+  /* Dashboard-Hinweise: rot = muss behoben werden, gelb = empfohlen */
+  function healthBanners(h) {
+    if (!h || !h.items.length) return '';
+    var open = h.items.length <= 4 || ui.healthAll;
+    var items = open ? h.items : h.items.slice(0, 4);
+    return '<div class="hb-list" role="region" aria-label="Hinweise">' + items.map(function (i) {
+      return '<div class="hb ' + i.level + '"><span class="hb-dot" aria-hidden="true"></span><div class="grow"><b>' + esc(i.title) + '</b><div class="sub">' + esc(i.text) + '</div></div>' +
+        (i.view ? '<button class="btn sm" data-act="health-go" data-v="' + esc(i.view) + '" data-tab="' + esc(i.tab) + '">' + (i.view === 'legal' ? 'Bearbeiten' : 'Öffnen') + '</button>' : '') + '</div>';
+    }).join('') + (h.items.length > 4 && !ui.healthAll ? '<button class="link" data-act="health-all">Alle ' + h.items.length + ' Hinweise anzeigen (' + h.red + ' rot, ' + h.yellow + ' gelb)</button>' : '') + '</div>';
+  }
   function vDashboard() {
-    return Promise.all([api('GET', '/api/dashboard/summary'), listAll('/api/invoices'), api('GET', '/api/settings')]).then(function (r) {
-      var s = r[0], invoices = r[1], pendingOrders = r[2].pendingOrders;
+    var isAdmin = me && me.role === 'ADMIN';
+    return Promise.all([api('GET', '/api/dashboard/summary'), listAll('/api/invoices'), api('GET', '/api/settings'), isAdmin ? api('GET', '/api/health').catch(function () { return null; }) : Promise.resolve(null)]).then(function (r) {
+      var s = r[0], invoices = r[1], pendingOrders = r[2].pendingOrders, health = r[3];
+      if (health) { ui.healthAt = Date.now(); if (health.red !== ui.healthRed) { ui.healthRed = health.red; drawNav(); } }
       var openCount = invoices.filter(function (i) { return i.totals.balance > 0 && i.status !== 'CANCELLED'; }).length;
       return head('Guten Tag, ' + esc(me.name.split(' ')[0]), 'Das ist heute los in deinem Studio.', '<button class="btn primary" data-act="new-invoice">+ Rechnung</button><button class="btn" data-act="new-client">+ Kunde</button>') +
+        healthBanners(health) +
         (pendingOrders > 0 ? '<div class="demo"><span><b>' + pendingOrders + (pendingOrders === 1 ? ' neue Bestellung wartet' : ' neue Bestellungen warten') + '</b> auf deine Bestätigung.</span><button class="btn sm primary" data-act="nav" data-v="orders">Bestellungen ansehen</button></div>' : '') +
         '<div class="grid kpis">' +
         kpi('Bezahlt', eur(s.revenue.paid), 'Zahlungseingänge gesamt') +
@@ -247,8 +302,8 @@
   }
 
   function vClient() {
-    return Promise.all([api('GET', '/api/clients/' + ui.clientId), listAll('/api/invoices', { clientId: ui.clientId }), listAll('/api/quotes', { clientId: ui.clientId }), api('GET', '/api/recurring' + qs({ clientId: ui.clientId })), api('GET', '/api/clients/' + ui.clientId + '/portal')]).then(function (r) {
-      var c = r[0], invoices = r[1], quotes = r[2], recs = r[3].items, portal = r[4];
+    return Promise.all([api('GET', '/api/clients/' + ui.clientId), listAll('/api/invoices', { clientId: ui.clientId }), listAll('/api/quotes', { clientId: ui.clientId }), api('GET', '/api/recurring' + qs({ clientId: ui.clientId })), api('GET', '/api/clients/' + ui.clientId + '/portal'), api('GET', '/api/clients/' + ui.clientId + '/tickets').catch(function () { return []; })]).then(function (r) {
+      var c = r[0], invoices = r[1], quotes = r[2], recs = r[3].items, portal = r[4], tickets = r[5];
       var contact = c.contacts[0];
       var notes = c.notes.slice().sort(function (a, b) { return (b.pinned - a.pinned) || (a.createdAt < b.createdAt ? 1 : -1); });
       return '<button class="btn ghost sm back" data-act="nav" data-v="clients" style="align-self:flex-start">← Alle Kunden</button>' +
@@ -272,6 +327,10 @@
         }).join('') + '</div>' : '') +
         (portal.active ? '<dl class="kv" style="margin-bottom:12px"><dt>Erstellt</dt><dd>' + fdate(portal.createdAt) + '</dd><dt>Gültig bis</dt><dd>' + (portal.expiresAt ? fdate(portal.expiresAt) : 'unbegrenzt') + '</dd><dt>Zuletzt genutzt</dt><dd>' + (portal.lastUsedAt ? fdate(portal.lastUsedAt) : 'noch nie') + '</dd></dl>' : '') +
         '<div class="row"><button class="btn primary" data-act="portal-issue" data-id="' + esc(c.id) + '">' + (portal.active ? 'Neuen Link erstellen' : 'Zugang erstellen') + '</button>' + (portal.active ? '<button class="btn danger" data-act="portal-revoke" data-id="' + esc(c.id) + '">Zugang sperren</button>' : '') + '</div></div>' +
+ (tickets.length || (ui.license == null || !ui.license.enforced || (ui.license.features || []).indexOf('support') >= 0) ? '<div class="card"><h2>Support <span class="sub">(' + tickets.length + ' Ticket' + (tickets.length === 1 ? '' : 's') + ')</span> <button class="btn sm" data-act="new-ticket-for" data-id="' + esc(c.id) + '">+ Ticket</button></h2>' + (tickets.length ? tickets.map(function (t) {
+          return '<details class="tk-fold"><summary><span class="mono sub">' + esc(t.number) + '</span> <b>' + esc(t.subject) + '</b> ' + pill(TSTATUS, t.status) + ' ' + (t.unreadStaff && t.status !== 'CLOSED' ? '<span class="pill info">neu</span> ' : '') + '<span class="sub">· ' + ago(t.lastActivityAt) + ' · ' + t.messages.filter(function (m) { return m.kind === 'CUSTOMER' || m.kind === 'STAFF'; }).length + ' Nachr.</span></summary>' +
+            '<div class="tk-thread" style="margin:10px 0">' + t.messages.map(bubble).join('') + '</div><button class="btn sm" data-act="open-ticket" data-id="' + esc(t.id) + '">Ticket öffnen und antworten</button></details>';
+        }).join('') : '<div class="empty">Dieser Kunde hat noch keine Support-Anfragen.</div>') + '</div>' : '') +
         '<div class="grid two-eq"><div class="card"><h2>Angebote <button class="btn sm" data-act="new-quote" data-id="' + esc(c.id) + '">+ Angebot</button></h2><div class="list">' + (quotes.length ? quotes.map(function (q) {
           return '<div><div class="grow"><button class="link mono" data-act="open-quote" data-id="' + esc(q.id) + '">' + esc(q.number) + '</button><div class="sub">' + fdate(q.issueDate) + '</div></div><span class="num">' + eur(q.totals.total) + '</span>' + pill(QUOTE_STATUS, q.status) + '</div>';
         }).join('') : '<div class="empty">Noch keine Angebote.</div>') + '</div></div>' +
@@ -599,6 +658,67 @@
     });
   }
 
+
+  /* ---------- Rechtstexte ---------- */
+  var legalSeq = 0, legalTimer = null;
+  function legalField(f, val) {
+    var id = 'lg-' + f.key, v = val == null ? '' : val, tail = f.help ? '<span class="sub" style="font-weight:400">' + esc(f.help) + '</span>' : '';
+    var wide = f.type === 'lines' || f.key === 'hostingProvider' || f.key === 'authority' || f.key === 'contentResponsible' || f.key === 'name' || f.key === 'profession';
+    var open = '<label class="' + (wide ? 'full' : '') + '" for="' + id + '">' + esc(f.label);
+    if (f.type === 'select') return open + '<select id="' + id + '" data-lk="' + f.key + '">' + f.options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === (v || f['default'] || '') ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>' + tail + '</label>';
+    if (f.type === 'lines') return open + '<textarea id="' + id + '" rows="3" data-lk="' + f.key + '">' + esc(v) + '</textarea>' + tail + '</label>';
+    return open + '<input id="' + id + '" type="' + (f.type === 'int' ? 'number' : f.type === 'email' ? 'email' : 'text') + '" value="' + esc(v) + '" data-lk="' + f.key + '" autocapitalize="off" spellcheck="false">' + tail + '</label>';
+  }
+  function legalMissing(list) {
+    if (!list.length) return '<div class="note ok">Alle Angaben vollständig.</div>';
+    return '<div class="stack" style="gap:6px">' + list.map(function (m) { return '<div class="hb ' + m.level + '"><span class="hb-dot" aria-hidden="true"></span><div class="grow">' + (m.level === 'red' ? '<b>Pflichtangabe fehlt:</b> ' : '<b>Empfohlen:</b> ') + esc(m.label) + '</div></div>'; }).join('') + '</div>';
+  }
+  var legalAdoptText = '';
+  function vLegal() {
+    return api('GET', '/api/legal').then(function (res) {
+      var t = ui.legalTab, d = res.docs[t], fields = res.schema[t], hasOv = d.override !== null;
+      legalAdoptText = d.generated;
+      var chips = ['IMPRESSUM', 'DATENSCHUTZ', 'AGB'].map(function (k) {
+        var dd = res.docs[k], red = dd.missing.filter(function (m) { return m.level === 'red'; }).length;
+        return '<button class="chip" data-act="legal-tab" data-v="' + k + '" aria-pressed="' + (k === t) + '">' + esc(dd.title) + ' <span class="pill ' + (dd.published ? (red ? 'warn' : 'good') : 'neutral') + '" style="margin-left:4px">' + (dd.published ? (red ? 'unvollständig' : 'online') : 'offline') + '</span></button>';
+      }).join('');
+      var intro = { IMPRESSUM: 'Pflichtangaben nach § 5 DDG. Dein Impressum wird aus den Angaben erzeugt und ist unter /impressum öffentlich erreichbar.', DATENSCHUTZ: 'Die Erklärung entsteht aus dem, was dieses System tatsächlich tut (Kundenportal, Support, Rechnungen, Lizenzen, E-Mail …). Ergänze, was deine Webseite sonst noch verarbeitet.', AGB: 'Allgemeine Geschäftsbedingungen für Webdesign-Leistungen. Wähle die Module, die zu deinem Angebot passen.' }[t];
+      return head('Rechtstexte', 'Impressum, Datenschutz und AGB – erzeugt aus deinen Angaben, jederzeit erweiter- und überschreibbar.') +
+        '<div class="chips">' + chips + '</div>' +
+        '<div class="note" style="background:var(--surface-2);color:var(--muted)"><b>Wichtig:</b> Die Texte sind sorgfältig formulierte Vorlagen nach deutschem Recht, aber keine Rechtsberatung. Du bist für Richtigkeit und Vollständigkeit verantwortlich – bei Unsicherheit bitte kurz anwaltlich prüfen lassen.</div>' +
+        '<div class="lg-grid"><form class="card stack" id="legalform" novalidate><h2>' + esc(d.title) + '</h2><p class="sub" style="margin:0">' + esc(intro) + '</p>' +
+        '<div id="lg-missing">' + legalMissing(d.missing) + '</div>' +
+        '<div class="form">' + fields.map(function (f) { return legalField(f, d.data[f.key]); }).join('') + '</div>' +
+        '<label class="stack" for="lg-extra" style="gap:4px;font-size:12.5px;font-weight:600;color:var(--muted)">Eigene Ergänzung (wird am Ende angehängt)<textarea id="lg-extra" rows="5" placeholder="## Überschrift&#10;&#10;Text … (## = Überschrift, **fett**, - Liste, [Text](https://…))" style="font-weight:400;color:var(--fg)">' + esc(d.extra) + '</textarea></label>' +
+        '<label style="flex-direction:row;align-items:center;gap:8px;display:flex"><input id="lg-ovr-on" type="checkbox"' + (hasOv ? ' checked' : '') + '> Gesamten Text selbst schreiben (Generator wird dann nicht mehr verwendet)</label>' +
+        '<div id="lg-ovr-box" style="' + (hasOv ? '' : 'display:none') + '"><textarea id="lg-override" rows="14" class="mono" style="width:100%">' + esc(d.override || '') + '</textarea><div class="sub">Tipp: Beim Einschalten wird der aktuelle erzeugte Text als Ausgangspunkt eingefügt.</div></div>' +
+        '<div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="row">' + (d.published ? '<a class="btn sm" href="' + esc(d.path) + '" target="_blank" rel="noopener">Seite ansehen</a>' : '') + '</div><div class="row"><button type="submit" class="btn" data-pub="keep">Speichern</button>' +
+        '<button type="button" class="btn ' + (d.published ? '' : 'primary') + '" data-act="legal-pub" data-pub="' + (d.published ? '0' : '1') + '">' + (d.published ? 'Zurückziehen' : 'Speichern & veröffentlichen') + '</button></div></div></form>' +
+        '<section class="card"><h2>Vorschau <span class="sub">' + (d.published ? 'veröffentlicht' : 'noch nicht veröffentlicht') + '</span></h2><div class="legal-doc" id="lg-preview">' + d.html + '</div></section></div>';
+    });
+  }
+  function legalPayload() {
+    var data = {}; document.querySelectorAll('#legalform [data-lk]').forEach(function (el) { data[el.dataset.lk] = el.value; });
+    var on = $('#lg-ovr-on').checked;
+    return { data: data, extra: $('#lg-extra').value, override: on ? $('#lg-override').value : null };
+  }
+  function legalPreview() {
+    clearTimeout(legalTimer);
+    legalTimer = setTimeout(function () {
+      if (!$('#legalform')) return;
+      var mine = ++legalSeq;
+      api('POST', '/api/legal/' + ui.legalTab + '/preview', legalPayload()).then(function (d) {
+        if (mine !== legalSeq || !$('#lg-preview')) return;
+        $('#lg-preview').innerHTML = d.html; $('#lg-missing').innerHTML = legalMissing(d.missing); legalAdoptText = d.generated;
+      }).catch(function () {});
+    }, 350);
+  }
+  function legalSave(pub) {
+    var body = legalPayload();
+    if (pub !== null) body.published = pub;
+    return api('PUT', '/api/legal/' + ui.legalTab, body).then(function () { done(pub === true ? 'Gespeichert und veröffentlicht' : pub === false ? 'Zurückgezogen' : 'Gespeichert'); }).catch(fail);
+  }
+
   function vSettings() {
     return Promise.all([api('GET', '/api/settings/all'), api('GET', '/api/system/status')]).then(function (all) {
       var res = all[0], sys = all[1];
@@ -793,11 +913,11 @@
       return (a ? api('PATCH', '/api/faq/' + a.id, body) : api('POST', '/api/faq', body)).then(function () { done('Artikel gespeichert'); });
     });
   }
-  function newTicketDialog() {
+  function newTicketDialog(presetClient) {
     Promise.all([listAll('/api/clients', { sort: 'name' }), api('GET', '/api/tickets/meta')]).then(function (r) {
       var clients = r[0], meta = r[1];
       if (!clients.length) return toast('Lege zuerst einen Kunden an.');
-      modal('Ticket erfassen', '<div class="form">' + selectField('nt-c', 'Kunde', clientOptions(clients), clients[0].id, true) + field('nt-s', 'Betreff *', '', 'text', { full: true, attrs: 'maxlength="200"' }) +
+      modal('Ticket erfassen', '<div class="form">' + selectField('nt-c', 'Kunde', clientOptions(clients), presetClient || clients[0].id, true) + field('nt-s', 'Betreff *', '', 'text', { full: true, attrs: 'maxlength="200"' }) +
         '<label class="full" for="nt-b">Anliegen des Kunden *<textarea id="nt-b" rows="5" placeholder="z. B. Anruf von heute: …"></textarea></label>' +
         selectField('nt-p', 'Priorität', Object.keys(TPRIO).map(function (k) { return [k, TPRIO[k][0]]; }), 'NORMAL') + selectField('nt-cat', 'Kategorie', [['', '– keine –']].concat(meta.categories.map(function (c) { return [c, c]; })), '') +
         selectField('nt-a', 'Bearbeiter', [['', '– niemand –']].concat(meta.agents.map(function (a) { return [a.id, a.name]; })), me.id) +
@@ -926,7 +1046,7 @@
   }
 
   /* ---------- Rendern ---------- */
-  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, settings: vSettings, support: vSupport, ticket: vTicket, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam };
+  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, settings: vSettings, support: vSupport, ticket: vTicket, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam, legal: vLegal };
   var seq = 0;
   function render() {
     if (!token || !me) return;
@@ -1419,6 +1539,7 @@
       case 'tview': ui.tview = el.dataset.v; ui.stab = 'tickets'; if (ui.view !== 'support') ui.view = 'support'; return render();
       case 'open-ticket': if (e.target.closest('.tk-sel') ) return; return go('ticket', { ticketId: id });
       case 'new-ticket': return newTicketDialog();
+      case 'new-ticket-for': return newTicketDialog(id);
       case 'new-canned': return cannedDialog();
       case 'edit-canned': return api('GET', '/api/canned').then(function (l) { cannedDialog(l.filter(function (c) { return c.id === id; })[0]); }).catch(fail);
       case 'del-canned': return confirmDialog('Der Textbaustein wird gelöscht.', 'Löschen', function () { return api('DELETE', '/api/canned/' + id).then(function () { done('Gelöscht'); }); });
@@ -1435,7 +1556,19 @@
       case 'tk-quick': return ticketAction('/' + ui.ticketId, 'PATCH', { status: el.dataset.v }).then(function () { done('Status geändert'); }).catch(fail);
       case 'del-ticket': return confirmDialog('Das Ticket wird samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('DELETE', '/api/tickets/' + id).then(function () { go('support'); toast('Ticket gelöscht'); }); });
       case 'bulk-delete': return confirmDialog(ui.tsel.length + ' Ticket(s) werden samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('POST', '/api/tickets/bulk', { ids: ui.tsel, action: 'delete' }).then(function () { ui.tsel = []; done('Gelöscht'); }); });
+      case 'nav-group': ui.navOpen = ui.navOpen === el.dataset.v ? null : el.dataset.v; return drawNav();
       case 'ltab': ui.ltab = el.dataset.v; return render();
+      case 'legal-tab': ui.legalTab = el.dataset.v; return render();
+      case 'legal-pub': {
+        if (el.dataset.pub === '0') return confirmDialog('Die Seite ist danach nicht mehr öffentlich erreichbar.', 'Zurückziehen', function () { return legalSave(false); });
+        return api('POST', '/api/legal/' + ui.legalTab + '/preview', legalPayload()).then(function (d) {
+          var red = d.missing.filter(function (m) { return m.level === 'red'; });
+          if (!red.length) return legalSave(true);
+          confirmDialog('Es fehlen noch Pflichtangaben (' + esc(red.map(function (m) { return m.label; }).join(', ')) + '). Trotzdem veröffentlichen?', 'Trotzdem veröffentlichen', function () { return legalSave(true); });
+        }).catch(fail);
+      }
+      case 'health-go': if (el.dataset.v === 'legal' && el.dataset.tab) ui.legalTab = el.dataset.tab; return go({ tickets: 'support', backups: 'settings', system: 'settings' }[el.dataset.v] || el.dataset.v);
+      case 'health-all': ui.healthAll = true; return render();
       case 'rel-toggle': return api('PATCH', '/api/releases/' + id, { published: el.dataset.pub !== '1' }).then(function () { done(el.dataset.pub === '1' ? 'Zurückgezogen' : 'Veröffentlicht'); }).catch(fail);
       case 'rel-dl': return downloadPdf(el, '/api/releases/' + id + '/file');
       case 'rel-del': return confirmDialog('Die Version wird gelöscht. Wer sie schon geladen hat, behält sie; neue Downloads sind nicht mehr möglich.', 'Löschen', function () { return api('DELETE', '/api/releases/' + id).then(function () { done('Gelöscht'); }); });
@@ -1530,6 +1663,19 @@
   });
   document.addEventListener('keydown', function (e) {
     if (e.target.id === 'tk-body' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#tk-reply').requestSubmit(); }
+  });
+  document.addEventListener('submit', function (e) {
+    if (e.target.id !== 'legalform') return;
+    e.preventDefault();
+    legalSave(null);
+  });
+  document.addEventListener('input', function (e) { if (e.target.closest && e.target.closest('#legalform')) legalPreview(); });
+  document.addEventListener('change', function (e) {
+    if (e.target.id === 'lg-ovr-on') {
+      $('#lg-ovr-box').style.display = e.target.checked ? '' : 'none';
+      if (e.target.checked && !$('#lg-override').value.trim()) $('#lg-override').value = legalAdoptText;
+      legalPreview();
+    } else if (e.target.closest && e.target.closest('#legalform')) legalPreview();
   });
   document.addEventListener('submit', function (e) {
     if (e.target.id !== 'relform') return;

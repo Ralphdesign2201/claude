@@ -10,6 +10,8 @@ require __DIR__ . '/../src/bootstrap.php';
 use App\Services\BackupService;
 use App\Services\RecurringService;
 
+App\Services\HealthService::touchCron();
+
 if (App\Support\Product::enforced()) {
     $license = App\Services\ProductLicense::state(true); // Lizenz einmal täglich frisch prüfen
     if (!$license['valid']) {

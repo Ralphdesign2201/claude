@@ -24,6 +24,7 @@ final class CronController
             throw ApiError::unauthorized('Ungültiges Cron-Token');
         }
 
+        \App\Services\HealthService::touchCron();
         $results = \App\Services\ProductLicense::feature('recurring') ? RecurringService::runDue() : []; // ohne gültige Lizenz keine automatische Abrechnung
         $tickets = \App\Services\TicketService::autoClose();
         $backup = null;

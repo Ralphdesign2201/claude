@@ -1933,6 +1933,48 @@ if ($mysqlMode) {
     call('PUT', '/api/settings/all', ['values' => [], 'reset' => ['SMTP_HOST']], $token);
 }
 
+echo "Rechtstexte und Betriebs-Check\n";
+expect('Rechtstexte ohne Login → 401', call('GET', '/api/legal'), 401);
+expect('Rechtstexte nur für Admins', call('GET', '/api/legal', null, $agentToken), 403);
+check('Unveröffentlichtes Impressum ist öffentlich nicht erreichbar (404)', call('GET', '/impressum')[0] === 404);
+$res = call('GET', '/api/legal', null, $token);
+check('Rechtstexte: drei Dokumente mit Feldbeschreibung', $res[0] === 200 && array_keys($res[1]['docs']) === ['IMPRESSUM', 'DATENSCHUTZ', 'AGB'] && count($res[1]['schema']['IMPRESSUM']) > 10, $res[2]);
+check('Impressum meldet fehlende Pflichtangaben', in_array('owner', array_column(array_filter($res[1]['docs']['IMPRESSUM']['missing'], static fn ($m) => $m['level'] === 'red'), 'field'), true));
+$health = call('GET', '/api/health', null, $token);
+$titles = array_column($health[1]['items'] ?? [], 'title');
+check('Dashboard-Check: Impressum/Datenschutz nicht veröffentlicht = rot', $health[0] === 200 && in_array('Impressum ist nicht veröffentlicht', $titles, true) && in_array('Datenschutzerklärung ist nicht veröffentlicht', $titles, true) && $health[1]['red'] >= 2, $health[2]);
+check('Dashboard-Check: rote Meldungen stehen vor gelben', ($health[1]['items'][0]['level'] ?? '') === 'red');
+$imp = ['name' => 'Atelier Muster', 'owner' => 'Max Muster', 'street' => 'Hauptstr. 1', 'zip' => '12345', 'city' => 'Berlin', 'email' => 'hallo@muster.de', 'phone' => '030 123', 'vatId' => 'DE123456789', 'form' => 'einzel'];
+$res = call('PUT', '/api/legal/IMPRESSUM', ['data' => $imp, 'published' => true], $token);
+check('Impressum erzeugt und veröffentlicht', $res[0] === 200 && str_contains($res[1]['markdown'], 'Angaben gemäß § 5 DDG') && str_contains($res[1]['markdown'], 'Max Muster') && !array_filter($res[1]['missing'], static fn ($m) => $m['level'] === 'red'), $res[2]);
+$page = call('GET', '/impressum');
+check('Öffentliche Impressum-Seite liefert HTML mit den Angaben', $page[0] === 200 && str_contains($page[2], '<h1>Impressum</h1>') && str_contains($page[2], 'DE123456789'));
+$res = call('PUT', '/api/legal/IMPRESSUM', ['data' => ['form' => 'gmbh', 'name' => 'Muster <b>GmbH</b>']], $token);
+check('GmbH verlangt Registerangaben; HTML wird maskiert', in_array('registerCourt', array_column($res[1]['missing'], 'field'), true) && !str_contains($res[1]['html'], '<b>GmbH</b>') && str_contains($res[1]['html'], '&lt;b&gt;'), $res[2]);
+call('PUT', '/api/legal/IMPRESSUM', ['data' => ['form' => 'einzel', 'name' => 'Atelier Muster']], $token);
+$res = call('POST', '/api/legal/DATENSCHUTZ/preview', ['data' => ['hostingProvider' => 'Hostinger International Ltd.', 'newsletter' => '1', 'newsletterProvider' => 'Mailanbieter X', 'analytics' => 'other', 'analyticsName' => 'Tracker Y']], $token);
+check('Datenschutz-Vorschau: Hoster, Newsletter und Analyse erscheinen', $res[0] === 200 && str_contains($res[1]['markdown'], 'Hostinger International Ltd.') && str_contains($res[1]['markdown'], 'Mailanbieter X') && str_contains($res[1]['markdown'], 'Tracker Y') && str_contains($res[1]['markdown'], 'Art. 15'), $res[2]);
+check('Vorschau speichert nichts', call('GET', '/api/legal', null, $token)[1]['docs']['DATENSCHUTZ']['data']['hostingProvider'] ?? '' === '');
+$res = call('PUT', '/api/legal/DATENSCHUTZ', ['data' => ['hostingProvider' => 'Hoster AG, Musterstadt', 'authority' => 'Landesdatenschutzbehörde'], 'extra' => "## Zusatz\n\nUnser eigener Absatz.", 'published' => true], $token);
+check('Datenschutz erweiterbar: eigener Zusatz am Ende', $res[0] === 200 && str_contains($res[1]['markdown'], 'Unser eigener Absatz.') && strpos($res[1]['markdown'], 'Unser eigener') > strpos($res[1]['markdown'], 'Deine Rechte'), $res[2]);
+$res = call('PUT', '/api/legal/AGB', ['data' => ['jurisdiction' => 'Berlin', 'hosting' => '1', 'audience' => 'both'], 'published' => true], $token);
+check('AGB: Module Hosting und Widerruf', $res[0] === 200 && str_contains($res[1]['markdown'], 'Hosting und Wartung') && str_contains($res[1]['markdown'], 'Widerrufsrecht') && str_contains($res[1]['markdown'], 'Gerichtsstand Berlin'), $res[2]);
+$res = call('PUT', '/api/legal/AGB', ['data' => ['audience' => 'b2b']], $token);
+check('AGB nur für Unternehmer: kein Verbraucher-Widerruf', !str_contains($res[1]['markdown'], 'Widerrufsrecht'));
+$res = call('PUT', '/api/legal/AGB', ['override' => "# Meine AGB\n\nHandgeschrieben **fett** [Link](https://example.com) <script>x</script>"], $token);
+check('AGB komplett überschreibbar; Skripte werden maskiert', str_contains($res[1]['html'], '<strong>fett</strong>') && str_contains($res[1]['html'], 'href="https://example.com"') && !str_contains($res[1]['html'], '<script>') && str_contains(call('GET', '/agb')[2], 'Meine AGB'), $res[2]);
+call('PUT', '/api/legal/AGB', ['override' => ''], $token);
+check('Überschreibung entfernt → wieder Generator-Text', str_contains(call('GET', '/agb')[2], 'Geltungsbereich'));
+expect('Unbekannter Rechtstext → 404', call('PUT', '/api/legal/NIX', [], $token), 404);
+$health = call('GET', '/api/health', null, $token);
+$titles = array_column($health[1]['items'], 'title');
+check('Nach Veröffentlichung verschwinden die roten Rechtstext-Meldungen', !in_array('Impressum ist nicht veröffentlicht', $titles, true) && !in_array('Datenschutzerklärung ist nicht veröffentlicht', $titles, true), $titles);
+call('PUT', '/api/legal/DATENSCHUTZ', ['published' => false], $token);
+check('Zurückgezogene Datenschutzerklärung → wieder rot und 404', in_array('Datenschutzerklärung ist nicht veröffentlicht', array_column(call('GET', '/api/health', null, $token)[1]['items'], 'title'), true) && call('GET', '/datenschutz')[0] === 404);
+call('PUT', '/api/legal/DATENSCHUTZ', ['published' => true], $token);
+$res = call('GET', '/api/portal/config');
+check('Portal verlinkt die selbst erstellten AGB, wenn kein eigener Link gesetzt ist', $res[1]['termsUrl'] === '/agb', $res[2]);
+
 echo "Sicherheit\n";
 $forged = (static function () {
     $b = static fn ($d) => rtrim(strtr(base64_encode($d), '+/', '-_'), '=');
