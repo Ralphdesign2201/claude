@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lokales Kanban</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside id="side">
+  <h1>Kanban</h1>
+  <nav id="boards"></nav>
+  <button id="newBoard" class="ghost">+ Neues Board</button>
+  <div class="side-foot">
+    <button id="theme" class="ghost" title="Hell/Dunkel">◐ Darstellung</button>
+    <button id="backup" class="ghost">⤓ Sicherung jetzt</button>
+    <button id="export" class="ghost">⇪ Export (JSON)</button>
+    <button id="trash" class="ghost">🗑 Papierkorb</button>
+  </div>
+</aside>
+<main>
+  <header id="top">
+    <h2 id="boardTitle"></h2>
+    <span id="boardMenu"></span>
+    <input id="search" type="search" placeholder="Suchen in allen Boards ( / )" autocomplete="off">
+  </header>
+  <div id="results" hidden></div>
+  <section id="board"></section>
+</main>
+<dialog id="cardDlg"></dialog>
+<dialog id="boardDlg"></dialog>
+<dialog id="trashDlg"></dialog>
+<div id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
