@@ -1,12 +1,12 @@
 {
     "product": "crm",
     "version": "1.0.0",
-    "builtAt": "2026-10-06T03:00:49Z",
+    "builtAt": "2026-10-06T03:04:52Z",
     "minPhp": "8.1",
     "files": [
         {
             "path": ".env.example",
-            "sha256": "f2326215f3523199a15c8a8b98046d4429fd66597bc464930115c760e32b0aa9"
+            "sha256": "01f6b69e88c2aaa8e411da481ca7f414c1af09ccf4e729addc2ee0fe1174b216"
         },
         {
             "path": ".htaccess",
@@ -14,7 +14,7 @@
         },
         {
             "path": "README.md",
-            "sha256": "3e6ad904ca338e899c0853907cb75e828a9574ab6e6b347d9f6027d51fad0f53"
+            "sha256": "d942a78720c83a74c3e3ca3ad5aed6459f002b2aaf972b93b3cd9785cd6f1eb4"
         },
         {
             "path": "VERSION",
