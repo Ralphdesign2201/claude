@@ -264,6 +264,12 @@ final class PortalController
             'lastCheckedAt' => $l['lastCheckedAt'],
             'changesLeft' => LicenseService::changesLeft($l),
             'rental' => $l['recurringId'] !== null,
+            'plan' => $l['plan'] !== null ? (\App\Services\Entitlements::PLANS[$l['plan']]['name'] ?? $l['plan']) : null,
+            'features' => \App\Services\Entitlements::features($l),
+            'supportUntil' => $l['supportUntil'],
+            'supportActive' => \App\Services\Entitlements::supportActive($l),
+            'updatesUntil' => $l['updatesUntil'],
+            'updatesActive' => \App\Services\Entitlements::updatesActive($l),
         ];
     }
 

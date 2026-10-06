@@ -41,6 +41,11 @@ final class CatalogController
         'licenseSubdomains' => ['type' => 'bool'],
         'licensePayFirst' => ['type' => 'bool'],
         'licenseDays' => ['type' => 'int', 'positive' => true, 'emptyOk' => true],
+        'licenseSlug' => ['max' => 40, 'emptyOk' => true],
+        'licensePlan' => ['enum' => ['starter', 'pro', 'agency'], 'emptyOk' => true],
+        'licenseFeatures' => ['max' => 200, 'emptyOk' => true],
+        'licenseSupportDays' => ['type' => 'int', 'emptyOk' => true],
+        'licenseUpdateDays' => ['type' => 'int', 'emptyOk' => true],
     ];
 
     private const PRODUCT_BOOLS = ['active', 'licenseEnabled', 'licenseSubdomains', 'licensePayFirst'];
@@ -238,8 +243,22 @@ final class CatalogController
         if (array_key_exists('categoryId', $data) && $data['categoryId'] !== null && !Db::find('Category', $data['categoryId'])) {
             $errors['categoryId'][] = 'Kategorie nicht gefunden';
         }
+        foreach (['licenseSupportDays', 'licenseUpdateDays'] as $f) {
+            if (isset($data[$f]) && ($data[$f] < 0 || $data[$f] > 36500)) {
+                $errors[$f][] = 'Erlaubt sind 0 bis 36500 Tage (0 = nicht enthalten, leer = unbegrenzt)';
+            }
+        }
+        if (isset($data['licenseSlug']) && $data['licenseSlug'] !== '' && !preg_match('/^[a-z0-9][a-z0-9-]{0,39}$/', $data['licenseSlug'])) {
+            $errors['licenseSlug'][] = 'Nur Kleinbuchstaben, Ziffern und Bindestriche (z. B. crm)';
+        }
         if ($errors !== []) {
             throw ApiError::badRequest('Validierungsfehler', ['formErrors' => [], 'fieldErrors' => (object) $errors]);
+        }
+        if (array_key_exists('licenseSlug', $data) && $data['licenseSlug'] === '') {
+            $data['licenseSlug'] = null;
+        }
+        if (array_key_exists('licenseFeatures', $data)) {
+            $data['licenseFeatures'] = \App\Services\Entitlements::normalize($data['licenseFeatures']);
         }
 
         if ($type !== 'RENTAL') {
@@ -254,6 +273,9 @@ final class CatalogController
             $data['licenseEnabled'] = false;
             $data['licenseSubdomains'] = false;
             $data['licenseDays'] = null;
+            foreach (['licenseSlug', 'licensePlan', 'licenseFeatures', 'licenseSupportDays', 'licenseUpdateDays'] as $f) {
+                $data[$f] = null;
+            }
         } elseif ($type === 'RENTAL') {
             $data['licenseDays'] = null;
         }

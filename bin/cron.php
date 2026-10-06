@@ -10,7 +10,13 @@ require __DIR__ . '/../src/bootstrap.php';
 use App\Services\BackupService;
 use App\Services\RecurringService;
 
-$results = RecurringService::runDue();
+if (App\Support\Product::enforced()) {
+    $license = App\Services\ProductLicense::state(true); // Lizenz einmal täglich frisch prüfen
+    if (!$license['valid']) {
+        echo 'Lizenz ungültig (' . App\Services\ProductLicense::message($license['reason']) . ") – Abos werden nicht abgerechnet.\n";
+    }
+}
+$results = App\Services\ProductLicense::feature('recurring') ? RecurringService::runDue() : [];
 
 if ($results === []) {
     echo "Keine fälligen Abos.\n";

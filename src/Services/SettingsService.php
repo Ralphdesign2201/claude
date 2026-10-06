@@ -69,6 +69,7 @@ final class SettingsService
                 $f('TICKET_AUTOCLOSE_DAYS', 'Gelöste Tickets schließen nach (Tage, 0 = nie)', 'int', ['min' => 0, 'max' => 365, 'default' => '7']),
                 $f('TICKET_PENDING_DAYS', '„Wartet auf Kunde“ als gelöst markieren nach (Tage, 0 = nie)', 'int', ['min' => 0, 'max' => 365, 'default' => '14']),
                 $f('TICKET_NOTIFY_EMAIL', 'Benachrichtigung über neue Tickets an', 'email', ['help' => 'Leer = Firmen-E-Mail. Der zugewiesene Mitarbeiter bekommt zusätzlich eine Mail.']),
+                $f('TICKET_REQUIRE_SUPPORT', 'Tickets zu einer Lizenz nur mit aktivem Support', 'bool', ['default' => 'true', 'help' => 'Ist der Support-Zeitraum einer Lizenz abgelaufen, können Kunden dazu keine Tickets mehr eröffnen (allgemeine Anfragen bleiben möglich).']),
                 $f('TICKET_ATTACHMENT_MB', 'Größe eines Anhangs (MB)', 'int', ['min' => 1, 'max' => 50, 'default' => '5', 'help' => 'Zusätzlich begrenzt durch die PHP-Einstellung upload_max_filesize deines Servers.']),
             ]],
             ['id' => 'license', 'title' => 'Lizenzen', 'fields' => [

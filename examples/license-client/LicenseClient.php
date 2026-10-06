@@ -26,11 +26,20 @@ final class LicenseClient
     public ?string $expiresAt = null;
     public ?string $product = null;
     public ?string $error = null;
+    public ?string $plan = null;
+    /** @var list<string> */
+    public array $features = [];
+    public ?string $supportUntil = null;
+    public ?string $updatesUntil = null;
+    public ?string $slug = null;
+    public ?string $issuedAt = null;
+    /** @var 'fresh'|'grace'|'none'|'network' wie das letzte Ergebnis zustande kam */
+    public string $source = 'none';
 
-    /** @param array{domain?:string,timeout?:int,maxSkew?:int} $options */
+    /** @param array{domain?:string,timeout?:int,maxSkew?:int,version?:string} $options  Der öffentliche Schlüssel darf auch eine Liste sein (Schlüsselwechsel). */
     public function __construct(
         private string $serverUrl,
-        private string $publicKey,
+        private string|array $publicKey,
         private string $licenseKey,
         private string $cacheFile,
         private array $options = [],
@@ -46,18 +55,20 @@ final class LicenseClient
     }
 
     /** Liefert true bei gültiger Lizenz. Nutzt den Zwischenspeicher und fragt den Server nur gelegentlich. */
-    public function check(): bool
+    public function check(bool $force = false): bool
     {
         $domain = $this->domain();
         $cache = $this->readCache($domain);
 
-        if ($cache !== null && $cache['valid'] && $cache['checkedAt'] + $cache['cacheHours'] * 3600 > time()) {
+        if (!$force && $cache !== null && $cache['valid'] && $cache['checkedAt'] + $cache['cacheHours'] * 3600 > time()) {
+            $this->source = 'fresh';
             return $this->apply($cache['payload']);
         }
 
         $result = $this->ask($domain);
         if ($result !== null) {
             $this->writeCache($domain, $result);
+            $this->source = 'network';
             return $this->apply($result);
         }
 
@@ -65,6 +76,7 @@ final class LicenseClient
         if ($cache !== null && $cache['valid']) {
             $until = $cache['checkedAt'] + ($cache['cacheHours'] * 3600) + ($cache['graceDays'] * 86400);
             if (time() < $until) {
+                $this->source = 'grace';
                 return $this->apply($cache['payload']);
             }
             $this->reason = 'offline';
@@ -72,6 +84,24 @@ final class LicenseClient
         }
         $this->reason = 'offline';
         return false;
+    }
+
+    /**
+     * Schaut nur in den Zwischenspeicher, ohne das Netz zu benutzen.
+     * Liefert 'fresh' (noch frisch), 'grace' (abgelaufen, aber innerhalb der Kulanzfrist) oder 'none'.
+     */
+    public function peek(): string
+    {
+        $cache = $this->readCache($this->domain());
+        if ($cache === null || !$cache['valid']) {
+            return $this->source = 'none';
+        }
+        $fresh = $cache['checkedAt'] + $cache['cacheHours'] * 3600 > time();
+        if ($fresh || time() < $cache['checkedAt'] + $cache['cacheHours'] * 3600 + $cache['graceDays'] * 86400) {
+            $this->apply($cache['payload']);
+            return $this->source = $fresh ? 'fresh' : 'grace';
+        }
+        return $this->source = 'none';
     }
 
     /** Beendet die Anfrage mit einer verständlichen Meldung, wenn die Lizenz nicht gültig ist. */
@@ -105,15 +135,41 @@ final class LicenseClient
         $this->reason = $payload['reason'] ?? null;
         $this->expiresAt = $payload['expiresAt'] ?? null;
         $this->product = $payload['product'] ?? null;
+        $this->plan = $payload['plan'] ?? null;
+        $this->features = is_array($payload['features'] ?? null) ? array_values($payload['features']) : [];
+        $this->supportUntil = $payload['supportUntil'] ?? null;
+        $this->updatesUntil = $payload['updatesUntil'] ?? null;
+        $this->slug = $payload['slug'] ?? null;
+        $this->issuedAt = $payload['issuedAt'] ?? null;
         return (bool) ($payload['valid'] ?? false);
     }
 
     /** @return array<string,mixed>|null geprüfte Nutzdaten oder null bei Netz-/Signaturfehler */
     private function ask(string $domain): ?array
     {
+        $payload = $this->signedRequest('/api/license/verify', [], null, $domain);
+        if ($payload !== null) {
+            $this->lastSigned = $this->lastResponse;
+        }
+        return $payload;
+    }
+
+    /** @var array{payload:string,signature:string}|null */
+    private ?array $lastResponse = null;
+
+    /**
+     * Sendet eine Anfrage an den Lizenzserver und prüft die signierte Antwort: Signatur, Zufallswert, Domain, Zeitstempel, Art.
+     * Gibt die geprüften Nutzdaten zurück oder null (Grund in $error).
+     *
+     * @param array<string,mixed> $fields zusätzliche Felder der Anfrage
+     * @return array<string,mixed>|null
+     */
+    public function signedRequest(string $path, array $fields = [], ?string $type = null, ?string $domain = null): ?array
+    {
+        $domain ??= $this->domain();
         $nonce = bin2hex(random_bytes(16));
-        $body = json_encode(['key' => $this->licenseKey, 'domain' => $domain, 'nonce' => $nonce]);
-        $raw = $this->post($this->serverUrl . '/api/license/verify', (string) $body);
+        $body = json_encode($fields + ['key' => $this->licenseKey, 'domain' => $domain, 'nonce' => $nonce, 'ts' => time(), 'version' => (string) ($this->options['version'] ?? '')]);
+        $raw = $this->post($this->serverUrl . $path, (string) $body);
         if ($raw === null) {
             return null;
         }
@@ -124,15 +180,13 @@ final class LicenseClient
         }
         $json = self::unb64($response['payload']);
         $signature = self::unb64($response['signature']);
-        $publicKey = base64_decode($this->publicKey, true);
-        if ($json === null || $signature === null || $publicKey === false || strlen($publicKey) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES
-            || strlen($signature) !== SODIUM_CRYPTO_SIGN_BYTES || !sodium_crypto_sign_verify_detached($signature, $json, $publicKey)) {
+        if ($json === null || $signature === null || !$this->signatureOk($json, $signature)) {
             $this->error = 'Signatur ungültig';
             return null;
         }
         $payload = json_decode($json, true);
-        if (!is_array($payload) || ($payload['v'] ?? null) !== 1 || ($payload['nonce'] ?? null) !== $nonce
-            || ($payload['domain'] ?? null) !== $this->normalizeForCompare($domain)) {
+        if (!is_array($payload) || !in_array($payload['v'] ?? null, [1, 2], true) || ($payload['nonce'] ?? null) !== $nonce
+            || ($payload['domain'] ?? null) !== $this->normalizeForCompare($domain) || ($payload['type'] ?? null) !== $type) {
             $this->error = 'Antwort passt nicht zur Anfrage';
             return null;
         }
@@ -141,8 +195,47 @@ final class LicenseClient
             $this->error = 'Uhrzeit weicht zu stark ab';
             return null;
         }
-        $this->lastSigned = ['payload' => $response['payload'], 'signature' => $response['signature']];
+        $this->lastResponse = ['payload' => $response['payload'], 'signature' => $response['signature']];
         return $payload;
+    }
+
+    /** Lädt eine Datei vom Lizenzserver (POST mit JSON-Body); gibt den Inhalt oder null zurück. */
+    public function fetch(string $path, array $fields, int $timeout = 120): ?string
+    {
+        $old = $this->options['timeout'] ?? null;
+        $this->options['timeout'] = $timeout;
+        try {
+            return $this->post($this->serverUrl . $path, (string) json_encode($fields));
+        } finally {
+            $old === null ? $this->options = array_diff_key($this->options, ['timeout' => 1]) : $this->options['timeout'] = $old;
+        }
+    }
+
+    /** Prüft eine beliebige Signatur (Base64URL) gegen die bekannten öffentlichen Schlüssel, z. B. die eines Release-Pakets. */
+    public function verifyRaw(string $data, string $signatureB64): bool
+    {
+        $sig = self::unb64($signatureB64);
+        return $sig !== null && $this->signatureOk($data, $sig);
+    }
+
+    /** Prüft die Ed25519-Signatur gegen alle bekannten öffentlichen Schlüssel (so ist ein Schlüsselwechsel möglich). */
+    private function signatureOk(string $json, string $signature): bool
+    {
+        if (strlen($signature) !== SODIUM_CRYPTO_SIGN_BYTES) {
+            return false;
+        }
+        foreach ((array) $this->publicKey as $key) {
+            $raw = base64_decode((string) $key, true);
+            if ($raw !== false && strlen($raw) === SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES && sodium_crypto_sign_verify_detached($signature, $json, $raw)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function hasFeature(string $feature): bool
+    {
+        return in_array($feature, $this->features, true);
     }
 
     private function normalizeForCompare(string $domain): string
@@ -210,9 +303,7 @@ final class LicenseClient
         // Die Signatur wird bei jedem Lesen erneut geprüft: Eine bearbeitete Zwischenspeicher-Datei ist wertlos.
         $json = self::unb64((string) $data['payload']);
         $signature = self::unb64((string) $data['signature']);
-        $publicKey = base64_decode($this->publicKey, true);
-        if ($json === null || $signature === null || $publicKey === false || strlen($signature) !== SODIUM_CRYPTO_SIGN_BYTES
-            || strlen($publicKey) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES || !sodium_crypto_sign_verify_detached($signature, $json, $publicKey)) {
+        if ($json === null || $signature === null || !$this->signatureOk($json, $signature)) {
             return null;
         }
         $payload = json_decode($json, true);

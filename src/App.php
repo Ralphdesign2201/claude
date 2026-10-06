@@ -19,6 +19,7 @@ use App\Controllers\NotesController;
 use App\Controllers\OrdersController;
 use App\Controllers\PortalAuthController;
 use App\Controllers\PortalController;
+use App\Controllers\ReleasesController;
 use App\Controllers\PortalSupportController;
 use App\Controllers\TicketsController;
 use App\Controllers\ProjectsController;
@@ -26,6 +27,7 @@ use App\Controllers\QuotesController;
 use App\Controllers\RecurringController;
 use App\Controllers\RemindersController;
 use App\Controllers\SettingsController;
+use App\Controllers\SystemController;
 use App\Controllers\TasksController;
 use App\Controllers\TimeEntriesController;
 use App\Controllers\UsersController;
@@ -68,6 +70,10 @@ final class App
                 return Response::json(['error' => 'Zu viele Anfragen – bitte später erneut versuchen'], 429)
                     ->withHeader('Retry-After', '900');
             }
+        }
+
+        if (str_starts_with($request->path, '/api') && \App\Support\Product::enforced()) {
+            \App\Support\ProductGate::check($request);
         }
 
         return self::router()->dispatch($request);
@@ -182,8 +188,16 @@ final class App
         $r->add('POST', '/api/portal/quotes/:id/decline', [PortalController::class, 'declineQuote'], $pub);
 
         $r->add('POST', '/api/license/verify', [LicenseApiController::class, 'verify'], $pub);
+        $r->add('POST', '/api/license/update-check', [LicenseApiController::class, 'updateCheck'], $pub);
+        $r->add('POST', '/api/license/download', [LicenseApiController::class, 'download'], $pub);
+        $r->add('GET', '/api/releases', [ReleasesController::class, 'index'], $admin);
+        $r->add('POST', '/api/releases', [ReleasesController::class, 'create'], $admin);
+        $r->add('PATCH', '/api/releases/:id', [ReleasesController::class, 'update'], $admin);
+        $r->add('DELETE', '/api/releases/:id', [ReleasesController::class, 'delete'], $admin);
+        $r->add('GET', '/api/releases/:id/file', [ReleasesController::class, 'file'], $admin);
         $r->add('GET', '/api/license/public-key', [LicenseApiController::class, 'publicKey'], $pub);
         $r->add('GET', '/license/client.php', [LicenseApiController::class, 'client'], $pub);
+        $r->add('GET', '/api/license-entitlements', [LicensesController::class, 'entitlements']);
         $r->add('GET', '/api/licenses', [LicensesController::class, 'index']);
         $r->add('POST', '/api/licenses', [LicensesController::class, 'create']);
         $r->add('GET', '/api/licenses/:id', [LicensesController::class, 'show']);
@@ -245,6 +259,11 @@ final class App
         $r->add('GET', '/api/portal/attachments/:attId', [PortalSupportController::class, 'attachment'], $pub);
         $r->add('GET', '/api/portal/faq', [PortalSupportController::class, 'faq'], $pub);
 
+        $r->add('GET', '/api/system/status', [SystemController::class, 'status'], $admin);
+        $r->add('POST', '/api/system/license/refresh', [SystemController::class, 'refresh'], $admin);
+        $r->add('POST', '/api/system/license/key', [SystemController::class, 'setKey'], $admin);
+        $r->add('POST', '/api/system/update/check', [SystemController::class, 'checkUpdate'], $admin);
+        $r->add('POST', '/api/system/update/install', [SystemController::class, 'installUpdate'], $admin);
         $r->add('GET', '/api/settings', [SettingsController::class, 'show']);
         $r->add('GET', '/api/settings/all', [SettingsController::class, 'all'], $admin);
         $r->add('PUT', '/api/settings/all', [SettingsController::class, 'save'], $admin);

@@ -24,6 +24,7 @@ final class SettingsController
         $co = DocumentPdf::company();
         return Response::json([
             'pendingOrders' => (int) Db::value('SELECT COUNT(*) FROM "ProductOrder" WHERE "status" = \'PENDING\''),
+            'license' => \App\Services\ProductLicense::publicState(),
             'newTickets' => \App\Services\TicketService::newCount(),
             'mailConfigured' => Mailer::configured(),
             'mailDriver' => Mailer::driver(),

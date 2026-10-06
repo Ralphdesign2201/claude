@@ -27,6 +27,10 @@
   var TYPES = { ONE_TIME: ['Einmalig', 'info'], RENTAL: ['Miete', 'good'], HOURLY: ['Nach Stunden', 'warn'] };
   var PERIOD = { MONTHLY: 'Monat', QUARTERLY: 'Quartal', HALF_YEARLY: 'Halbjahr', YEARLY: 'Jahr' };
   var ORDER_STATUS = { PENDING: ['Neu', 'warn'], ACCEPTED: ['Angenommen', 'good'], REJECTED: ['Abgelehnt', 'bad'], CANCELLED: ['Storniert', 'neutral'] };
+  var FEATURES = { support: 'Support-Tickets', shop: 'Shop & Bestellungen', recurring: 'Abos', licenses: 'Lizenzverkauf' };
+  var PLANS = [['', '– keins –'], ['starter', 'Starter'], ['pro', 'Pro'], ['agency', 'Agency']];
+  var featureBoxes = function (prefix, cur) { return Object.keys(FEATURES).map(function (k) { return '<label style="flex-direction:row;align-items:center;gap:6px;font-weight:400"><input type="checkbox" id="' + prefix + k + '" data-feat="' + k + '"' + (cur.indexOf(k) >= 0 ? ' checked' : '') + '> ' + FEATURES[k] + '</label>'; }).join(''); };
+  var featureVal = function (f, prefix) { return Object.keys(FEATURES).filter(function (k) { return f.querySelector('#' + prefix + k).checked; }).join(','); };
   var LICENSE_STATUS = { PENDING: ['Wartet auf Zahlung', 'warn'], ACTIVE: ['Aktiv', 'good'], SUSPENDED: ['Gesperrt', 'bad'], REVOKED: ['Widerrufen', 'bad'], EXPIRED: ['Abgelaufen', 'warn'] };
   var REASONS = { domain: 'falsche Domain', expired: 'abgelaufen', suspended: 'gesperrt', pending: 'noch nicht aktiv' };
   var priceText = function (p) {
@@ -72,7 +76,7 @@
   var listAll = function (path, params) { return api('GET', path + qs(Object.assign({ pageSize: 100 }, params || {}))).then(function (r) { return r.items; }); };
 
   /* ---------- Zustand ---------- */
-  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', newTickets: 0, company: '', ticketId: null, tview: 'open', tsearch: '', tprio: '', tcat: '', stab: 'tickets', tsel: [], sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
+  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', ltab: 'licenses', license: null, newTickets: 0, company: '', ticketId: null, tview: 'open', tsearch: '', tprio: '', tcat: '', stab: 'tickets', tsel: [], sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
 
   /* ---------- Rechnungs-Hilfen ---------- */
   function shownStatus(inv) {
@@ -114,9 +118,23 @@
   }
 
   /* ---------- Rahmen ---------- */
+  var NAV_FEATURE = { products: 'shop', orders: 'shop', support: 'support', licenses: 'licenses', recurring: 'recurring' };
+  function drawBanner() {
+    var main = $('#main'); if (!main) return;
+    var old = $('#lic-banner'); if (old) old.remove();
+    var l = ui.license;
+    if (!l || !l.enforced) return;
+    var html = '';
+    if (!l.valid) html = '<div class="errbox" id="lic-banner" role="alert"><span><b>Lizenz nicht gültig.</b> ' + esc(l.message || '') + ' Bis das behoben ist, sind Änderungen gesperrt – deine Daten bleiben les- und exportierbar.</span>' + (me && me.role === 'ADMIN' ? '<button class="btn" data-act="nav" data-v="settings">Lizenz prüfen</button>' : '') + '</div>';
+    else if (l.mode === 'grace') html = '<div class="demo" id="lic-banner"><span>' + esc(l.message) + '</span></div>';
+    else if (l.supportUntil && l.supportActive && (new Date(l.supportUntil).getTime() - Date.now()) < 30 * 864e5) html = '<div class="demo" id="lic-banner"><span>Dein Support- und Update-Zeitraum endet am <b>' + fdate(l.supportUntil) + '</b>.</span></div>';
+    if (html) main.insertAdjacentHTML('afterbegin', html);
+  }
   function navItems() {
     var n = [['dashboard', 'Dashboard'], ['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['support', 'Support'], ['licenses', 'Lizenzen'], ['projects', 'Projekte'], ['times', 'Zeiten'], ['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']];
     if (me && me.role === 'ADMIN') n.push(['team', 'Team']);
+    var l = ui.license;
+    if (l && l.enforced) n = n.filter(function (x) { return !NAV_FEATURE[x[0]] || (l.valid && l.features.indexOf(NAV_FEATURE[x[0]]) >= 0); });
     return n;
   }
   function renderShell() {
@@ -149,6 +167,9 @@
   function refreshBadge() {
     api('GET', '/api/settings').then(function (st) {
       ui.company = st.company && st.company.name || ui.company;
+      var licChanged = JSON.stringify(st.license) !== JSON.stringify(ui.license);
+      ui.license = st.license || null;
+      if (licChanged) { drawNav(); drawBanner(); }
       if ((st.pendingOrders !== ui.pending || st.newTickets !== ui.newTickets) && $('#nav')) { ui.pending = st.pendingOrders; ui.newTickets = st.newTickets || 0; drawNav(); }
     }).catch(function () { /* Badge ist optional */ });
   }
@@ -535,13 +556,57 @@
   }
   var settingsFile = 'database/settings.json';
 
+  function systemCard(sys) {
+    var l = sys.license;
+    if (!l.enforced) return '<section class="card stack" id="sec-system"><h2>Version</h2><p style="margin:0">Webdesigner CRM <b>' + esc(l.version) + '</b> – Server-/Entwicklungsinstallation ohne Produktlizenz.</p></section>';
+    var up = sys.update || {};
+    return '<section class="card stack" id="sec-system"><h2>Lizenz &amp; Updates</h2>' +
+      '<div class="row" style="align-items:center">' + (l.valid ? '<span class="pill good">Lizenz gültig</span>' : '<span class="pill bad">Lizenz ungültig</span>') + (l.mode === 'grace' ? ' <span class="pill warn">Server nicht erreichbar – Kulanzfrist</span>' : '') + '</div>' +
+      (l.message ? '<div class="note ' + (l.valid ? 'ok' : 'err') + '">' + esc(l.message) + '</div>' : '') +
+      '<dl class="kv"><dt>Produkt</dt><dd>' + esc(l.name) + ' <span class="mono sub">' + esc(l.slug) + '</span></dd><dt>Version</dt><dd><b>' + esc(l.version) + '</b></dd>' +
+      '<dt>Paket</dt><dd>' + (l.plan ? esc(l.plan) : '–') + '</dd>' +
+      '<dt>Funktionen</dt><dd>' + (l.features.length ? l.features.map(function (k) { return '<span class="tag">' + esc(FEATURES[k] || k) + '</span>'; }).join(' ') : '<span class="sub">keine zusätzlichen</span>') + '</dd>' +
+      '<dt>Support</dt><dd>' + (l.valid ? (l.supportUntil ? 'bis ' + fdate(l.supportUntil) : 'unbegrenzt') + ' ' + (l.supportActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') : '–') + '</dd>' +
+      '<dt>Updates</dt><dd>' + (l.valid ? (l.updatesUntil ? 'für Versionen bis ' + fdate(l.updatesUntil) : 'unbegrenzt') + ' ' + (l.updatesActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') : '–') + '</dd>' +
+      '<dt>Zuletzt geprüft</dt><dd>' + (l.checkedAt ? ftime(l.checkedAt) : '–') + '</dd></dl>' +
+      '<div class="row"><button class="btn" data-act="lic-refresh">Jetzt prüfen</button><button class="btn" data-act="lic-key">Lizenzschlüssel ändern</button>' + (l.valid && l.supportActive ? '<a class="btn" href="' + esc(l.server) + '/portal" target="_blank" rel="noopener">Support beim Hersteller</a>' : '') + '</div>' +
+      '<h3 style="margin:8px 0 0;font-size:14px">Updates</h3><div class="row" style="align-items:center"><button class="btn primary" data-act="upd-check"' + (l.valid ? '' : ' disabled') + '>Nach Updates suchen</button><span class="sub">Eingespielt wird erst nach Sicherung, Signatur- und Prüfsummenprüfung – bei Fehlern automatisch zurückgenommen.' + (up.checkedAt ? ' Zuletzt gesucht: ' + ftime(up.checkedAt) + '.' : '') + '</span></div><div id="upd-result"></div>' +
+      (sys.history.length ? '<div class="sub"><b>Bisherige Updates:</b> ' + sys.history.slice(0, 5).map(function (h) { return esc(h.from) + ' → ' + esc(h.to) + ' (' + fdate(h.at) + ')'; }).join(' · ') + '</div>' : '') + '</section>';
+  }
+  function licenseKeyDialog() {
+    modal('Lizenzschlüssel ändern', '<div class="form">' + field('lk-key', 'Neuer Lizenzschlüssel', '', 'text', { full: true, attrs: 'autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"' }) + '</div><div class="sub">Er wird geprüft, bevor er gespeichert wird. Die Lizenz muss für diese Domain (' + esc(location.hostname) + ') gelten.</div>', 'Prüfen und speichern', function (f) {
+      if (!v(f, 'lk-key')) return bad('Bitte den Schlüssel eingeben.');
+      return api('POST', '/api/system/license/key', { key: v(f, 'lk-key') }).then(function () { done('Lizenz gespeichert'); });
+    });
+  }
+  function updateCheck(btn) {
+    var box = $('#upd-result'); btn.disabled = true; box.innerHTML = '<span class="sub">Suche …</span>';
+    api('POST', '/api/system/update/check', {}).then(function (r) {
+      btn.disabled = false;
+      if (!r.latest) { box.innerHTML = '<div class="note ok">Du hast die neueste Version (' + esc(r.current) + ').</div>'; return; }
+      box.innerHTML = '<div class="card" style="background:var(--surface-2)"><b>Version ' + esc(r.latest.version) + '</b> ist verfügbar (du hast ' + esc(r.current) + ') <span class="sub">· ' + fdate(r.latest.releasedAt) + ' · ' + fsize(r.latest.size) + (r.latest.channel === 'beta' ? ' · Beta' : '') + '</span>' +
+        (r.latest.notes ? '<div style="white-space:pre-wrap;margin:8px 0">' + esc(r.latest.notes) + '</div>' : '') +
+        (r.entitled ? '<button class="btn primary" data-act="upd-install">Jetzt installieren</button>' : '<div class="note err">Diese Version erschien nach dem Ende deines Update-Zeitraums' + (r.updatesUntil ? ' (' + fdate(r.updatesUntil) + ')' : '') + '. Mit einer Verlängerung bekommst du sie.</div>') + '</div>';
+    }).catch(function (err) { btn.disabled = false; box.innerHTML = '<div class="note err">' + esc(err.message) + '</div>'; });
+  }
+  function updateInstall(btn) {
+    confirmDialog('Vor dem Einspielen werden Code und Daten gesichert. Bitte in den nächsten Sekunden nichts bearbeiten. Bei einem Fehler wird automatisch zurückgerollt.', 'Update installieren', function () {
+      btn.disabled = true;
+      return api('POST', '/api/system/update/install', {}).then(function (r) {
+        toast('Update ' + r.from + ' → ' + r.to + ' eingespielt – die Seite lädt neu …');
+        setTimeout(function () { location.reload(); }, 1500);
+      }).catch(function (err) { btn.disabled = false; throw err; });
+    });
+  }
+
   function vSettings() {
-    return api('GET', '/api/settings/all').then(function (res) {
+    return Promise.all([api('GET', '/api/settings/all'), api('GET', '/api/system/status')]).then(function (all) {
+      var res = all[0], sys = all[1];
       settingsFile = res.file || settingsFile;
-      var chips = res.groups.map(function (g) { return [g.id, g.title]; }).concat([['database', 'Datenbank']]);
+      var chips = [['system', sys.license.enforced ? 'Lizenz & Updates' : 'Version']].concat(res.groups.map(function (g) { return [g.id, g.title]; })).concat([['database', 'Datenbank']]);
       return head('Einstellungen', 'Firmendaten, E-Mail, Portal und Datenbank – alles an einem Ort. Änderungen gelten sofort.') +
         '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="set-jump" data-v="' + c[0] + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
-        res.groups.map(function (g) { return settingsCard(g, res.mail); }).join('') + dbCard(res.database);
+        systemCard(sys) + res.groups.map(function (g) { return settingsCard(g, res.mail); }).join('') + dbCard(res.database);
     });
   }
 
@@ -746,10 +811,30 @@
     }).catch(fail);
   }
 
+  function ltabs() {
+    if (me.role !== 'ADMIN') return '';
+    return '<div class="chips" style="margin-bottom:-6px">' + [['licenses', 'Lizenzen'], ['releases', 'Releases & Updates']].map(function (c) { return '<button class="chip" data-act="ltab" data-v="' + c[0] + '" aria-pressed="' + (ui.ltab === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>';
+  }
+  function vReleases() {
+    return api('GET', '/api/releases').then(function (list) {
+      return head('Lizenzen', 'Update-Pakete für deine Software. Nur Lizenzen mit gültigem Update-Zeitraum können sie laden.') + ltabs() +
+        '<form class="card stack" id="relform" novalidate><h2>Neue Version hochladen</h2><div class="sub">Paket bauen: <span class="mono">php Lizenz-tools/build-release.php crm</span> – es liegt danach unter <span class="mono">Lizenz-tools/releases/</span>. Der Server prüft das Paket und signiert es mit deinem geheimen Lizenzschlüssel.</div>' +
+        '<div class="form"><label class="full">Paket (ZIP)<input id="rel-file" type="file" accept=".zip"></label>' + selectField('rel-channel', 'Kanal', [['stable', 'Stabil'], ['beta', 'Beta (nur wer es wünscht)']], 'stable') +
+        '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="rel-pub" type="checkbox" checked> Sofort veröffentlichen</label><label class="full" for="rel-notes">Änderungen (Kunden sehen das vor dem Update)<textarea id="rel-notes" rows="4" placeholder="• Neu: …&#10;• Behoben: …"></textarea></label></div>' +
+        '<div><button type="submit" class="btn primary" id="rel-send">Hochladen und signieren</button></div></form>' +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Produkt</th><th>Version</th><th>Kanal</th><th>Status</th><th class="r">Größe</th><th class="r">Downloads</th><th>Datum</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (r) {
+          return '<tr><td class="mono">' + esc(r.product) + '</td><td><b>' + esc(r.version) + '</b>' + (r.notes ? '<div class="sub" style="white-space:pre-wrap;max-width:360px">' + esc(r.notes.length > 140 ? r.notes.slice(0, 140) + '…' : r.notes) + '</div>' : '') + '</td><td>' + (r.channel === 'beta' ? '<span class="pill warn">Beta</span>' : 'Stabil') + '</td><td>' + (r.published ? '<span class="pill good">Veröffentlicht</span>' : '<span class="pill neutral">Entwurf</span>') + '</td><td class="r num">' + fsize(r.size) + '</td><td class="r num">' + r.downloads + '</td><td>' + fdate(r.releasedAt) + '</td>' +
+            '<td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="rel-toggle" data-id="' + esc(r.id) + '" data-pub="' + (r.published ? '1' : '0') + '">' + (r.published ? 'Zurückziehen' : 'Veröffentlichen') + '</button><button class="btn sm ghost" data-act="rel-dl" data-id="' + esc(r.id) + '">Laden</button><button class="btn sm ghost danger" data-act="rel-del" data-id="' + esc(r.id) + '">Löschen</button></div></td></tr>';
+        }).join('') : '<tr><td colspan="8" class="empty">Noch keine Releases.</td></tr>') + '</tbody></table></div></div>' +
+        '<p class="sub">Die Software prüft jede Version mit dem eingebauten öffentlichen Schlüssel, bevor sie sie einspielt. Ein Update erhält nur, wer bei Erscheinen der Version noch Update-Anspruch hatte.</p>';
+    });
+  }
+
   function vLicenses() {
+    if (ui.ltab === 'releases' && me.role === 'ADMIN') return vReleases();
     return api('GET', '/api/licenses' + qs({ pageSize: 100, status: ui.lstatus, search: ui.lsearch })).then(function (res) {
       var chips = [['', 'Alle']].concat(opts(LICENSE_STATUS));
-      return head('Lizenzen', 'Domain-Lizenzen für verkaufte Software. Die Software fragt den Schlüssel bei deinem CRM ab.', '<button class="btn primary" data-act="new-license">+ Lizenz ausstellen</button>') +
+      return head('Lizenzen', 'Domain-Lizenzen für verkaufte Software. Die Software fragt den Schlüssel bei deinem CRM ab.', '<button class="btn primary" data-act="new-license">+ Lizenz ausstellen</button>') + ltabs() +
         '<div class="row"><input id="lq" type="search" placeholder="Suchen (Schlüssel, Domain, Produkt)" value="' + esc(ui.lsearch) + '" aria-label="Lizenzen suchen" style="max-width:360px"></div>' +
         '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="lfilter" data-v="' + c[0] + '" aria-pressed="' + (ui.lstatus === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>' +
         '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Domain</th><th>Produkt</th><th>Kunde</th><th>Gültig bis</th><th>Status</th></tr></thead><tbody>' + (res.items.length ? res.items.map(function (l) {
@@ -767,18 +852,27 @@
         '<dt>Status</dt><dd>' + pill(LICENSE_STATUS, l.effectiveStatus) + '</dd>' +
         (l.order ? '<dt>Bestellung</dt><dd>' + esc(l.order.number) + '</dd>' : '') + (l.invoice ? '<dt>Rechnung</dt><dd>' + esc(l.invoice.number) + ' (' + (INVOICE_STATUS[l.invoice.status] || [l.invoice.status])[0] + ')</dd>' : '') +
         (l.paidThrough ? '<dt>Bezahlt bis</dt><dd>' + fdate(l.paidThrough) + '</dd>' : '') + '<dt>Letzte Prüfung</dt><dd>' + (l.lastCheckedAt ? ftime(l.lastCheckedAt) + ' (' + l.checkCount + ' Prüfungen)' : 'noch nie') + '</dd>' +
-        '<dt>Domainwechsel</dt><dd>' + l.domainChanges + ' vom Kunden</dd></dl>';
+        '<dt>Domainwechsel</dt><dd>' + l.domainChanges + ' vom Kunden</dd>' +
+        (l.slug ? '<dt>Produkt-Kennung</dt><dd class="mono">' + esc(l.slug) + '</dd>' : '') + (l.plan ? '<dt>Paket</dt><dd>' + esc(l.plan) + '</dd>' : '') +
+        '<dt>Funktionen</dt><dd>' + (l.resolvedFeatures.length ? l.resolvedFeatures.map(function (k) { return '<span class="tag">' + esc(FEATURES[k] || k) + '</span>'; }).join(' ') : '<span class="sub">keine</span>') + '</dd>' +
+        '<dt>Support</dt><dd>' + (l.supportUntil ? 'bis ' + fdate(l.supportUntil) : 'unbegrenzt') + ' ' + (l.supportActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') + '</dd>' +
+        '<dt>Updates</dt><dd>' + (l.updatesUntil ? 'für Versionen bis ' + fdate(l.updatesUntil) : 'unbegrenzt') + ' ' + (l.updatesActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') + '</dd></dl>';
       var lists = (l.payments.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Bezahlte Rechnungen</h3><div class="sub">' + l.payments.map(function (x) { return esc(x.invoice.number) + ' (' + fdate(x.createdAt) + ')'; }).join(' · ') + '</div>' : '') +
+        (l.hosts && l.hosts.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Benutzt auf</h3><div class="sub">' + l.hosts.map(function (x) { return esc(x.domain) + (x.version ? ' (v' + esc(x.version) + ')' : '') + ' – ' + x.checks + '× geprüft, zuletzt ' + ago(x.lastSeenAt); }).join('<br>') + (l.hosts.filter(function (x) { return !/(^localhost$|\.test$|\.local$|^127\.)/.test(x.domain); }).length > 1 ? '<br><b style="color:var(--warn)">Achtung: mehrere echte Domains – wurde der Schlüssel weitergegeben?</b>' : '') + '</div>' : '') +
         (l.attempts.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Abgelehnte Prüfungen</h3><div class="sub">' + l.attempts.slice(0, 8).map(function (x) { return esc(x.domain) + ' – ' + (REASONS[x.reason] || x.reason) + ' (' + ftime(x.createdAt) + ')'; }).join('<br>') + '</div>' : '');
       modal('Lizenz ' + esc(l.domain), info +
         '<div class="form" style="margin-top:14px">' + field('ldomain', 'Domain', l.domain, 'text', { attrs: 'autocapitalize="off" spellcheck="false"' }) +
         selectField('lstatus', 'Status', [['ACTIVE', 'Aktiv'], ['SUSPENDED', 'Gesperrt'], ['REVOKED', 'Widerrufen']].concat(l.status === 'PENDING' ? [['PENDING', 'Wartet auf Zahlung']] : []), l.status) +
         field('luntil', 'Gültig bis (leer = unbefristet)', l.validUntil ? l.validUntil.slice(0, 10) : '', 'date') +
         '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="lsubs" type="checkbox"' + (l.subdomains ? ' checked' : '') + '> Subdomains einschließen</label>' +
+        field('lslug', 'Produkt-Kennung', l.slug || '', 'text', { attrs: 'maxlength="40" autocapitalize="off" placeholder="crm"' }) + selectField('lplan', 'Paket', PLANS, l.plan || '') +
+        field('lsup', 'Support bis (leer = unbegrenzt)', l.supportUntil ? l.supportUntil.slice(0, 10) : '', 'date') + field('lupd', 'Updates bis (leer = unbegrenzt)', l.updatesUntil ? l.updatesUntil.slice(0, 10) : '', 'date') +
+        '<div class="full"><span class="sub">Funktionen (leer lassen = das Paket bestimmt)</span><div class="row" style="gap:14px;margin-top:4px">' + featureBoxes('lf-', String(l.features || '').split(',')) + '</div></div>' +
         '<label class="full" for="lnote">Notiz (intern)<textarea id="lnote" rows="2">' + esc(l.note || '') + '</textarea></label></div>' + lists +
         '<div class="row" style="margin-top:12px"><button type="button" class="btn sm" data-act="license-send" data-id="' + esc(l.id) + '">Schlüssel per E-Mail senden</button><button type="button" class="btn sm ghost danger" data-act="license-regen" data-id="' + esc(l.id) + '">Neuen Schlüssel erzeugen</button><button type="button" class="btn sm ghost danger" data-act="license-del" data-id="' + esc(l.id) + '">Löschen</button></div>', 'Speichern',
         function (f) {
-          var body = { domain: v(f, 'ldomain'), subdomains: f.querySelector('#lsubs').checked, validUntil: v(f, 'luntil') ? v(f, 'luntil') + 'T23:59:59.000Z' : '', note: f.querySelector('#lnote').value.trim() };
+          var body = { domain: v(f, 'ldomain'), subdomains: f.querySelector('#lsubs').checked, validUntil: v(f, 'luntil') ? v(f, 'luntil') + 'T23:59:59.000Z' : '', note: f.querySelector('#lnote').value.trim(),
+            slug: v(f, 'lslug'), plan: v(f, 'lplan'), features: featureVal(f, 'lf-'), supportUntil: v(f, 'lsup') ? v(f, 'lsup') + 'T23:59:59.000Z' : '', updatesUntil: v(f, 'lupd') ? v(f, 'lupd') + 'T23:59:59.000Z' : '' };
           if (!body.domain) return bad('Bitte eine Domain eingeben.');
           if (v(f, 'lstatus') !== 'PENDING') body.status = v(f, 'lstatus');
           return api('PATCH', '/api/licenses/' + l.id, body).then(function () { done('Lizenz gespeichert'); });
@@ -845,6 +939,7 @@
       if (mine !== seq) return;
       var focusId = document.activeElement && document.activeElement.id === 'q', focusL = document.activeElement && document.activeElement.id === 'lq';
       main.innerHTML = html;
+      drawBanner();
       if (focusL) { var lq = $('#lq'); if (lq) { lq.focus(); lq.setSelectionRange(lq.value.length, lq.value.length); } }
       if (focusId) { var q = $('#q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
     }).catch(function (err) {
@@ -1084,7 +1179,11 @@
         '<div class="form full" id="licOpts" style="padding:0 0 0 24px">' + '<label style="flex-direction:row;align-items:center;gap:8px"><input id="psubs" type="checkbox"' + (prod.licenseSubdomains ? ' checked' : '') + '> Subdomains der Domain einschließen</label>' +
         '<label style="flex-direction:row;align-items:center;gap:8px"><input id="ppayfirst" type="checkbox"' + (prod.licensePayFirst !== false ? ' checked' : '') + '> Lizenz erst nach bezahlter Rechnung freischalten</label>' +
         '<span id="pdaysw">' + field('pdays', 'Gültigkeit in Tagen (leer = unbefristet)', prod.licenseDays || '', 'number', { attrs: 'min="1" step="1"' }) + '</span>' +
-        '<div class="sub full" id="licNote">Bei Mietprodukten gilt die Lizenz, solange die Abo-Rechnungen bezahlt werden (plus Kulanzfrist).</div></div></div>' +
+        '<div class="sub full" id="licNote">Bei Mietprodukten gilt die Lizenz, solange die Abo-Rechnungen bezahlt werden (plus Kulanzfrist). Support und Updates laufen dann mit der Miete.</div>' +
+        field('pslug', 'Produkt-Kennung (für Updates, z. B. crm)', prod.licenseSlug || '', 'text', { attrs: 'maxlength="40" autocapitalize="off" placeholder="crm"' }) + selectField('pplan', 'Paket', PLANS, prod.licensePlan || '') +
+        '<div class="full"><span class="sub">Funktionen der Software (leer lassen = das Paket bestimmt)</span><div class="row" style="gap:14px;margin-top:4px">' + featureBoxes('pf-', String(prod.licenseFeatures || '').split(',')) + '</div></div>' +
+        field('psup', 'Support in Tagen (leer = unbegrenzt, 0 = nicht enthalten)', prod.licenseSupportDays == null ? '' : prod.licenseSupportDays, 'number', { attrs: 'min="0" step="1"' }) +
+        field('pupd', 'Updates in Tagen (leer = unbegrenzt, 0 = nicht enthalten)', prod.licenseUpdateDays == null ? '' : prod.licenseUpdateDays, 'number', { attrs: 'min="0" step="1"' }) + '</div></div>' +
         '<label class="full" for="pdesc">Beschreibung (im Portal sichtbar)<textarea id="pdesc" rows="3">' + esc(prod.description || '') + '</textarea></label>' +
         field('psort', 'Reihenfolge', prod.sortOrder, 'number', { attrs: 'step="1"' }) + '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="pactive" type="checkbox"' + (prod.active ? ' checked' : '') + '> Im Portal bestellbar</label></div>', 'Speichern',
         function (f) {
@@ -1093,7 +1192,9 @@
           if (isNaN(price) || price < 0) return bad('Bitte einen Preis ab 0 eingeben.');
           var body = { name: v(f, 'pname'), categoryId: v(f, 'pcat'), type: v(f, 'ptype'), price: price, taxRate: num(f, 'ptax'), description: f.querySelector('#pdesc').value.trim(), unit: v(f, 'punit'), minQuantity: num(f, 'pmin'), sortOrder: parseInt(v(f, 'psort'), 10) || 0, active: f.querySelector('#pactive').checked };
           body.licenseEnabled = body.type !== 'HOURLY' && f.querySelector('#plic').checked;
-          if (body.licenseEnabled) { body.licenseSubdomains = f.querySelector('#psubs').checked; body.licensePayFirst = f.querySelector('#ppayfirst').checked; body.licenseDays = body.type === 'ONE_TIME' && v(f, 'pdays') ? parseInt(v(f, 'pdays'), 10) : ''; }
+          if (body.licenseEnabled) { body.licenseSubdomains = f.querySelector('#psubs').checked; body.licensePayFirst = f.querySelector('#ppayfirst').checked; body.licenseDays = body.type === 'ONE_TIME' && v(f, 'pdays') ? parseInt(v(f, 'pdays'), 10) : '';
+            body.licenseSlug = v(f, 'pslug'); body.licensePlan = v(f, 'pplan'); body.licenseFeatures = featureVal(f, 'pf-');
+            body.licenseSupportDays = v(f, 'psup') === '' ? '' : parseInt(v(f, 'psup'), 10); body.licenseUpdateDays = v(f, 'pupd') === '' ? '' : parseInt(v(f, 'pupd'), 10); }
           if (body.type === 'RENTAL') { body.intervalUnit = v(f, 'pint'); body.setupFee = num(f, 'psetup') || 0; }
           return (prod.id ? api('PATCH', '/api/products/' + prod.id, body) : api('POST', '/api/products', body)).then(function () {
             // Das gespeicherte Produkt soll sichtbar sein: den Filter auf seine Kategorie umstellen, falls ein anderer aktiv ist
@@ -1334,6 +1435,14 @@
       case 'tk-quick': return ticketAction('/' + ui.ticketId, 'PATCH', { status: el.dataset.v }).then(function () { done('Status geändert'); }).catch(fail);
       case 'del-ticket': return confirmDialog('Das Ticket wird samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('DELETE', '/api/tickets/' + id).then(function () { go('support'); toast('Ticket gelöscht'); }); });
       case 'bulk-delete': return confirmDialog(ui.tsel.length + ' Ticket(s) werden samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('POST', '/api/tickets/bulk', { ids: ui.tsel, action: 'delete' }).then(function () { ui.tsel = []; done('Gelöscht'); }); });
+      case 'ltab': ui.ltab = el.dataset.v; return render();
+      case 'rel-toggle': return api('PATCH', '/api/releases/' + id, { published: el.dataset.pub !== '1' }).then(function () { done(el.dataset.pub === '1' ? 'Zurückgezogen' : 'Veröffentlicht'); }).catch(fail);
+      case 'rel-dl': return downloadPdf(el, '/api/releases/' + id + '/file');
+      case 'rel-del': return confirmDialog('Die Version wird gelöscht. Wer sie schon geladen hat, behält sie; neue Downloads sind nicht mehr möglich.', 'Löschen', function () { return api('DELETE', '/api/releases/' + id).then(function () { done('Gelöscht'); }); });
+      case 'lic-refresh': el.disabled = true; return api('POST', '/api/system/license/refresh', {}).then(function () { done('Lizenz geprüft'); }).catch(function (err) { el.disabled = false; toast(err.message); });
+      case 'lic-key': return licenseKeyDialog();
+      case 'upd-check': return updateCheck(el);
+      case 'upd-install': return updateInstall(el);
       case 'lfilter': ui.lstatus = el.dataset.v; return render();
       case 'open-license': return licenseDialog(id);
       case 'new-license': return newLicenseDialog();
@@ -1421,6 +1530,14 @@
   });
   document.addEventListener('keydown', function (e) {
     if (e.target.id === 'tk-body' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#tk-reply').requestSubmit(); }
+  });
+  document.addEventListener('submit', function (e) {
+    if (e.target.id !== 'relform') return;
+    e.preventDefault();
+    var file = $('#rel-file').files[0]; if (!file) return toast('Bitte das Release-Paket (ZIP) auswählen.');
+    var fd = new FormData(); fd.append('file', file); fd.append('channel', $('#rel-channel').value); fd.append('notes', $('#rel-notes').value.trim()); fd.append('published', $('#rel-pub').checked ? 'true' : 'false');
+    var btn = $('#rel-send'); btn.disabled = true;
+    api('POST', '/api/releases', fd, true).then(function (r) { done('Version ' + r.version + ' hochgeladen und signiert'); }).catch(function (err) { btn.disabled = false; toast(err.message); });
   });
   document.addEventListener('submit', function (e) {
     if (e.target.id !== 'tk-reply') return;

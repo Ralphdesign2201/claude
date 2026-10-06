@@ -11,6 +11,7 @@ use App\Support\Activity;
 use App\Support\Dates;
 use App\Support\Db;
 use App\Support\Env;
+use App\Support\RateLimit;
 use DateTimeImmutable;
 use DateTimeZone;
 use RuntimeException;
@@ -159,6 +160,11 @@ final class LicenseService
             'recurringId' => $recurringId,
             'intervalUnit' => $rental ? $order['intervalUnit'] : null,
             'licenseDays' => $rental ? null : $order['licenseDays'],
+            'slug' => $order['productId'] ? Db::value('SELECT "licenseSlug" FROM "Product" WHERE "id" = ?', [$order['productId']]) : null,
+            'plan' => $order['licensePlan'] ?? null,
+            'features' => $order['licenseFeatures'] ?? null,
+            'supportDays' => $order['licenseSupportDays'] ?? null,
+            'updateDays' => $order['licenseUpdateDays'] ?? null,
             'status' => $payFirst ? 'PENDING' : 'ACTIVE',
         ];
         if ($rental) {
@@ -232,8 +238,12 @@ final class LicenseService
             }
             $fields['paidThrough'] = $paid;
             $fields['validUntil'] = (new DateTimeImmutable($paid))->modify('+' . self::graceDays() . ' days')->format(Dates::FORMAT);
+            $fields += Entitlements::dates($license, $fields['activatedAt'], $paid, true); // Support und Updates laufen mit der Miete
         } elseif (($license['validUntil'] ?? null) === null && ($license['licenseDays'] ?? null) !== null && ($license['activatedAt'] ?? null) === null) {
             $fields['validUntil'] = (new DateTimeImmutable($now))->modify('+' . (int) $license['licenseDays'] . ' days')->format(Dates::FORMAT);
+        }
+        if (($license['recurringId'] ?? null) === null && ($license['activatedAt'] ?? null) === null) {
+            $fields += Entitlements::dates($license, $fields['activatedAt'], null, false); // Einmalkauf: Zeiträume beginnen mit der Freischaltung
         }
         return $fields;
     }
@@ -261,6 +271,10 @@ final class LicenseService
             [$id],
         );
         $l['attempts'] = Db::all('SELECT "domain", "reason", "createdAt" FROM "LicenseAttempt" WHERE "licenseId" = ? ORDER BY "createdAt" DESC LIMIT 20', [$id]);
+        $l['hosts'] = Db::all('SELECT "domain", "version", "checks", "firstSeenAt", "lastSeenAt" FROM "LicenseHost" WHERE "licenseId" = ? ORDER BY "lastSeenAt" DESC LIMIT 20', [$id]);
+        $l['resolvedFeatures'] = Entitlements::features($l);
+        $l['supportActive'] = Entitlements::supportActive($l);
+        $l['updatesActive'] = Entitlements::updatesActive($l);
         return $l;
     }
 
@@ -323,7 +337,12 @@ final class LicenseService
      *
      * @return array{payload:string,signature:string}
      */
-    public static function verify(string $key, string $domain, string $nonce): array
+    /**
+     * Schlägt Schlüssel und Domain nach und nennt den Ablehnungsgrund (null = gültig).
+     *
+     * @return array{license:?array<string,mixed>,reason:?string,domain:?string}
+     */
+    public static function lookup(string $key, string $domain): array
     {
         $normalizedDomain = self::normalizeDomain($domain);
         $normalizedKey = self::normalizeKey($key);
@@ -350,8 +369,32 @@ final class LicenseService
             }
         }
 
+        return ['license' => $license, 'reason' => $reason, 'domain' => $normalizedDomain];
+    }
+
+    /** Zählt die Prüfung pro Lizenz (Schutz vor auffällig häufigen Anfragen). */
+    public static function throttle(array $license): void
+    {
+        if (RateLimit::hit('licid:' . $license['id'], 3600) > max(10, Env::int('LICENSE_MAX_CHECKS_HOUR', 120))) {
+            throw new ApiError(429, 'Dieser Lizenzschlüssel wird auffällig oft geprüft – bitte später erneut versuchen.');
+        }
+    }
+
+    /**
+     * Prüft Schlüssel und Domain und liefert die signierte Antwort.
+     *
+     * @return array{payload:string,signature:string}
+     */
+    public static function verify(string $key, string $domain, string $nonce, ?string $appVersion = null): array
+    {
+        ['license' => $license, 'reason' => $reason, 'domain' => $normalizedDomain] = self::lookup($key, $domain);
+
+        if ($license !== null) {
+            self::throttle($license);
+        }
         if ($license !== null) {
             if ($reason === null) {
+                self::noteHost($license['id'], $normalizedDomain ?? '', $appVersion);
                 if ($license['lastCheckedAt'] === null || $license['lastCheckedAt'] < gmdate(Dates::FORMAT, time() - 60)) {
                     Db::run('UPDATE "License" SET "lastCheckedAt" = ?, "checkCount" = "checkCount" + 1 WHERE "id" = ?', [Dates::now(), $license['id']]);
                 }
@@ -363,13 +406,20 @@ final class LicenseService
             }
         }
 
+        $ok = $reason === null && $license !== null;
         return self::sign([
-            'v' => 1,
+            'v' => 2,
+            'kid' => self::keyId(),
             'valid' => $reason === null,
             'reason' => $reason,
-            'product' => $reason === null && $license !== null ? $license['productName'] : null,
+            'product' => $ok ? $license['productName'] : null,
             'domain' => $normalizedDomain,
-            'expiresAt' => $reason === null && $license !== null ? $license['validUntil'] : null,
+            'slug' => $ok ? $license['slug'] : null,
+            'plan' => $ok ? $license['plan'] : null,
+            'features' => $ok ? Entitlements::features($license) : [],
+            'supportUntil' => $ok ? $license['supportUntil'] : null,
+            'updatesUntil' => $ok ? $license['updatesUntil'] : null,
+            'expiresAt' => $ok ? $license['validUntil'] : null,
             'issuedAt' => Dates::now(),
             'nonce' => mb_substr($nonce, 0, 128),
             'cacheHours' => max(1, Env::int('LICENSE_CACHE_HOURS', 24)),
@@ -377,8 +427,41 @@ final class LicenseService
         ]);
     }
 
+    /** Merkt sich, auf welcher Domain ein Schlüssel benutzt wird (Hinweis auf Weitergabe). */
+    public static function noteHost(string $licenseId, string $domain, ?string $version): void
+    {
+        if ($domain === '') {
+            return;
+        }
+        $version = $version !== null ? mb_substr(preg_replace('/[^0-9A-Za-z._+-]/', '', $version) ?? '', 0, 30) : null;
+        $row = Db::one('SELECT "id" FROM "LicenseHost" WHERE "licenseId" = ? AND "domain" = ?', [$licenseId, $domain]);
+        if ($row === null) {
+            Db::insert('LicenseHost', ['licenseId' => $licenseId, 'domain' => mb_substr($domain, 0, 255), 'version' => $version, 'lastSeenAt' => Dates::now(), 'firstSeenAt' => Dates::now()]);
+        } else {
+            Db::run('UPDATE "LicenseHost" SET "checks" = "checks" + 1, "lastSeenAt" = ?, "version" = COALESCE(?, "version") WHERE "id" = ?', [Dates::now(), $version, $row['id']]);
+        }
+    }
+
+    /** Nachrichtenauthentifizierung (HMAC) mit einem aus dem Signaturschlüssel abgeleiteten Geheimnis, z. B. für Download-Tokens. */
+    public static function mac(string $data): string
+    {
+        return self::b64(hash_hmac('sha256', $data, hash('sha256', self::secretKey() . '|mac', true), true));
+    }
+
+    /** Signiert beliebige Daten (Base64URL), z. B. die Prüfsumme eines Release-Pakets. */
+    public static function signRaw(string $data): string
+    {
+        return self::b64(sodium_crypto_sign_detached($data, self::secretKey()));
+    }
+
+    /** Kurzkennung des Signaturschlüssels (für Schlüsselwechsel in der Software). */
+    public static function keyId(): string
+    {
+        return substr(hash('sha256', (string) base64_decode(self::publicKey())), 0, 12);
+    }
+
     /** @param array<string,mixed> $payload @return array{payload:string,signature:string} */
-    private static function sign(array $payload): array
+    public static function sign(array $payload): array
     {
         $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $signature = sodium_crypto_sign_detached($json, self::secretKey());

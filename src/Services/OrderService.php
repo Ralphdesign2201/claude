@@ -70,6 +70,10 @@ final class OrderService
                 'licenseSubdomains' => (int) $product['licenseSubdomains'],
                 'licensePayFirst' => (int) $product['licensePayFirst'],
                 'licenseDays' => $product['licenseDays'],
+                'licensePlan' => $licensed ? $product['licensePlan'] : null,
+                'licenseFeatures' => $licensed ? $product['licenseFeatures'] : null,
+                'licenseSupportDays' => $licensed ? $product['licenseSupportDays'] : null,
+                'licenseUpdateDays' => $licensed ? $product['licenseUpdateDays'] : null,
             ]);
         });
 
@@ -272,6 +276,9 @@ final class OrderService
             'licenseSubdomains' => (bool) $p['licenseSubdomains'],
             'licensePayFirst' => (bool) $p['licensePayFirst'],
             'licenseDays' => $p['licenseDays'],
+            'licensePlan' => $p['licensePlan'],
+            'licenseSupportDays' => $p['licenseSupportDays'],
+            'licenseUpdateDays' => $p['licenseUpdateDays'],
         ];
     }
 

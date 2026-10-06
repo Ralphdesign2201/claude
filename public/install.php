@@ -15,6 +15,8 @@ use App\Support\Dates;
 use App\Support\Db;
 use App\Support\Env;
 use App\Support\Migrator;
+use App\Support\Product;
+use App\Services\ProductLicense;
 
 ini_set('display_errors', '0');
 session_name('crm_install');
@@ -159,6 +161,9 @@ function validateInput(array $in, bool $needAdmin = true): array
             }
         }
     }
+    if (Product::enforced() && !preg_match('/^[A-Za-z0-9-]{10,40}$/', trim((string) ($in['license_key'] ?? '')))) {
+        $e['license_key'] = 'Bitte deinen Lizenzschlüssel eingeben (Format XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).';
+    }
     if (($in['db'] ?? 'sqlite') === 'mysql') {
         foreach (['my_host' => 'Server', 'my_name' => 'Datenbankname', 'my_user' => 'Benutzer'] as $k => $label) {
             if (trim((string) ($in[$k] ?? '')) === '') {
@@ -247,6 +252,14 @@ function runInstall(array $in): array
     $url = rtrim((string) $in['url'], '/');
     $log[] = writeEnv($url);
     Env::load(APP_ROOT . '/.env');
+
+    if (Product::enforced()) {
+        $lic = ProductLicense::setKey((string) $in['license_key']);
+        if (!$lic['ok']) {
+            throw new RuntimeException('Lizenz: ' . $lic['message']);
+        }
+        $log[] = 'Lizenz geprüft und gespeichert (Paket ' . (ProductLicense::state()['plan'] ?? '–') . ').';
+    }
 
     // Datenbank festlegen
     if ($in['db'] === 'mysql') {
@@ -359,7 +372,7 @@ $in = [
     'company' => 'Ralph Design', 'owner' => 'Ralph', 'username' => 'Ralphdesign', 'email' => '', 'password' => '', 'password2' => '', 'url' => detectUrl(),
     'db' => extension_loaded('pdo_sqlite') ? 'sqlite' : 'mysql', 'my_host' => 'localhost', 'my_port' => '3306', 'my_name' => '', 'my_user' => '', 'my_pass' => '',
     'demo' => '1', 'demo_user' => 'DEMO123456', 'demo_pass' => 'login123456', 'demo_invoice' => '1', 'catalog' => '1', 'support_seed' => '1',
-    'smtp_host' => '', 'smtp_port' => '587', 'smtp_enc' => 'tls', 'smtp_user' => '', 'smtp_pass' => '', 'smtp_from' => '',
+    'license_key' => '', 'smtp_host' => '', 'smtp_port' => '587', 'smtp_enc' => 'tls', 'smtp_user' => '', 'smtp_pass' => '', 'smtp_from' => '',
 ];
 $installed = alreadyInstalled();
 $checks = systemChecks();
@@ -372,7 +385,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'delete' && $installed) {
         $deleted = @unlink(__FILE__);
         $notice = $deleted ? 'install.php wurde gelöscht. Du kannst dich jetzt anmelden.' : 'Die Datei konnte nicht automatisch gelöscht werden. Bitte lösche public/install.php im Dateimanager.';
-    } elseif (!$installed && in_array($action, ['test', 'install'], true)) {
+    } elseif (!$installed && in_array($action, ['test', 'install', 'licensecheck'], true)) {
         foreach (array_keys($in) as $k) {
             if (isset($_POST[$k]) && is_string($_POST[$k])) {
                 $in[$k] = trim($_POST[$k]) === $_POST[$k] || str_contains($k, 'pass') ? $_POST[$k] : trim($_POST[$k]);
@@ -381,7 +394,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach (['demo', 'demo_invoice', 'catalog', 'support_seed'] as $k) {
             $in[$k] = isset($_POST[$k]) ? '1' : '';
         }
-        if ($action === 'test') {
+        if ($action === 'licensecheck') {
+            try {
+                class_exists(ProductLicense::class); // lädt auch die Prüfklasse
+                $tmp = sys_get_temp_dir() . '/crm-lic-' . bin2hex(random_bytes(4));
+                $host = (string) parse_url((string) $in['url'], PHP_URL_HOST);
+                $client = new LicenseClient(Product::server(), Product::publicKeys(), strtoupper(trim((string) $in['license_key'])), $tmp, ['domain' => $host, 'timeout' => 6, 'version' => Product::version()]);
+                if (!$client->check(true) || ($client->slug !== null && $client->slug !== Product::slug())) {
+                    $reason = $client->reason ?? 'unknown';
+                    throw new RuntimeException(ProductLicense::message($client->slug !== null && $client->slug !== Product::slug() ? 'product' : $reason) . ($reason === 'offline' && $client->error ? ' (' . $client->error . ')' : '') . ($reason === 'domain' ? ' Die Lizenz muss zur Domain ' . $host . ' passen.' : ''));
+                }
+                $notice = 'Lizenz gültig – Paket ' . ($client->plan ?? 'ohne Angabe') . ($client->supportUntil ? ', Support bis ' . substr($client->supportUntil, 0, 10) : '') . ($client->updatesUntil ? ', Updates bis ' . substr($client->updatesUntil, 0, 10) : '') . '.';
+            } catch (Throwable $e) {
+                $fail = $e->getMessage();
+            } finally {
+                @unlink($tmp ?? '');
+            }
+        } elseif ($action === 'test') {
             try {
                 if ($in['db'] !== 'mysql') {
                     throw new RuntimeException('Für den Verbindungstest bitte „MySQL“ wählen.');
@@ -492,6 +521,8 @@ details summary { cursor: pointer; font-weight: 600; } details[open] summary { m
             <?= $field('password', 'Admin-Passwort', 'password', 'Mindestens 10 Zeichen.', 'autocomplete="new-password"') ?>
             <?= $field('password2', 'Passwort wiederholen', 'password', '', 'autocomplete="new-password"') ?>
             <div class="full"><?= $field('url', 'Adresse deines CRM', 'text', 'Wird für Links in E-Mails verwendet – automatisch erkannt.') ?></div>
+            <?php if (Product::enforced()) : ?><div class="full"><?= $field('license_key', 'Lizenzschlüssel', 'text', 'Steht in deiner Kauf-E-Mail und im Kundenportal. Er gilt für die Domain oben.', 'autocapitalize="characters" spellcheck="false"') ?>
+                <div class="row" style="margin-top:8px"><button type="submit" name="action" value="licensecheck" formnovalidate>Lizenz prüfen</button></div></div><?php endif; ?>
         </div></div>
 
         <div><h2>3. Datenbank</h2>

@@ -247,7 +247,8 @@
     var shown = l.licenseKey ? '<div class="pay-box"><b>Lizenzschlüssel</b><dl><dd><span class="mono" style="font-size:15px">' + esc(l.licenseKey) + '</span> <button class="btn sm" data-act="copy-key" data-text="' + esc(l.licenseKey) + '">Kopieren</button></dd></dl></div>' : '<div class="sub">Ihr Schlüssel erscheint hier, sobald die Rechnung bezahlt ist. Sie bekommen ihn dann auch per E-Mail.</div>';
     var until = l.rental ? (l.status === 'ACTIVE' ? 'läuft, solange Ihre Abo-Rechnungen bezahlt werden' : '') : l.validUntil ? 'gültig bis ' + fdate(l.validUntil) : 'unbefristet';
     return '<div class="card doc"><div class="doc-row"><div class="doc-main"><b>' + esc(l.productName) + '</b> ' + pill(LSTATUS, l.status) +
-      '<div class="sub">Domain: <b class="mono">' + esc(l.domain) + '</b>' + (l.subdomains ? ' (inkl. Subdomains)' : '') + (until ? ' · ' + until : '') + '</div></div>' +
+      '<div class="sub">Domain: <b class="mono">' + esc(l.domain) + '</b>' + (l.subdomains ? ' (inkl. Subdomains)' : '') + (until ? ' · ' + until : '') + '</div>' +
+      (l.status === 'ACTIVE' ? '<div class="sub">' + (l.plan ? 'Paket ' + esc(l.plan) + ' · ' : '') + 'Support ' + (l.supportUntil ? 'bis ' + fdate(l.supportUntil) : 'unbegrenzt') + (l.supportActive ? '' : ' <span class="pill bad">abgelaufen</span>') + ' · Updates ' + (l.updatesUntil ? 'für Versionen bis ' + fdate(l.updatesUntil) : 'unbegrenzt') + (l.updatesActive ? '' : ' <span class="pill warn">abgelaufen</span>') + '</div>' : '') + '</div>' +
       (l.status !== 'REVOKED' ? '<div class="doc-actions"><button class="btn sm" data-act="lic-domain" data-id="' + esc(l.id) + '">Domain ändern</button></div>' : '') + '</div>' + shown + '</div>';
   }
   function licensesHtml() {
@@ -317,7 +318,7 @@
       '<div class="full" id="t-sugg"></div>' +
       '<label for="t-cat">Kategorie<select id="t-cat"><option value="">– bitte wählen –</option>' + state.categories.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select></label>' +
       '<label for="t-prio">Dringlichkeit<select id="t-prio"><option value="NORMAL">Normal</option><option value="HIGH">Dringend (Seite/Software funktioniert nicht)</option></select></label>' +
-      (state.licenses.length ? '<label class="full" for="t-lic">Betrifft Lizenz (optional)<select id="t-lic"><option value="">– keine –</option>' + state.licenses.map(function (l) { return '<option value="' + esc(l.id) + '">' + esc(l.productName) + ' · ' + esc(l.domain) + '</option>'; }).join('') + '</select></label>' : '') +
+      (state.licenses.length ? '<label class="full" for="t-lic">Betrifft Lizenz (optional)<select id="t-lic"><option value="">– keine –</option>' + state.licenses.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.supportActive ? '' : ' disabled') + '>' + esc(l.productName) + ' · ' + esc(l.domain) + (l.supportActive ? '' : ' (Support abgelaufen)') + '</option>'; }).join('') + '</select></label>' : '') +
       '<label class="full" for="t-msg">Ihre Nachricht<textarea id="t-msg" rows="6" maxlength="10000" placeholder="Bitte beschreiben Sie das Problem möglichst genau."></textarea></label>' +
       '<div class="full row"><label class="btn sm" style="cursor:pointer">📎 Datei anhängen<input id="t-files" type="file" multiple hidden></label><span class="sub" id="t-filelist">Screenshots, PDF, Text, ZIP – bis 5 Dateien</span></div></div>' +
       '<div class="actions"><button type="button" class="btn" data-act="close">Abbrechen</button><button type="submit" class="btn primary">Anfrage senden</button></div></form></div>';

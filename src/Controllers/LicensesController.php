@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Http\ApiError;
 use App\Http\Request;
 use App\Http\Response;
+use App\Services\Entitlements;
 use App\Services\LicenseService;
 use App\Support\Activity;
 use App\Support\Dates;
@@ -25,6 +26,11 @@ final class LicensesController
         'subdomains' => ['type' => 'bool'],
         'validUntil' => ['type' => 'datetime', 'emptyOk' => true],
         'note' => ['max' => 2000],
+        'slug' => ['max' => 40, 'emptyOk' => true],
+        'plan' => ['max' => 40, 'emptyOk' => true],
+        'features' => ['max' => 200, 'emptyOk' => true],
+        'supportUntil' => ['type' => 'datetime', 'emptyOk' => true],
+        'updatesUntil' => ['type' => 'datetime', 'emptyOk' => true],
     ];
 
     private const UPDATE_SCHEMA = [
@@ -33,6 +39,11 @@ final class LicensesController
         'status' => ['enum' => ['ACTIVE', 'SUSPENDED', 'REVOKED']],
         'validUntil' => ['type' => 'datetime', 'emptyOk' => true],
         'note' => ['max' => 2000],
+        'slug' => ['max' => 40, 'emptyOk' => true],
+        'plan' => ['max' => 40, 'emptyOk' => true],
+        'features' => ['max' => 200, 'emptyOk' => true],
+        'supportUntil' => ['type' => 'datetime', 'emptyOk' => true],
+        'updatesUntil' => ['type' => 'datetime', 'emptyOk' => true],
     ];
 
     public static function index(Request $r): Response
@@ -62,6 +73,34 @@ final class LicensesController
         return Response::json(Pagination::wrap($rows, $total, $p['page'], $p['pageSize']));
     }
 
+    private static function slug(?string $slug): ?string
+    {
+        if ($slug === null || $slug === '') {
+            return null;
+        }
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,39}$/', $slug)) {
+            throw ApiError::badRequest('Produkt-Kennung: nur Kleinbuchstaben, Ziffern und Bindestriche (z. B. crm)');
+        }
+        return $slug;
+    }
+
+    private static function plan(?string $plan): ?string
+    {
+        if ($plan === null || $plan === '') {
+            return null;
+        }
+        if (!isset(Entitlements::PLANS[$plan])) {
+            throw ApiError::badRequest('Unbekanntes Paket (erlaubt: ' . implode(', ', array_keys(Entitlements::PLANS)) . ')');
+        }
+        return $plan;
+    }
+
+    /** Verfügbare Pakete und Funktionen für die Oberfläche. */
+    public static function entitlements(Request $r): Response
+    {
+        return Response::json(['plans' => Entitlements::PLANS, 'features' => Entitlements::FEATURES]);
+    }
+
     public static function show(Request $r): Response
     {
         return Response::json(LicenseService::detail($r->param('id')));
@@ -84,6 +123,11 @@ final class LicensesController
             'activatedAt' => Dates::now(),
             'validUntil' => $data['validUntil'] ?? null,
             'note' => $data['note'] ?? null,
+            'slug' => self::slug($data['slug'] ?? null),
+            'plan' => self::plan($data['plan'] ?? null),
+            'features' => Entitlements::normalize($data['features'] ?? null),
+            'supportUntil' => $data['supportUntil'] ?? null,
+            'updatesUntil' => $data['updatesUntil'] ?? null,
         ]);
         Activity::log('LICENSE_ISSUED', "Lizenz für {$data['productName']} ($domain) ausgestellt", $data['clientId'], null, $r->user['id']);
 
@@ -102,6 +146,15 @@ final class LicensesController
         }
         if (isset($data['status']) && $data['status'] === 'ACTIVE' && $license['activatedAt'] === null) {
             $data['activatedAt'] = Dates::now(); // manuell freigeschaltet (z. B. Zahlung auf anderem Weg erhalten)
+        }
+        if (array_key_exists('plan', $data)) {
+            $data['plan'] = self::plan($data['plan']);
+        }
+        if (array_key_exists('slug', $data)) {
+            $data['slug'] = self::slug($data['slug']);
+        }
+        if (array_key_exists('features', $data)) {
+            $data['features'] = Entitlements::normalize($data['features']);
         }
         if ($data !== []) {
             Db::update('License', $id, array_map(static fn ($v) => is_bool($v) ? (int) $v : $v, $data), 'Lizenz nicht gefunden');

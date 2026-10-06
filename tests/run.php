@@ -58,6 +58,7 @@ $env = [
     'REMINDER_FEE_2' => '5',
     'BACKUP_DIR' => "$tmp/backups",
     'LICENSE_KEY_FILE' => "$tmp/license.key",
+    'LICENSE_REQUIRE_HTTPS' => 'false',
     'UPLOAD_DIR' => "$tmp/uploads",
     'APP_URL' => 'https://crm.example.com',
     'PRIVACY_URL' => 'https://crm.example.com/datenschutz',
@@ -690,7 +691,7 @@ $allProducts = array_merge(...array_column($catalog, 'products'));
 $allNames = array_column($allProducts, 'name');
 check('Portal-Katalog: inaktive Produkte und Produkte verborgener Kategorien sind unsichtbar', !in_array('Auslaufprodukt', $allNames, true) && !in_array('Nur intern', $allNames, true) && in_array('Webhosting M', $allNames, true) && in_array('Beratung vor Ort', $allNames, true) && count($allNames) === 10, $allNames);
 $hostP = current(array_filter($allProducts, static fn ($x) => $x['id'] === $pHost));
-check('Portal-Produkt: nur freigegebene Felder', array_diff(array_keys($hostP), ['id', 'name', 'description', 'type', 'price', 'taxRate', 'unit', 'intervalUnit', 'setupFee', 'minQuantity', 'license', 'licenseSubdomains', 'licensePayFirst', 'licenseDays']) === [] && !isset($hostP['active'], $hostP['categoryId'], $hostP['sortOrder']) && $hostP['intervalUnit'] === 'MONTHLY' && $hostP['setupFee'] == 19, array_keys($hostP));
+check('Portal-Produkt: nur freigegebene Felder', array_diff(array_keys($hostP), ['id', 'name', 'description', 'type', 'price', 'taxRate', 'unit', 'intervalUnit', 'setupFee', 'minQuantity', 'license', 'licenseSubdomains', 'licensePayFirst', 'licenseDays', 'licensePlan', 'licenseSupportDays', 'licenseUpdateDays']) === [] && !isset($hostP['active'], $hostP['categoryId'], $hostP['sortOrder']) && $hostP['intervalUnit'] === 'MONTHLY' && $hostP['setupFee'] == 19, array_keys($hostP));
 
 $before = count(mails());
 $res = call('POST', '/api/portal/orders', ['productId' => $pWeb, 'quantity' => 1, 'note' => 'Bitte mit Blog und Kontaktformular'], null, $OP);
@@ -1344,7 +1345,7 @@ check('Noch keine Lizenz-Mail vor der Zahlung', count(array_filter(array_slice(m
 $res = call('GET', '/api/portal/licenses', null, null, $LP);
 check('Portal: Lizenz sichtbar, Schlüssel verborgen solange offen', $res[0] === 200 && count($res[1]) === 1 && $res[1][0]['status'] === 'PENDING' && !str_contains($res[2], $key1), $res[2]);
 
-$verify = static fn (string $k, string $d, string $n = 'nonce-12345678') => call('POST', '/api/license/verify', ['key' => $k, 'domain' => $d, 'nonce' => $n]);
+$verify = static fn (string $k, string $d, ?string $n = null) => call('POST', '/api/license/verify', ['key' => $k, 'domain' => $d, 'nonce' => $n ?? 'n' . bin2hex(random_bytes(10)), 'ts' => time()]);
 $decode = static function (array $res) use ($pubKey) {
     $b = static fn (string $s) => base64_decode(strtr($s, '-_', '+/'));
     $ok = sodium_crypto_sign_verify_detached($b($res[1]['signature']), $b($res[1]['payload']), base64_decode($pubKey));
@@ -1865,7 +1866,7 @@ if ($mysqlMode) {
     $res = call('POST', '/api/clients', ['name' => 'Nur in MySQL', 'email' => 'mysql@wechsel.example'], $token);
     $onlyMy = $res[1]['id'] ?? '';
     check('Neue Daten landen in MySQL, nicht mehr in SQLite', $res[0] === 201 && (int) $my2->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 1 && (int) (new PDO('sqlite:' . "$tmp/test.db"))->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 0, $res[2]);
-    $res = call('POST', '/api/license/verify', ['key' => 'AAAAA-BBBBB-CCCCC-DDDDD-EEEEE', 'domain' => 'a.de', 'nonce' => 'abcdefgh12']);
+    $res = call('POST', '/api/license/verify', ['key' => 'AAAAA-BBBBB-CCCCC-DDDDD-EEEEE', 'domain' => 'a.de', 'nonce' => 'abcdefgh12' . bin2hex(random_bytes(4)), 'ts' => time()]);
     check('Auch die öffentliche Lizenzprüfung arbeitet mit MySQL', $res[0] === 200 && isset($res[1]['signature']), $res[2]);
     $res = call('POST', '/api/backups', [], $token);
     $bz = new ZipArchive();
