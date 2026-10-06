@@ -92,7 +92,7 @@ final class PortalAuthController
     public static function login(Request $r): Response
     {
         $data = Validator::validate(self::body($r), [
-            'email' => ['required' => true, 'email' => true, 'max' => 255],
+            'email' => ['required' => true, 'min' => 1, 'max' => 255], // E-Mail-Adresse oder Benutzername
             'password' => ['required' => true, 'min' => 1, 'max' => 1000],
         ]);
         $ip = 'plogin:' . $r->ip();

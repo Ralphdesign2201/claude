@@ -96,7 +96,7 @@
       '<div class="sub">' + (reg ? 'Der erste Benutzer wird automatisch Administrator.' : 'Bitte melde dich an.') + '</div>' +
       (error ? '<div class="err" role="alert">' + esc(error) + '</div>' : '') +
       (reg ? '<label for="lname">Name<input id="lname" autocomplete="name"></label>' : '') +
-      '<label for="lemail">E-Mail<input id="lemail" type="email" autocomplete="username"></label>' +
+      '<label for="lemail">Benutzername oder E-Mail<input id="lemail" type="text" autocomplete="username" autocapitalize="off" spellcheck="false"></label>' +
       '<label for="lpass">Passwort<input id="lpass" type="password" autocomplete="' + (reg ? 'new-password' : 'current-password') + '"></label>' +
       '<button class="btn primary" type="submit" style="justify-content:center">' + (reg ? 'Registrieren' : 'Anmelden') + '</button>' +
       '<button class="switch" type="button" id="lswitch">' + (reg ? 'Zurück zur Anmeldung' : 'Noch kein Konto? Ersten Benutzer anlegen') + '</button></form></div>';

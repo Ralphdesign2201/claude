@@ -1521,6 +1521,21 @@ for ($i = 0; $i < 40 && $last !== 429; $i++) {
 }
 check('Durchprobieren unbekannter Schlüssel wird gebremst (429)', $last === 429, $i);
 
+echo "Anmeldung mit Benutzername\n";
+$dbx()->exec("UPDATE \"User\" SET username = 'ralphtest' WHERE email = 'ralph@example.com'");
+$lcId = (string) $dbx()->query("SELECT id FROM Client WHERE email = 'lia@lizenz.de'")->fetchColumn();
+$ins = $dbx()->prepare('INSERT INTO "PortalAccount" ("id", "clientId", "email", "username", "name", "passwordHash", "verifiedAt") VALUES (?, ?, ?, ?, ?, ?, ?)');
+$ins->execute([bin2hex(random_bytes(12)), $lcId, 'benutzer@demo.invalid', 'maxmuster', 'Benutzer Test', password_hash('benutzer-passwort-1', PASSWORD_BCRYPT), gmdate('Y-m-d\TH:i:s.000\Z')]);
+$dbx()->exec('DELETE FROM RateLimit');
+$res = call('POST', '/api/auth/login', ['email' => ' RalphTest ', 'password' => 'geheim1234']);
+check('Admin meldet sich mit Benutzername an (Groß-/Kleinschreibung egal)', $res[0] === 200 && $res[1]['user']['role'] === 'ADMIN', $res[2]);
+expect('Benutzername mit falschem Passwort → 401', call('POST', '/api/auth/login', ['email' => 'ralphtest', 'password' => 'falsch-falsch']), 401);
+expect('Unbekannter Benutzername → 401', call('POST', '/api/auth/login', ['email' => 'gibtsnicht', 'password' => 'geheim1234']), 401);
+$res = call('POST', '/api/portal/login', ['email' => 'MaxMuster', 'password' => 'benutzer-passwort-1']);
+check('Kunde meldet sich im Portal mit Benutzername an', $res[0] === 200 && isset($res[1]['token']), $res[2]);
+expect('Portal: Benutzername mit falschem Passwort → 401', call('POST', '/api/portal/login', ['email' => 'maxmuster', 'password' => 'falsch-falsch-1']), 401);
+$dbx()->exec('DELETE FROM RateLimit');
+
 echo "Support\n";
 /** Multipart-Body für Formulare mit Dateien: [body, header] */
 $mp = static function (array $fields, array $files = []): array {

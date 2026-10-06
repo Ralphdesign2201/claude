@@ -132,12 +132,13 @@ final class AccountService
     /** @return array{token:string,expiresAt:string,name:string} */
     public static function login(string $email, string $password): array
     {
-        $account = Db::one('SELECT * FROM "PortalAccount" WHERE "email" = ?', [self::normalizeEmail($email)]);
+        $login = self::normalizeEmail($email);
+        $account = Db::one('SELECT * FROM "PortalAccount" WHERE "email" = ? OR "username" = ?', [$login, $login]);
         // Auch bei unbekannter Adresse einen Hash prüfen, damit die Antwortzeit nichts verrät
         $hash = $account['passwordHash'] ?? '$2y$10$usesomesillystringforsaltuYmQ7vTn0g6L1a8kQ1k0j0dQn3rJ6a';
         $ok = password_verify($password, $hash) && $account !== null;
         if (!$ok) {
-            throw ApiError::unauthorized('E-Mail oder Passwort falsch');
+            throw ApiError::unauthorized('Benutzername/E-Mail oder Passwort falsch');
         }
         if ($account['verifiedAt'] === null) {
             throw ApiError::forbidden('Bitte bestätige zuerst deine E-Mail-Adresse (Link in der Bestätigungs-E-Mail).');

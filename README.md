@@ -32,6 +32,16 @@ Rechnungen mit Zahlungen und – für Admins – die Teamverwaltung.
 - **Activity-Log** je Kunde/Projekt
 - **Benutzerverwaltung** durch Admins
 
+## Installation auf deinem Webspace (Hostinger u. a.)
+
+1. **Subdomain anlegen** (empfohlen, z. B. `crm.deine-domain.de`) und im Hosting-Panel **SSL (https)** aktivieren. PHP 8.1+ einstellen; die Erweiterungen `sodium` und `zip` (und für MySQL `pdo_mysql`) sollten aktiv sein.
+2. **Dateien hochladen:** das Projekt als ZIP in den Ordner der (Sub-)Domain hochladen und im Dateimanager entpacken. Am besten zeigt die Domain auf den Unterordner `public/`; geht das nicht (z. B. bei `public_html`), leitet die mitgelieferte `.htaccess` automatisch alles dorthin um – `database/`, `src/`, `.env` und Backups bleiben von außen unerreichbar.
+3. **`https://deine-domain.de/install.php` aufrufen.** Der Assistent prüft den Server (PHP, Erweiterungen, Schreibrechte, ob die Datenordner geschützt sind), erzeugt die Geheimschlüssel, legt `.env`, Datenbank (SQLite oder deine MySQL-Datenbank), Tabellen und den Admin an und bietet auf Wunsch einen Demo-Kunden, einen Beispielkatalog, Support-Vorlagen und die SMTP-Einrichtung an.
+4. **Danach `install.php` löschen** (Knopf im Assistenten). Er sperrt sich nach der Installation ohnehin (`database/installed.lock`) und ist auch gesperrt, sobald es Benutzer gibt.
+5. **Cron-Job** im Hosting-Panel einmal täglich: `php /voller/pfad/zum/projekt/bin/cron.php` (den Pfad nennt der Assistent).
+
+Die Anmeldung geht mit **Benutzername oder E-Mail** (Admin-Bereich und Kundenportal). Ehrlich: Wer die Seite `install.php` vor dir aufruft, könnte die Installation übernehmen – rufe sie deshalb direkt nach dem Hochladen auf und lösche sie sofort danach.
+
 ## Setup
 
 Voraussetzung: PHP ≥ 8.1 mit den Erweiterungen `pdo_sqlite` und `mbstring`.

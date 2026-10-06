@@ -8,3 +8,9 @@ RewriteRule ^ index.php [L]
     php_value upload_max_filesize 25M
     php_value post_max_size 26M
 </IfModule>
+
+Options -Indexes
+# Sicherheits-Header für statische Dateien und Installer
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+</IfModule>

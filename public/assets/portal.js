@@ -100,7 +100,7 @@
       body = '<form id="f-forgot" class="stack" novalidate><p class="sub" style="margin:0">Gib deine E-Mail-Adresse ein. Wir schicken dir einen Link, mit dem du ein neues Passwort festlegst.</p>' + inp('a-email', 'E-Mail', 'email', 'autocomplete="username" inputmode="email"') +
         '<button class="btn primary" type="submit" style="justify-content:center">Link senden</button><button type="button" class="link-btn" data-act="auth-mode" data-mode="login">Zurück zur Anmeldung</button></form>';
     } else {
-      body = '<form id="f-login" class="stack" novalidate>' + inp('a-email', 'E-Mail', 'email', 'autocomplete="username" inputmode="email"') + inp('a-pass', 'Passwort', 'password', 'autocomplete="current-password"') +
+      body = '<form id="f-login" class="stack" novalidate>' + inp('a-email', 'Benutzername oder E-Mail', 'text', 'autocomplete="username" autocapitalize="off" spellcheck="false"') + inp('a-pass', 'Passwort', 'password', 'autocomplete="current-password"') +
         '<label class="check"><input id="a-remember" type="checkbox"> <span>Angemeldet bleiben</span></label>' +
         '<button class="btn primary" type="submit" style="justify-content:center">Anmelden</button><button type="button" class="link-btn" data-act="auth-mode" data-mode="forgot">Passwort vergessen?</button></form>';
     }

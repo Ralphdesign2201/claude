@@ -49,7 +49,7 @@ final class AuthController
     public static function login(Request $r): Response
     {
         $data = Validator::validate($r->body(), [
-            'email' => ['required' => true, 'email' => true],
+            'email' => ['required' => true, 'min' => 1, 'max' => 255], // E-Mail-Adresse oder Benutzername
             'password' => ['required' => true, 'min' => 1, 'max' => 1000],
         ]);
 
@@ -58,12 +58,13 @@ final class AuthController
             throw new ApiError(429, 'Zu viele fehlgeschlagene Anmeldeversuche – bitte später erneut versuchen');
         }
 
-        $user = Db::one('SELECT * FROM "User" WHERE "email" = ?', [strtolower(trim($data['email']))]);
+        $login = strtolower(trim($data['email']));
+        $user = Db::one('SELECT * FROM "User" WHERE "email" = ? OR "username" = ?', [$login, $login]);
         // Auch bei unbekannter E-Mail einen Hash prüfen, damit die Antwortzeit nichts verrät
         $hash = $user['passwordHash'] ?? '$2y$10$usesomesillystringforsaltuYmQ7vTn0g6L1a8kQ1k0j0dQn3rJ6a';
         if (!password_verify($data['password'], $hash) || $user === null) {
             RateLimit::hit($key, self::WINDOW);
-            throw ApiError::unauthorized('E-Mail oder Passwort falsch');
+            throw ApiError::unauthorized('Benutzername/E-Mail oder Passwort falsch');
         }
 
         RateLimit::clear($key);
