@@ -60,6 +60,18 @@ final class MailTemplates
         ];
     }
 
+    /** Lizenzschlüssel an den Kunden. @param array<string,mixed> $license @return array{subject:string,message:string} */
+    public static function license(array $client, array $license): array
+    {
+        $until = $license['validUntil'] ? "\nGültig bis: " . Format::date($license['validUntil']) : '';
+        return [
+            'subject' => "Ihre Lizenz für {$license['productName']}",
+            'message' => self::greeting($client) . "\n\nIhre Lizenz ist freigeschaltet:\n\nProdukt:  {$license['productName']}\nDomain:   {$license['domain']}"
+                . ($license['subdomains'] ? ' (inklusive Subdomains)' : '') . "\nSchlüssel: {$license['licenseKey']}$until\n\n"
+                . "Im Kundenportal finden Sie den Schlüssel jederzeit, dort können Sie auch die Anleitung zur Einbindung in Ihre Software einsehen und die Domain ändern.",
+        ];
+    }
+
     /** E-Mail-Bestätigung für ein neues Konto. @return array{subject:string,message:string} */
     public static function accountVerify(string $name, string $link): array
     {
@@ -107,7 +119,7 @@ final class MailTemplates
     private static function orderLine(array $o): string
     {
         $qty = \App\Support\Format::qty((float) $o['quantity']) . ($o['unit'] ? ' ' . $o['unit'] : '×');
-        return "$qty {$o['productName']}";
+        return "$qty {$o['productName']}" . (!empty($o['domain']) ? " (Domain: {$o['domain']})" : '');
     }
 
     /** Eingangsbestätigung an den Kunden. @return array{subject:string,message:string} */

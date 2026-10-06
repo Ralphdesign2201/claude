@@ -21,6 +21,7 @@ final class BackupService
 {
     public const NAME_PATTERN = '/^crm-backup-(\d{8})-(\d{6})\.zip$/';
     private const DB_ENTRY = 'database.sqlite';
+    private const KEY_ENTRY = 'license.key';
 
     public static function dir(): string
     {
@@ -90,6 +91,12 @@ final class BackupService
                 'migrations' => array_column(Db::all('SELECT "name" FROM "_migrations" ORDER BY "name"'), 'name'),
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
+            // Der Signaturschlüssel der Lizenzen muss ein Backup überleben: ohne ihn lassen sich ausgelieferte Software-Versionen nicht mehr prüfen
+            $keyFile = LicenseService::keyFile();
+            $withKey = trim(Env::get('LICENSE_SECRET_KEY', '') ?? '') === '' && is_file($keyFile);
+            if ($withKey) {
+                $zip->addFile($keyFile, self::KEY_ENTRY);
+            }
             if ($passphrase !== '') {
                 $zip->setPassword($passphrase);
                 for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -102,7 +109,7 @@ final class BackupService
                 throw new RuntimeException('Backup-Archiv konnte nicht geschrieben werden (Speicherplatz?).');
             }
 
-            self::verify($partial, $passphrase, $dbHash, count($uploads));
+            self::verify($partial, $passphrase, $dbHash, count($uploads) + ($withKey ? 1 : 0));
             if (!rename($partial, $dir . '/' . $name)) {
                 throw new RuntimeException('Backup konnte nicht abgelegt werden.');
             }
@@ -252,6 +259,18 @@ final class BackupService
             if (is_file($incoming)) {
                 @unlink($incoming);
             }
+        }
+
+        // Signaturschlüssel der Lizenzen zurückspielen (ein abweichender vorhandener wird als Kopie aufgehoben)
+        $keyData = trim(Env::get('LICENSE_SECRET_KEY', '') ?? '') === '' ? $zip->getFromName(self::KEY_ENTRY) : false;
+        if ($keyData !== false && $keyData !== '') {
+            $keyFile = LicenseService::keyFile();
+            self::ensureDir(dirname($keyFile));
+            if (is_file($keyFile) && trim((string) file_get_contents($keyFile)) !== trim($keyData)) {
+                copy($keyFile, $keyFile . '.vor-wiederherstellung-' . gmdate('Ymd-His'));
+            }
+            file_put_contents($keyFile, $keyData);
+            @chmod($keyFile, 0600);
         }
 
         $uploadDir = self::ensureDir(DocumentsController::uploadDir());

@@ -12,6 +12,7 @@ use App\Mail\Mailer;
 use App\Pdf\DocumentPdf;
 use App\Pdf\InvoicePdf;
 use App\Services\InvoiceService;
+use App\Services\LicenseService;
 use App\Services\MailTemplates;
 use App\Services\OrderService;
 use App\Services\PortalService;
@@ -168,6 +169,7 @@ final class PortalController
         'productId' => ['required' => true, 'min' => 1],
         'quantity' => ['type' => 'number', 'positive' => true],
         'note' => ['max' => 2000],
+        'domain' => ['max' => 300],
     ];
 
     public static function products(Request $r): Response
@@ -188,7 +190,7 @@ final class PortalController
     {
         $client = PortalService::authenticate($r);
         $data = Validator::validate($r->body(), self::ORDER_SCHEMA);
-        $order = OrderService::create($client['id'], $data['productId'], (float) ($data['quantity'] ?? 1), trim((string) ($data['note'] ?? '')), 'PORTAL', true);
+        $order = OrderService::create($client['id'], $data['productId'], (float) ($data['quantity'] ?? 1), trim((string) ($data['note'] ?? '')), 'PORTAL', true, (string) ($data['domain'] ?? ''));
 
         return Response::json(self::publicOrder($order), 201);
     }
@@ -218,7 +220,50 @@ final class PortalController
             'setupFee' => $o['setupFee'],
             'note' => $o['note'],
             'rejectReason' => $o['rejectReason'],
+            'domain' => $o['domain'],
+            'licenseEnabled' => (bool) $o['licenseEnabled'],
             'totals' => $o['totals'],
+        ];
+    }
+
+    /* ---------- Lizenzen ---------- */
+
+    public static function licenseList(Request $r): Response
+    {
+        $client = PortalService::authenticate($r);
+        $rows = Db::all('SELECT * FROM "License" WHERE "clientId" = ? ORDER BY "createdAt" DESC', [$client['id']]);
+
+        return Response::json(array_map([self::class, 'publicLicense'], $rows));
+    }
+
+    public static function changeLicenseDomain(Request $r): Response
+    {
+        $client = PortalService::authenticate($r);
+        $license = Db::require('License', $r->param('id'), 'Lizenz nicht gefunden');
+        if ($license['clientId'] !== $client['id']) {
+            throw ApiError::notFound('Lizenz nicht gefunden');
+        }
+        $data = Validator::validate($r->body(), ['domain' => ['required' => true, 'min' => 1, 'max' => 300]]);
+        LicenseService::changeDomain($license['id'], $data['domain'], true);
+
+        return Response::json(self::publicLicense(Db::require('License', $license['id'], 'Lizenz nicht gefunden')));
+    }
+
+    /** Der Schlüssel erscheint erst, wenn die Lizenz freigeschaltet ist (bei „wartet auf Zahlung“ bleibt er verborgen). */
+    private static function publicLicense(array $l): array
+    {
+        return [
+            'id' => $l['id'],
+            'productName' => $l['productName'],
+            'licenseKey' => $l['status'] === 'PENDING' ? null : $l['licenseKey'],
+            'domain' => $l['domain'],
+            'subdomains' => (bool) $l['subdomains'],
+            'status' => LicenseService::effectiveStatus($l),
+            'validUntil' => $l['validUntil'],
+            'activatedAt' => $l['activatedAt'],
+            'lastCheckedAt' => $l['lastCheckedAt'],
+            'changesLeft' => LicenseService::changesLeft($l),
+            'rental' => $l['recurringId'] !== null,
         ];
     }
 

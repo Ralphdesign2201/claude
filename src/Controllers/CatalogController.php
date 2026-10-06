@@ -37,7 +37,13 @@ final class CatalogController
         'minQuantity' => ['type' => 'number', 'positive' => true],
         'active' => ['type' => 'bool'],
         'sortOrder' => ['type' => 'int'],
+        'licenseEnabled' => ['type' => 'bool'],
+        'licenseSubdomains' => ['type' => 'bool'],
+        'licensePayFirst' => ['type' => 'bool'],
+        'licenseDays' => ['type' => 'int', 'positive' => true, 'emptyOk' => true],
     ];
+
+    private const PRODUCT_BOOLS = ['active', 'licenseEnabled', 'licenseSubdomains', 'licensePayFirst'];
 
     /* ---------- Kategorien ---------- */
 
@@ -93,7 +99,7 @@ final class CatalogController
             . $where->sql() . ' ORDER BY p."sortOrder" ASC, p."name" COLLATE NOCASE ASC',
             $where->params(),
         );
-        return Response::json(Casts::rows($rows, ['active']));
+        return Response::json(Casts::rows($rows, self::PRODUCT_BOOLS));
     }
 
     public static function showProduct(Request $r): Response
@@ -153,6 +159,7 @@ final class CatalogController
             ['Einmalige Leistungen', 'Einmalig beauftragte Arbeiten', 1, [
                 ['Webseitenerstellung einmalig', 'ONE_TIME', 1500, null, null, 0, 1, 'Individuelle Website nach Ihren Wünschen. Bitte beschreiben Sie Ihr Projekt in den Anmerkungen.'],
                 ['Skripte einmalig', 'ONE_TIME', 250, null, null, 0, 1, 'Individuelles Skript oder eine Automatisierung nach Ihren Vorgaben.'],
+                ['Software-Lizenz (1 Domain)', 'ONE_TIME', 149, null, null, 0, 1, 'Lizenz für unsere Software auf einer Domain. Bitte geben Sie bei der Bestellung Ihre Domain an.', true],
                 ['Druckaufträge', 'ONE_TIME', 0.15, 'Stück', null, 0, 100, 'Flyer, Visitenkarten, Plakate und mehr. Format und Wünsche bitte in den Anmerkungen angeben.'],
             ]],
             ['Mietprodukte', 'Laufende Leistungen mit fester Abrechnung', 2, [
@@ -175,14 +182,15 @@ final class CatalogController
                     $row = ['id' => Db::insert('Category', ['name' => $name, 'description' => $desc, 'sortOrder' => $sort])];
                     $cats++;
                 }
-                foreach ($items as $i => [$pname, $type, $price, $unit, $interval, $setup, $min, $text]) {
+                foreach ($items as $i => [$pname, $type, $price, $unit, $interval, $setup, $min, $text, $licensed]) {
+                    $licensed ??= false;
                     if (Db::one('SELECT 1 FROM "Product" WHERE "categoryId" = ? AND "name" = ? COLLATE NOCASE', [$row['id'], $pname])) {
                         continue;
                     }
                     Db::insert('Product', [
                         'categoryId' => $row['id'], 'name' => $pname, 'description' => $text, 'type' => $type, 'price' => $price,
                         'unit' => $unit, 'intervalUnit' => $interval, 'setupFee' => $setup, 'minQuantity' => $min,
-                        'active' => 0, 'sortOrder' => $i,
+                        'active' => 0, 'sortOrder' => $i, 'licenseEnabled' => (int) $licensed,
                     ]);
                     $products++;
                 }
@@ -198,7 +206,7 @@ final class CatalogController
             'SELECT p.*, c.id AS category__id, c.name AS category__name FROM "Product" p LEFT JOIN "Category" c ON c.id = p.categoryId WHERE p."id" = ?',
             [$id],
         ) ?? throw ApiError::notFound('Produkt nicht gefunden');
-        return Casts::row($row, ['active']);
+        return Casts::row($row, self::PRODUCT_BOOLS);
     }
 
     /**
@@ -240,6 +248,14 @@ final class CatalogController
         }
         if ($type === 'HOURLY' && empty($merged['unit'])) {
             $data['unit'] = 'Std.';
+        }
+        // Lizenzen gibt es nur für Einmal- und Mietprodukte; die Laufzeit in Tagen nur für Einmalprodukte (Miete folgt den bezahlten Zeiträumen)
+        if ($type === 'HOURLY') {
+            $data['licenseEnabled'] = false;
+            $data['licenseSubdomains'] = false;
+            $data['licenseDays'] = null;
+        } elseif ($type === 'RENTAL') {
+            $data['licenseDays'] = null;
         }
         if (array_key_exists('categoryId', $data) && $data['categoryId'] === '') {
             $data['categoryId'] = null;

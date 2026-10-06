@@ -13,6 +13,8 @@ use App\Controllers\CronController;
 use App\Controllers\DashboardController;
 use App\Controllers\DocumentsController;
 use App\Controllers\InvoicesController;
+use App\Controllers\LicenseApiController;
+use App\Controllers\LicensesController;
 use App\Controllers\NotesController;
 use App\Controllers\OrdersController;
 use App\Controllers\PortalAuthController;
@@ -177,6 +179,18 @@ final class App
         $r->add('POST', '/api/portal/quotes/:id/accept', [PortalController::class, 'acceptQuote'], $pub);
         $r->add('POST', '/api/portal/quotes/:id/decline', [PortalController::class, 'declineQuote'], $pub);
 
+        $r->add('POST', '/api/license/verify', [LicenseApiController::class, 'verify'], $pub);
+        $r->add('GET', '/api/license/public-key', [LicenseApiController::class, 'publicKey'], $pub);
+        $r->add('GET', '/license/client.php', [LicenseApiController::class, 'client'], $pub);
+        $r->add('GET', '/api/licenses', [LicensesController::class, 'index']);
+        $r->add('POST', '/api/licenses', [LicensesController::class, 'create']);
+        $r->add('GET', '/api/licenses/:id', [LicensesController::class, 'show']);
+        $r->add('PATCH', '/api/licenses/:id', [LicensesController::class, 'update']);
+        $r->add('DELETE', '/api/licenses/:id', [LicensesController::class, 'delete']);
+        $r->add('POST', '/api/licenses/:id/regenerate', [LicensesController::class, 'regenerate']);
+        $r->add('POST', '/api/licenses/:id/send', [LicensesController::class, 'send']);
+        $r->add('GET', '/api/portal/licenses', [PortalController::class, 'licenseList'], $pub);
+        $r->add('POST', '/api/portal/licenses/:id/domain', [PortalController::class, 'changeLicenseDomain'], $pub);
         $r->add('GET', '/api/portal/products', [PortalController::class, 'products'], $pub);
         $r->add('GET', '/api/portal/orders', [PortalController::class, 'orderList'], $pub);
         $r->add('POST', '/api/portal/orders', [PortalController::class, 'createOrder'], $pub);
