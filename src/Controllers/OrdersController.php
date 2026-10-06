@@ -20,7 +20,6 @@ final class OrdersController
         'productId' => ['required' => true, 'min' => 1],
         'quantity' => ['type' => 'number', 'positive' => true],
         'note' => ['max' => 2000],
-        'domain' => ['max' => 300],
     ];
 
     private const ACCEPT_SCHEMA = [
@@ -63,7 +62,7 @@ final class OrdersController
     {
         $data = Validator::validate($r->body(), self::CREATE_SCHEMA);
         Db::require('Client', $data['clientId'], 'Kunde nicht gefunden');
-        $order = OrderService::create($data['clientId'], $data['productId'], (float) ($data['quantity'] ?? 1), (string) ($data['note'] ?? ''), 'ADMIN', false, (string) ($data['domain'] ?? ''));
+        $order = OrderService::create($data['clientId'], $data['productId'], (float) ($data['quantity'] ?? 1), (string) ($data['note'] ?? ''), 'ADMIN', false);
 
         return Response::json($order, 201);
     }

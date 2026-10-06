@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Support;
 
 /**
- * Produktkonfiguration der lizenzierten Auslieferung (product.json im Projektordner).
- * Fehlt die Datei (Entwicklungs- und Server-Installation), gibt es keine Lizenzpflicht.
+ * Update-Konfiguration dieser Installation (product.json im Projektordner, wird nie von Updates überschrieben):
+ * Adresse des Update-Servers und seine öffentlichen Schlüssel. Fehlt die Datei, gibt es keine Update-Funktion
+ * (z. B. beim Update-Server selbst).
  */
 final class Product
 {
@@ -27,19 +28,9 @@ final class Product
         return self::$config = is_array($data) ? $data : [];
     }
 
-    public static function enforced(): bool
-    {
-        return (self::config()['enforce'] ?? false) === true;
-    }
-
     public static function slug(): string
     {
         return (string) (self::config()['product'] ?? 'crm');
-    }
-
-    public static function name(): string
-    {
-        return (string) (self::config()['name'] ?? 'Webdesigner CRM');
     }
 
     public static function server(): string
@@ -53,6 +44,12 @@ final class Product
         $keys = self::config()['publicKeys'] ?? [];
 
         return is_array($keys) ? array_values(array_filter($keys, 'is_string')) : [];
+    }
+
+    /** Ist ein Update-Server eingetragen? */
+    public static function updatesConfigured(): bool
+    {
+        return self::server() !== '' && self::publicKeys() !== [];
     }
 
     public static function version(): string

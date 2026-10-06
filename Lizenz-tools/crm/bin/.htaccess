@@ -1,6 +1,0 @@
-# Kein Zugriff über den Webserver (Schutz, falls dieser Ordner versehentlich öffentlich liegt)
-Require all denied
-<IfModule !mod_authz_core.c>
-    Order deny,allow
-    Deny from all
-</IfModule>

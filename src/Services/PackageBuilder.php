@@ -14,7 +14,7 @@ use ZipArchive;
 
 /**
  * Baut Update-Paket und Vollpaket (Erstinstallation) direkt aus den Dateien dieses Servers – ohne Kommandozeile.
- * Entspricht Lizenz-tools/build-release.php und build-product.php; Server-Adresse und öffentlicher Schlüssel kommen aus dieser Installation.
+ * Server-Adresse und öffentlicher Schlüssel kommen aus dieser Installation.
  */
 final class PackageBuilder
 {
@@ -108,13 +108,13 @@ final class PackageBuilder
         return $tmp;
     }
 
-    /** Vollpaket (mit install.php und product.json für diesen Lizenzserver) in eine temporäre Datei schreiben. */
-    public static function buildFull(): string
+    /** Installationspaket (mit install.php und product.json für diesen Update-Server) in eine temporäre Datei schreiben. */
+    public static function buildInstall(): string
     {
         $version = self::prepare();
         $server = self::serverUrl();
         if ($server === '') {
-            throw ApiError::badRequest('Die öffentliche Adresse (https://…) ist nicht eingetragen: Einstellungen → Kundenportal → „Öffentliche Adresse“. Sie wird als Lizenzserver in das Paket geschrieben.');
+            throw ApiError::badRequest('Die öffentliche Adresse (https://…) ist nicht eingetragen: Einstellungen → Kundenportal → „Öffentliche Adresse“. Sie wird als Update-Server in das Paket geschrieben.');
         }
         $files = self::files(false);
         $update = self::files(true);
@@ -130,38 +130,27 @@ final class PackageBuilder
         }
         $zip->addFromString($p . 'manifest.json', json_encode(self::manifest($version, $update), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         $zip->addFromString($p . 'product.json', json_encode([
-            'product' => 'crm', 'name' => 'Webdesigner CRM', 'server' => $server, 'publicKeys' => [LicenseService::publicKey()], 'enforce' => true, 'builtAt' => gmdate('Y-m-d\TH:i:s\Z'),
+            'product' => 'crm', 'name' => 'Webdesigner CRM', 'server' => $server, 'publicKeys' => [UpdateSigner::publicKey()], 'builtAt' => gmdate('Y-m-d\TH:i:s\Z'),
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-        $zip->addFromString($p . 'INSTALL.txt', "Webdesigner CRM $version – Installation\n\n1. Den Inhalt des Ordners „crm“ auf deinen Webspace hochladen (am besten in eine eigene Subdomain mit https).\n2. https://deine-domain/install.php im Browser öffnen und den Anweisungen folgen. Dein Lizenzschlüssel wird dort abgefragt.\n3. Danach install.php löschen.\n\nUpdates: im Programm unter Einstellungen → Lizenz & Updates.\nRechtstexte (Impressum, Datenschutz, AGB): im Admin unter System → Rechtstexte.\n");
+        $zip->addFromString($p . 'INSTALL.txt', "Webdesigner CRM $version – Installation\n\n1. Den Inhalt des Ordners „crm“ auf deinen Webspace hochladen (am besten in eine eigene Subdomain mit https).\n2. https://deine-domain/install.php im Browser öffnen und den Anweisungen folgen. \n3. Danach install.php löschen.\n\nUpdates: im Programm unter Einstellungen → Version & Updates.\nRechtstexte (Impressum, Datenschutz, AGB): im Admin unter System → Rechtstexte.\n");
         $zip->close();
 
         return $tmp;
     }
 
     /**
-     * Erstellt aus diesem Server die Version laut VERSION-Datei: Release (signiert) und Vollpaket.
-     * Gibt es die Version schon ohne Vollpaket, wird nur das Vollpaket ergänzt (oder ersetzt).
+     * Erstellt aus diesem Server das Update-Paket der Version laut VERSION-Datei und legt es (signiert) als Release an.
      *
      * @return array<string,mixed>
      */
-    public static function publish(string $channel, ?string $notes, bool $published, string $access, ?string $minFrom): array
+    public static function publish(string $channel, ?string $notes, bool $published, ?string $minFrom): array
     {
-        $version = self::prepare();
-        $full = self::buildFull(); // zuerst: bricht mit klarer Meldung ab, bevor etwas angelegt wird
+        self::prepare();
+        $upd = self::buildUpdate();
         try {
-            $existing = \App\Support\Db::one('SELECT * FROM "Release" WHERE "product" = ? AND "version" = ?', ['crm', $version]);
-            if ($existing === null) {
-                $upd = self::buildUpdate();
-                try {
-                    $existing = ReleaseService::create($upd, $channel, $notes, $published, $access, $minFrom);
-                } finally {
-                    @unlink($upd);
-                }
-            }
-
-            return ReleaseService::attachFull($existing['id'], $full);
+            return ReleaseService::create($upd, $channel, $notes, $published, $minFrom);
         } finally {
-            @unlink($full);
+            @unlink($upd);
         }
     }
 }

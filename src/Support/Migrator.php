@@ -34,8 +34,11 @@ final class Migrator
     {
         $names = [];
         foreach (self::files() as $file) {
-            preg_match_all('/CREATE TABLE "(\w+)"/', (string) file_get_contents($file), $m);
+            $sql = (string) file_get_contents($file);
+            preg_match_all('/CREATE TABLE "(\w+)"/', $sql, $m);
             array_push($names, ...$m[1]);
+            preg_match_all('/DROP TABLE (?:IF EXISTS )?"(\w+)"/', $sql, $d); // spätere Migrationen können Tabellen wieder entfernen
+            $names = array_diff($names, $d[1]);
         }
         return array_values(array_diff($names, ['RateLimit']));
     }

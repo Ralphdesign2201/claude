@@ -10,7 +10,7 @@ use Throwable;
 
 final class Db
 {
-    private const HAS_UPDATED_AT = ['User', 'Client', 'Project', 'Task', 'Invoice', 'Contract', 'Note', 'Quote', 'Recurring', 'Category', 'Product', 'ProductOrder', 'PortalAccount', 'License', 'Ticket', 'CannedResponse', 'FaqArticle', 'LegalDocument'];
+    private const HAS_UPDATED_AT = ['User', 'Client', 'Project', 'Task', 'Invoice', 'Contract', 'Note', 'Quote', 'Recurring', 'Category', 'Product', 'ProductOrder', 'PortalAccount', 'Ticket', 'CannedResponse', 'FaqArticle', 'LegalDocument'];
 
     private static ?PDO $pdo = null;
     private static int $depth = 0;

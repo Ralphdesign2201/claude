@@ -10,7 +10,6 @@ use App\Http\Response;
 use App\Mail\Mailer;
 use App\Pdf\InvoicePdf;
 use App\Services\InvoiceService;
-use App\Services\LicenseService;
 use App\Services\MailTemplates;
 use App\Support\Activity;
 use App\Support\Dates;
@@ -113,10 +112,6 @@ final class InvoicesController
                 InvoiceService::insertItems($id, $items);
             }
         });
-        if (($data['status'] ?? null) === 'PAID') {
-            LicenseService::onInvoicePaid($id); // als bezahlt markiert: Lizenzen freischalten bzw. verlängern
-        }
-
         return Response::json(InvoiceService::detail($id));
     }
 
@@ -132,21 +127,15 @@ final class InvoicesController
         Db::require('Invoice', $invoiceId, 'Rechnung nicht gefunden');
         $data = Validator::validate($r->body(), self::PAYMENT_SCHEMA);
 
-        $nowPaid = false;
-        $paymentId = Db::transaction(static function () use ($invoiceId, $data, &$nowPaid) {
+        $paymentId = Db::transaction(static function () use ($invoiceId, $data) {
             $paymentId = Db::insert('Payment', $data + ['invoiceId' => $invoiceId]);
 
             $invoice = InvoiceService::detail($invoiceId);
             if ($invoice['totals']['paid'] >= $invoice['totals']['total'] && $invoice['status'] !== 'PAID') {
                 Db::update('Invoice', $invoiceId, ['status' => 'PAID', 'paidAt' => Dates::now()]);
-                $nowPaid = true;
             }
             return $paymentId;
         });
-        if ($nowPaid) {
-            LicenseService::onInvoicePaid($invoiceId); // vollständig bezahlt: Lizenzen freischalten bzw. verlängern
-        }
-
         return Response::json(Db::find('Payment', $paymentId), 201);
     }
 

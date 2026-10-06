@@ -37,18 +37,9 @@ final class CatalogController
         'minQuantity' => ['type' => 'number', 'positive' => true],
         'active' => ['type' => 'bool'],
         'sortOrder' => ['type' => 'int'],
-        'licenseEnabled' => ['type' => 'bool'],
-        'licenseSubdomains' => ['type' => 'bool'],
-        'licensePayFirst' => ['type' => 'bool'],
-        'licenseDays' => ['type' => 'int', 'positive' => true, 'emptyOk' => true],
-        'licenseSlug' => ['max' => 40, 'emptyOk' => true],
-        'licensePlan' => ['enum' => ['starter', 'pro', 'agency'], 'emptyOk' => true],
-        'licenseFeatures' => ['max' => 200, 'emptyOk' => true],
-        'licenseSupportDays' => ['type' => 'int', 'emptyOk' => true],
-        'licenseUpdateDays' => ['type' => 'int', 'emptyOk' => true],
     ];
 
-    private const PRODUCT_BOOLS = ['active', 'licenseEnabled', 'licenseSubdomains', 'licensePayFirst'];
+    private const PRODUCT_BOOLS = ['active'];
 
     /* ---------- Kategorien ---------- */
 
@@ -104,7 +95,7 @@ final class CatalogController
             . $where->sql() . ' ORDER BY p."sortOrder" ASC, p."name" COLLATE NOCASE ASC',
             $where->params(),
         );
-        return Response::json(Casts::rows($rows, self::PRODUCT_BOOLS));
+        return Response::json(array_map([self::class, 'withoutLegacy'], Casts::rows($rows, self::PRODUCT_BOOLS)));
     }
 
     public static function showProduct(Request $r): Response
@@ -164,7 +155,6 @@ final class CatalogController
             ['Einmalige Leistungen', 'Einmalig beauftragte Arbeiten', 1, [
                 ['Webseitenerstellung einmalig', 'ONE_TIME', 1500, null, null, 0, 1, 'Individuelle Website nach Ihren Wünschen. Bitte beschreiben Sie Ihr Projekt in den Anmerkungen.'],
                 ['Skripte einmalig', 'ONE_TIME', 250, null, null, 0, 1, 'Individuelles Skript oder eine Automatisierung nach Ihren Vorgaben.'],
-                ['Software-Lizenz (1 Domain)', 'ONE_TIME', 149, null, null, 0, 1, 'Lizenz für unsere Software auf einer Domain. Bitte geben Sie bei der Bestellung Ihre Domain an.', true],
                 ['Druckaufträge', 'ONE_TIME', 0.15, 'Stück', null, 0, 100, 'Flyer, Visitenkarten, Plakate und mehr. Format und Wünsche bitte in den Anmerkungen angeben.'],
             ]],
             ['Mietprodukte', 'Laufende Leistungen mit fester Abrechnung', 2, [
@@ -187,15 +177,14 @@ final class CatalogController
                     $row = ['id' => Db::insert('Category', ['name' => $name, 'description' => $desc, 'sortOrder' => $sort])];
                     $cats++;
                 }
-                foreach ($items as $i => [$pname, $type, $price, $unit, $interval, $setup, $min, $text, $licensed]) {
-                    $licensed ??= false;
+                foreach ($items as $i => [$pname, $type, $price, $unit, $interval, $setup, $min, $text]) {
                     if (Db::one('SELECT 1 FROM "Product" WHERE "categoryId" = ? AND "name" = ? COLLATE NOCASE', [$row['id'], $pname])) {
                         continue;
                     }
                     Db::insert('Product', [
                         'categoryId' => $row['id'], 'name' => $pname, 'description' => $text, 'type' => $type, 'price' => $price,
                         'unit' => $unit, 'intervalUnit' => $interval, 'setupFee' => $setup, 'minQuantity' => $min,
-                        'active' => 0, 'sortOrder' => $i, 'licenseEnabled' => (int) $licensed,
+                        'active' => 0, 'sortOrder' => $i,
                     ]);
                     $products++;
                 }
@@ -211,7 +200,13 @@ final class CatalogController
             'SELECT p.*, c.id AS category__id, c.name AS category__name FROM "Product" p LEFT JOIN "Category" c ON c.id = p.categoryId WHERE p."id" = ?',
             [$id],
         ) ?? throw ApiError::notFound('Produkt nicht gefunden');
-        return Casts::row($row, self::PRODUCT_BOOLS);
+        return self::withoutLegacy(Casts::row($row, self::PRODUCT_BOOLS));
+    }
+
+    /** Spalten des früheren Lizenzsystems (in der Datenbank ungenutzt vorhanden) nicht mehr ausliefern. @param array<string,mixed> $row @return array<string,mixed> */
+    private static function withoutLegacy(array $row): array
+    {
+        return array_filter($row, static fn ($k) => !str_starts_with((string) $k, 'license'), ARRAY_FILTER_USE_KEY);
     }
 
     /**
@@ -243,41 +238,15 @@ final class CatalogController
         if (array_key_exists('categoryId', $data) && $data['categoryId'] !== null && !Db::find('Category', $data['categoryId'])) {
             $errors['categoryId'][] = 'Kategorie nicht gefunden';
         }
-        foreach (['licenseSupportDays', 'licenseUpdateDays'] as $f) {
-            if (isset($data[$f]) && ($data[$f] < 0 || $data[$f] > 36500)) {
-                $errors[$f][] = 'Erlaubt sind 0 bis 36500 Tage (0 = nicht enthalten, leer = unbegrenzt)';
-            }
-        }
-        if (isset($data['licenseSlug']) && $data['licenseSlug'] !== '' && !preg_match('/^[a-z0-9][a-z0-9-]{0,39}$/', $data['licenseSlug'])) {
-            $errors['licenseSlug'][] = 'Nur Kleinbuchstaben, Ziffern und Bindestriche (z. B. crm)';
-        }
         if ($errors !== []) {
             throw ApiError::badRequest('Validierungsfehler', ['formErrors' => [], 'fieldErrors' => (object) $errors]);
         }
-        if (array_key_exists('licenseSlug', $data) && $data['licenseSlug'] === '') {
-            $data['licenseSlug'] = null;
-        }
-        if (array_key_exists('licenseFeatures', $data)) {
-            $data['licenseFeatures'] = \App\Services\Entitlements::normalize($data['licenseFeatures']);
-        }
-
         if ($type !== 'RENTAL') {
             $data['intervalUnit'] = null;
             $data['setupFee'] = 0;
         }
         if ($type === 'HOURLY' && empty($merged['unit'])) {
             $data['unit'] = 'Std.';
-        }
-        // Lizenzen gibt es nur für Einmal- und Mietprodukte; die Laufzeit in Tagen nur für Einmalprodukte (Miete folgt den bezahlten Zeiträumen)
-        if ($type === 'HOURLY') {
-            $data['licenseEnabled'] = false;
-            $data['licenseSubdomains'] = false;
-            $data['licenseDays'] = null;
-            foreach (['licenseSlug', 'licensePlan', 'licenseFeatures', 'licenseSupportDays', 'licenseUpdateDays'] as $f) {
-                $data[$f] = null;
-            }
-        } elseif ($type === 'RENTAL') {
-            $data['licenseDays'] = null;
         }
         if (array_key_exists('categoryId', $data) && $data['categoryId'] === '') {
             $data['categoryId'] = null;

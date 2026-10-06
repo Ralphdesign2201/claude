@@ -26,7 +26,7 @@ final class CronController
 
         \App\Services\HealthService::touchCron();
         \App\Services\UpdateService::checkIfDue();
-        $results = \App\Services\ProductLicense::feature('recurring') ? RecurringService::runDue() : []; // ohne gültige Lizenz keine automatische Abrechnung
+        $results = RecurringService::runDue();
         $tickets = \App\Services\TicketService::autoClose();
         $backup = null;
         $backupError = null;

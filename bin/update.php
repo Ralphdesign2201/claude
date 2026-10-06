@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// Updates der lizenzierten Software:
+// Updates dieser Installation (Update-Server steht in product.json):
 //   php bin/update.php --check            nach einer neuen Version fragen
 //   php bin/update.php --install          neueste Version laden, prüfen und einspielen (mit Sicherung und Rücknahme bei Fehlern)
 //   php bin/update.php --rollback=<Datei> Code aus einer Sicherung (backups/code-vor-update-….zip) zurückspielen
@@ -24,7 +24,9 @@ try {
     } elseif (isset($opts['check'])) {
         $r = UpdateService::check();
         echo 'Installiert: ' . $r['current'] . "\n";
-        echo $r['latest'] === null ? "Es gibt kein neueres Update.\n" : 'Neu: ' . $r['latest']['version'] . ($r['entitled'] ? " (verfügbar" . ($r['licensed'] ? ' für deine Lizenz' : '') . ")\n" : " (nicht im Update-Zeitraum deiner Lizenz)\n");
+        echo $r['latest'] === null ? "Es gibt kein neueres Update.
+" : 'Neu: ' . $r['latest']['version'] . "
+";
         foreach ($r['changes'] as $c) {
             echo '  ' . $c['version'] . ($c['notes'] ? ': ' . str_replace("\n", "\n      ", trim((string) $c['notes'])) : '') . "\n";
         }

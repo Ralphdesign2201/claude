@@ -102,14 +102,10 @@ final class HealthService
             $add('yellow', 'Backups sind nicht verschlüsselt', 'Ein Backup-Passwort schützt Kundendaten, falls die Datei verloren geht.', 'settings');
         }
 
-        // Updates und Lizenz
+        // Updates
         $state = UpdateService::lastState();
         if (is_array($state['latest'] ?? null) && ($state['latest']['version'] ?? '') !== '') {
-            $add('yellow', 'Update verfügbar: Version ' . $state['latest']['version'], 'Installiert ist ' . Product::version() . '. Updates findest du unter Lizenzen → System bzw. in den Einstellungen.', 'system');
-        }
-        $lic = ProductLicense::publicState();
-        if (($lic['enforced'] ?? false) && !($lic['valid'] ?? true)) {
-            $add('red', 'Lizenz ungültig', 'Die Software läuft nur lesend, bis die Lizenz wieder gültig ist.', 'system');
+            $add('yellow', 'Update verfügbar: Version ' . $state['latest']['version'], 'Installiert ist ' . Product::version() . '. Du findest es unter Einstellungen → Version & Updates.', 'settings');
         }
 
         // Support

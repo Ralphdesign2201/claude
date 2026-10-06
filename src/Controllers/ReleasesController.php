@@ -16,7 +16,7 @@ final class ReleasesController
 {
     public static function index(Request $r): Response
     {
-        $rows = Db::all('SELECT "id", "product", "version", "channel", "notes", "size", "sha256", "minPhp", "access", "minFrom", "fullSize", "published", "downloads", "releasedAt" FROM "Release"');
+        $rows = Db::all('SELECT "id", "product", "version", "channel", "notes", "size", "sha256", "minPhp", "minFrom", "published", "downloads", "releasedAt" FROM "Release"');
         usort($rows, static fn ($a, $b) => strcmp($a['product'], $b['product']) ?: version_compare($b['version'], $a['version']));
 
         return Response::json(array_map(static fn ($x) => $x + ['isPublished' => (bool) $x['published']], $rows));
@@ -31,9 +31,8 @@ final class ReleasesController
         $b = TicketsController::form($r);
         $channel = TicketsController::enum($b, 'channel', ['stable', 'beta'], 'stable');
         $notes = TicketsController::text($b, 'notes', 10000);
-        $access = TicketsController::enum($b, 'access', ['public', 'licensed'], 'licensed');
         $minFrom = TicketsController::text($b, 'minFrom', 30);
-        $release = ReleaseService::create($file['tmp_name'], $channel, $notes, TicketsController::flag($b, 'published'), $access, $minFrom);
+        $release = ReleaseService::create($file['tmp_name'], $channel, $notes, TicketsController::flag($b, 'published'), $minFrom);
 
         return Response::json(self::view($release), 201);
     }
@@ -42,40 +41,43 @@ final class ReleasesController
     public static function selfInfo(Request $r): Response
     {
         $i = \App\Services\PackageBuilder::info();
-        $row = Db::one('SELECT "id", "fullSize", "published" FROM "Release" WHERE "product" = ? AND "version" = ?', [$i['product'], $i['version']]);
+        $row = Db::one('SELECT "id", "published" FROM "Release" WHERE "product" = ? AND "version" = ?', [$i['product'], $i['version']]);
 
-        return Response::json($i + ['released' => $row !== null, 'hasFull' => $row !== null && $row['fullSize'] !== null, 'published' => $row !== null && (int) $row['published'] === 1]);
+        return Response::json($i + ['released' => $row !== null, 'published' => $row !== null && (int) $row['published'] === 1]);
     }
 
-    /** Release und Vollpaket der aktuellen Version aus diesem Server erstellen (ohne Kommandozeile). */
+    /** Release der aktuellen Version aus diesem Server erstellen (ohne Kommandozeile). */
     public static function buildSelf(Request $r): Response
     {
         set_time_limit(300);
         $b = TicketsController::form($r);
         $release = \App\Services\PackageBuilder::publish(
             TicketsController::enum($b, 'channel', ['stable', 'beta'], 'stable'), TicketsController::text($b, 'notes', 10000),
-            TicketsController::flag($b, 'published'), TicketsController::enum($b, 'access', ['public', 'licensed'], 'licensed'), TicketsController::text($b, 'minFrom', 30),
+            TicketsController::flag($b, 'published'), TicketsController::text($b, 'minFrom', 30),
         );
 
         return Response::json(self::view($release), 201);
     }
 
-    /** Vollpaket (Erstinstallation) zu einer bestehenden Version hochladen oder ersetzen. */
-    public static function uploadFull(Request $r): Response
+    /** Installationspaket (ZIP) für neue Installationen, mit Update-Server dieser Installation. */
+    public static function installPackage(Request $r): Response
     {
-        $file = $r->files['file'] ?? null;
-        if (!is_array($file) || !is_string($file['tmp_name'] ?? null) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            throw ApiError::badRequest('Bitte das Vollpaket (ZIP) hochladen (Feld „file“).');
-        }
+        set_time_limit(300);
+        $tmp = \App\Services\PackageBuilder::buildInstall();
+        $bytes = (string) file_get_contents($tmp);
+        @unlink($tmp);
 
-        return Response::json(self::view(ReleaseService::attachFull($r->param('id'), $file['tmp_name'])));
+        return Response::bytes($bytes, [
+            'Content-Type' => 'application/zip', 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'no-store',
+            'Content-Disposition' => 'attachment; filename="crm-' . preg_replace('/[^A-Za-z0-9._-]/', '_', \App\Support\Product::version()) . '-installation.zip"',
+        ]);
     }
 
     public static function update(Request $r): Response
     {
         $d = Validator::validate($r->body(), [
             'notes' => ['max' => 10000, 'emptyOk' => true], 'channel' => ['enum' => ['stable', 'beta']], 'published' => ['type' => 'bool'],
-            'access' => ['enum' => ['public', 'licensed']], 'minFrom' => ['max' => 30, 'emptyOk' => true],
+            'minFrom' => ['max' => 30, 'emptyOk' => true],
         ], partial: true);
         if (isset($d['minFrom'])) {
             if ($d['minFrom'] !== '' && !ReleaseService::validVersion($d['minFrom'])) {
@@ -111,8 +113,7 @@ final class ReleasesController
     /** @param array<string,mixed> $r @return array<string,mixed> */
     private static function view(array $r): array
     {
-        unset($r['fileName'], $r['signature'], $r['fullFileName'], $r['fullSha256']);
-        $r['hasFull'] = ($r['fullSize'] ?? null) !== null;
+        unset($r['fileName'], $r['signature'], $r['fullFileName'], $r['fullSha256'], $r['fullSize'], $r['access']);
 
         return $r + ['isPublished' => (bool) $r['published']];
     }

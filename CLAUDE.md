@@ -13,12 +13,12 @@ php -S localhost:4000 -t public public/index.php # Dev-Server (oder: composer se
 
 php tests/run.php                  # API-Integrationstest (startet eigenen PHP-Server, ~2 Min.)
 TEST_DB=mysql php tests/run.php    # dasselbe gegen MySQL (TEST_MYSQL_* , Standard crm@127.0.0.1)
-php tests/product.php              # Lizenzserver + Produkt-Kopie: Lizenzen, signierte Updates, Installer
+php tests/product.php              # Update-Server + Installations-Kopien: signierte Updates, verpasste Versionen, Installer
 ```
 
 Es gibt kein Lint/Build und kein Test-Framework: `tests/*.php` sind eigenständige Skripte mit `check()/expect()`; einzelne Tests lassen sich nur ausführen, indem man das Skript kürzt oder eine Sektion (`echo "Name\n"`-Blöcke) isoliert. Aktuell alles grün (run.php 655, product.php 115). `php -l datei.php` und `node --check public/assets/app.js` für schnelle Syntax-Checks. UI-Prüfung erfolgt mit Playwright-Skripten gegen einen frisch migrierten Dev-Server (Chromium liegt unter `/opt/pw-browsers`).
 
-Releases/Auslieferung (siehe `Lizenz-tools/README.md`): `php Lizenz-tools/build-product.php crm [--no-license] [--server=… --key-file=…]` baut `Lizenz-tools/crm/` + `dist/*.zip`; `php Lizenz-tools/build-release.php crm` baut ein Update-Paket. Vorher `VERSION` hochzählen.
+Releases entstehen im Admin (System → Versionen & Updates, `PackageBuilder`); vorher `VERSION` hochzählen. Das ZIP für neue Installationen: „Installationspaket herunterladen“ ebendort.
 
 ## Architektur
 
@@ -29,21 +29,19 @@ Releases/Auslieferung (siehe `Lizenz-tools/README.md`): `php Lizenz-tools/build-
 - Datenbank: Migrationen `database/migrations/NNN_*.sql` sind in **SQLite-Syntax** geschrieben; `Support\Migrator` übersetzt sie automatisch für MySQL (ANSI_QUOTES). Tabellen mit `updatedAt` in `Db::HAS_UPDATED_AT` eintragen. `DatabaseSwitch`/`DatabaseTransfer` kopieren Daten zwischen SQLite und MySQL – neue Tabellen müssen dort funktionieren. Zeitstempel immer über `Support\Dates::now()` (streng monoton, ISO-ms).
 - Zwei Auth-Welten: Team (JWT, Rollen ADMIN/Mitarbeiter, Login per Benutzername oder E-Mail) und Kundenportal (`/api/portal/*`, Token nur als Hash gespeichert, `PortalAccount`).
 
-**Lizenz-/Update-System** (zentral, bereichsübergreifend):
-- Dieselbe Codebasis ist *Lizenzserver* (ohne `product.json`) und *Produkt* (mit `product.json`, `Support\Product`). Server signiert Antworten mit Ed25519 (`LicenseService`, Schlüssel `database/license.key`), Produkt prüft mit eingebautem öffentlichem Schlüssel (`ProductLicense` + `examples/license-client/LicenseClient.php`, wird auch an Kunden ausgeliefert).
-- Durchsetzung: `ProductGate` (Nur-Lesen 402, Funktions-Sperren 403 anhand `Entitlements`-Paketen/Features). In Nicht-Produkt-Installationen sind alle Features offen.
-- Updates: `ReleaseService` (Pakete + Signatur, `plan()` wählt Ziel inkl. `minFrom`-Kette, `access` public/licensed) ↔ `LicenseApiController` (`update-check`, `update-public`, `download`) ↔ `UpdateService` (Download, SHA-256 + Signatur, Whitelist-Verzeichnisse, Backup, Rollback, `installAll()` mit Mehrschritt-Schleife). Jedes Release ist ein **vollständiger Stand** (Code + alle Migrationen), damit Versionen übersprungen werden können. `product.json`, `public/install.php`, Daten und Einstellungen werden nie überschrieben.
-- Das manifest/Release-Format wird von `Lizenz-tools/lib.php` (Bauen) und `ReleaseService::readManifest` / `UpdateService::extract` (Prüfen) gemeinsam definiert – bei Änderungen alle drei anpassen.
+**Update-System** (bereichsübergreifend; das frühere Lizenzsystem wurde bewusst komplett entfernt – nicht wieder einführen):
+- Jede Installation kann *Update-Server* sein (`ReleaseService`, `UpdateApiController`, Signatur über `UpdateSigner`, Ed25519-Schlüssel `database/update.key`, fällt auf altes `license.key` zurück) und *Client* (`product.json` mit `server` + `publicKeys`; `Support\Product`, `Support\UpdateClient`, `UpdateService`).
+- `ReleaseService::plan()` wählt das Ziel inkl. `minFrom`-Kette; `UpdateService::installAll()` installiert in Schleife (Download, SHA-256 + Signatur, Whitelist-Verzeichnisse, Backup, Rollback). Jedes Release ist ein **vollständiger Stand** (Code + alle Migrationen), damit Versionen übersprungen werden können. `product.json`, `public/install.php`, Daten und Einstellungen werden nie überschrieben.
+- `PackageBuilder` baut Update-Paket und Installationspaket aus den Dateien des laufenden Servers; das Manifest-Format teilen sich `PackageBuilder`, `ReleaseService::readManifest` und `UpdateService::extract`.
+- Alte DB-Spalten/Tabellen des Lizenzsystems (`License*`, `Product.license*`, `Ticket.licenseId` …) bleiben ungenutzt bestehen (Migration 011 entfernt nur `LicenseNonce`); die API liefert sie nicht mehr aus.
 
 **Weitere Querschnittsthemen:** `LegalService` (Impressum/Datenschutz/AGB-Generator, Markdown-light→HTML, öffentliche Seiten `/impressum` etc.) und `HealthService` (rote/gelbe Dashboard-Hinweise, Cron-Zeitstempel in `database/cron-state.json`) hängen an den Einstellungen und fast allen Feature-Flags; Support-Tickets (`TicketService`, SLA, Anhänge in `uploads/tickets/`); Backups (`BackupService`, optional verschlüsselt); Cron-Arbeit läuft über `bin/cron.php` **oder** `POST /api/cron/run` mit `CRON_TOKEN`.
 
 **Frontend:** Vanilla-JS-SPA ohne Build-Schritt: `public/assets/app.js` (Admin, `VIEWS`-Map + ein großer delegierter Click-Handler mit `data-act`), `portal.js` (Kundenportal), `app.css`. Menü-Gruppen in `NAV_GROUPS`; neue Ansicht = `vXyz()` in `VIEWS` + Eintrag in `NAV_GROUPS`.
 
-**Installer:** `public/install.php` (Assistent, sperrt sich über `database/installed.lock`; fragt in Produktfassung den Lizenzschlüssel). Apache-`.htaccess`-Dateien schützen `database/ src/ bin/ tests/ uploads/` etc.
+**Installer:** `public/install.php` (Assistent, sperrt sich über `database/installed.lock`). Apache-`.htaccess`-Dateien schützen `database/ src/ bin/ tests/ uploads/` etc.
 
 ## Konventionen / Stolperfallen
 
 - Admin-Passwörter oder Zugangsdaten des Nutzers nie in Repo-Dateien schreiben.
 - Keine PR anlegen, außer ausdrücklich verlangt; Entwicklung auf dem vorgegebenen Feature-Branch.
-- Tests schreiben Releases nach `Lizenz-tools/releases/crm-9.9.*.zip` (werden am Ende aufgeräumt); `Lizenz-tools/releases/` und `dist/` sind git-ignoriert, `Lizenz-tools/crm/` ist eingecheckt (zuletzt als Beta ohne Lizenz gebaut, leerer Update-Server).
-- PHP-seitige Lizenzprüfung ist umgehbar; wirklich durchgesetzt wird nur, was der Server liefert (signierte Updates, Support, Berechtigungen).

@@ -27,12 +27,6 @@
   var TYPES = { ONE_TIME: ['Einmalig', 'info'], RENTAL: ['Miete', 'good'], HOURLY: ['Nach Stunden', 'warn'] };
   var PERIOD = { MONTHLY: 'Monat', QUARTERLY: 'Quartal', HALF_YEARLY: 'Halbjahr', YEARLY: 'Jahr' };
   var ORDER_STATUS = { PENDING: ['Neu', 'warn'], ACCEPTED: ['Angenommen', 'good'], REJECTED: ['Abgelehnt', 'bad'], CANCELLED: ['Storniert', 'neutral'] };
-  var FEATURES = { support: 'Support-Tickets', shop: 'Shop & Bestellungen', recurring: 'Abos', licenses: 'Lizenzverkauf' };
-  var PLANS = [['', '– keins –'], ['starter', 'Starter'], ['pro', 'Pro'], ['agency', 'Agency']];
-  var featureBoxes = function (prefix, cur) { return Object.keys(FEATURES).map(function (k) { return '<label style="flex-direction:row;align-items:center;gap:6px;font-weight:400"><input type="checkbox" id="' + prefix + k + '" data-feat="' + k + '"' + (cur.indexOf(k) >= 0 ? ' checked' : '') + '> ' + FEATURES[k] + '</label>'; }).join(''); };
-  var featureVal = function (f, prefix) { return Object.keys(FEATURES).filter(function (k) { return f.querySelector('#' + prefix + k).checked; }).join(','); };
-  var LICENSE_STATUS = { PENDING: ['Wartet auf Zahlung', 'warn'], ACTIVE: ['Aktiv', 'good'], SUSPENDED: ['Gesperrt', 'bad'], REVOKED: ['Widerrufen', 'bad'], EXPIRED: ['Abgelaufen', 'warn'] };
-  var REASONS = { domain: 'falsche Domain', expired: 'abgelaufen', suspended: 'gesperrt', pending: 'noch nicht aktiv' };
   var priceText = function (p) {
     var base = eur(p.price);
     if (p.type === 'RENTAL') return base + ' / ' + PERIOD[p.intervalUnit];
@@ -76,7 +70,7 @@
   var listAll = function (path, params) { return api('GET', path + qs(Object.assign({ pageSize: 100 }, params || {}))).then(function (r) { return r.items; }); };
 
   /* ---------- Zustand ---------- */
-  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', navOpen: 'start', navView: null, healthRed: 0, healthAt: 0, legalTab: 'IMPRESSUM', ltab: 'licenses', license: null, newTickets: 0, company: '', ticketId: null, tview: 'open', tsearch: '', tprio: '', tcat: '', stab: 'tickets', tsel: [], sgroup: '', dbtest: null, lstatus: '', lsearch: '', orderId: null, pending: 0 };
+  var ui = { view: 'dashboard', clientId: null, projectId: null, invoiceId: null, quoteId: null, q: '', cstatus: '', istatus: '', qstatus: '', pcat: '', ostatus: '', navOpen: 'start', navView: null, healthRed: 0, healthAt: 0, legalTab: 'IMPRESSUM', newTickets: 0, company: '', ticketId: null, tview: 'open', tsearch: '', tprio: '', tcat: '', stab: 'tickets', tsel: [], sgroup: '', dbtest: null, orderId: null, pending: 0 };
 
   /* ---------- Rechnungs-Hilfen ---------- */
   function shownStatus(inv) {
@@ -118,35 +112,21 @@
   }
 
   /* ---------- Rahmen ---------- */
-  var NAV_FEATURE = { products: 'shop', orders: 'shop', support: 'support', licenses: 'licenses', recurring: 'recurring' };
-  function drawBanner() {
-    var main = $('#main'); if (!main) return;
-    var old = $('#lic-banner'); if (old) old.remove();
-    var l = ui.license;
-    if (!l || !l.enforced) return;
-    var html = '';
-    if (!l.valid) html = '<div class="errbox" id="lic-banner" role="alert"><span><b>Lizenz nicht gültig.</b> ' + esc(l.message || '') + ' Bis das behoben ist, sind Änderungen gesperrt – deine Daten bleiben les- und exportierbar.</span>' + (me && me.role === 'ADMIN' ? '<button class="btn" data-act="nav" data-v="settings">Lizenz prüfen</button>' : '') + '</div>';
-    else if (l.mode === 'grace') html = '<div class="demo" id="lic-banner"><span>' + esc(l.message) + '</span></div>';
-    else if (l.supportUntil && l.supportActive && (new Date(l.supportUntil).getTime() - Date.now()) < 30 * 864e5) html = '<div class="demo" id="lic-banner"><span>Dein Support- und Update-Zeitraum endet am <b>' + fdate(l.supportUntil) + '</b>.</span></div>';
-    if (html) main.insertAdjacentHTML('afterbegin', html);
-  }
   /* Menü: Gruppen mit Aufklapp-Funktion – es ist immer nur eine Gruppe offen */
   var NAV_GROUPS = [
     { id: 'start', title: 'Übersicht', single: 'dashboard', items: [['dashboard', 'Dashboard']] },
-    { id: 'sales', title: 'Kunden & Verkauf', items: [['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen'], ['licenses', 'Lizenzen']] },
+    { id: 'sales', title: 'Kunden & Verkauf', items: [['clients', 'Kunden'], ['products', 'Produkte'], ['orders', 'Bestellungen']] },
     { id: 'support', title: 'Support', items: [['support', 'Tickets & Hilfe']] },
     { id: 'work', title: 'Projekte & Zeit', items: [['projects', 'Projekte'], ['times', 'Zeiten']] },
     { id: 'money', title: 'Buchhaltung', items: [['quotes', 'Angebote'], ['invoices', 'Rechnungen'], ['reminders', 'Mahnwesen'], ['recurring', 'Abos']] },
-    { id: 'system', title: 'System', items: [['legal', 'Rechtstexte'], ['team', 'Team']] },
+    { id: 'system', title: 'System', items: [['legal', 'Rechtstexte'], ['releases', 'Versionen & Updates'], ['team', 'Team']] },
   ];
   var VIEW_PARENT = { client: 'clients', order: 'orders', ticket: 'support', invoice: 'invoices', quote: 'quotes' };
   function navGroups() {
-    var l = ui.license;
     return NAV_GROUPS.map(function (g) {
       var items = g.items.filter(function (x) {
         if (x[0] === 'team' && !(me && me.role === 'ADMIN')) return false;
-        if (x[0] === 'legal' && !(me && me.role === 'ADMIN')) return false;
-        if (l && l.enforced && NAV_FEATURE[x[0]] && !(l.valid && l.features.indexOf(NAV_FEATURE[x[0]]) >= 0)) return false;
+        if ((x[0] === 'legal' || x[0] === 'releases') && !(me && me.role === 'ADMIN')) return false;
         return true;
       });
       return { id: g.id, title: g.title, single: g.single, items: items };
@@ -207,9 +187,6 @@
   function refreshBadge() {
     api('GET', '/api/settings').then(function (st) {
       ui.company = st.company && st.company.name || ui.company;
-      var licChanged = JSON.stringify(st.license) !== JSON.stringify(ui.license);
-      ui.license = st.license || null;
-      if (licChanged) { drawNav(); drawBanner(); }
       if ((st.pendingOrders !== ui.pending || st.newTickets !== ui.newTickets) && $('#nav')) { ui.pending = st.pendingOrders; ui.newTickets = st.newTickets || 0; drawNav(); }
     }).catch(function () { /* Badge ist optional */ });
     if (me && me.role === 'ADMIN' && Date.now() - ui.healthAt > 60000) {
@@ -329,10 +306,10 @@
         }).join('') + '</div>' : '') +
         (portal.active ? '<dl class="kv" style="margin-bottom:12px"><dt>Erstellt</dt><dd>' + fdate(portal.createdAt) + '</dd><dt>Gültig bis</dt><dd>' + (portal.expiresAt ? fdate(portal.expiresAt) : 'unbegrenzt') + '</dd><dt>Zuletzt genutzt</dt><dd>' + (portal.lastUsedAt ? fdate(portal.lastUsedAt) : 'noch nie') + '</dd></dl>' : '') +
         '<div class="row"><button class="btn primary" data-act="portal-issue" data-id="' + esc(c.id) + '">' + (portal.active ? 'Neuen Link erstellen' : 'Zugang erstellen') + '</button>' + (portal.active ? '<button class="btn danger" data-act="portal-revoke" data-id="' + esc(c.id) + '">Zugang sperren</button>' : '') + '</div></div>' +
- (tickets.length || (ui.license == null || !ui.license.enforced || (ui.license.features || []).indexOf('support') >= 0) ? '<div class="card"><h2>Support <span class="sub">(' + tickets.length + ' Ticket' + (tickets.length === 1 ? '' : 's') + ')</span> <button class="btn sm" data-act="new-ticket-for" data-id="' + esc(c.id) + '">+ Ticket</button></h2>' + (tickets.length ? tickets.map(function (t) {
+ ('<div class="card"><h2>Support <span class="sub">(' + tickets.length + ' Ticket' + (tickets.length === 1 ? '' : 's') + ')</span> <button class="btn sm" data-act="new-ticket-for" data-id="' + esc(c.id) + '">+ Ticket</button></h2>' + (tickets.length ? tickets.map(function (t) {
           return '<details class="tk-fold"><summary><span class="mono sub">' + esc(t.number) + '</span> <b>' + esc(t.subject) + '</b> ' + pill(TSTATUS, t.status) + ' ' + (t.unreadStaff && t.status !== 'CLOSED' ? '<span class="pill info">neu</span> ' : '') + '<span class="sub">· ' + ago(t.lastActivityAt) + ' · ' + t.messages.filter(function (m) { return m.kind === 'CUSTOMER' || m.kind === 'STAFF'; }).length + ' Nachr.</span></summary>' +
             '<div class="tk-thread" style="margin:10px 0">' + t.messages.map(bubble).join('') + '</div><button class="btn sm" data-act="open-ticket" data-id="' + esc(t.id) + '">Ticket öffnen und antworten</button></details>';
-        }).join('') : '<div class="empty">Dieser Kunde hat noch keine Support-Anfragen.</div>') + '</div>' : '') +
+        }).join('') : '<div class="empty">Dieser Kunde hat noch keine Support-Anfragen.</div>') + '</div>') +
         '<div class="grid two-eq"><div class="card"><h2>Angebote <button class="btn sm" data-act="new-quote" data-id="' + esc(c.id) + '">+ Angebot</button></h2><div class="list">' + (quotes.length ? quotes.map(function (q) {
           return '<div><div class="grow"><button class="link mono" data-act="open-quote" data-id="' + esc(q.id) + '">' + esc(q.number) + '</button><div class="sub">' + fdate(q.issueDate) + '</div></div><span class="num">' + eur(q.totals.total) + '</span>' + pill(QUOTE_STATUS, q.status) + '</div>';
         }).join('') : '<div class="empty">Noch keine Angebote.</div>') + '</div></div>' +
@@ -504,7 +481,7 @@
         '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="pfilter" data-v="' + esc(c[0]) + '" aria-pressed="' + (sel === c[0]) + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
         (selCat ? '<div class="card row" style="justify-content:space-between"><div><b>' + esc(selCat.name) + '</b>' + (selCat.description ? '<div class="sub">' + esc(selCat.description) + '</div>' : '') + '</div><div class="row"><button class="btn sm" data-act="new-product" data-cat="' + esc(selCat.id) + '">+ Produkt hier</button><button class="btn sm" data-act="edit-category" data-id="' + esc(selCat.id) + '">Kategorie bearbeiten</button><button class="btn sm ghost danger" data-act="del-category" data-id="' + esc(selCat.id) + '">Löschen</button></div></div>' : '') +
         '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Produkt</th><th>Art</th><th class="r">Preis (netto)</th><th>Kategorie</th><th>Status</th><th></th></tr></thead><tbody>' + (rows.length ? rows.map(function (p) {
-          return '<tr><td><b>' + esc(p.name) + '</b>' + (p.licenseEnabled ? ' <span class="tag">Lizenz</span>' : '') + (p.description ? '<div class="sub">' + esc(p.description.length > 90 ? p.description.slice(0, 90) + '…' : p.description) + '</div>' : '') + '</td><td>' + pill(TYPES, p.type) + (p.type === 'RENTAL' ? '<div class="sub">' + INTERVALS[p.intervalUnit] + '</div>' : '') + '</td><td class="r num">' + priceText(p) + (p.setupFee > 0 ? '<div class="sub">+ ' + eur(p.setupFee) + ' Einrichtung</div>' : '') + '</td><td>' + esc(p.category ? p.category.name : '–') + '</td><td>' + (p.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Inaktiv</span>') + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="prod-edit" data-id="' + esc(p.id) + '">Bearbeiten</button><button class="btn sm ghost" data-act="prod-toggle" data-id="' + esc(p.id) + '" data-active="' + (p.active ? '1' : '0') + '">' + (p.active ? 'Deaktivieren' : 'Aktivieren') + '</button><button class="btn sm ghost" data-act="prod-dup" data-id="' + esc(p.id) + '">Kopieren</button><button class="btn sm ghost danger" data-act="prod-del" data-id="' + esc(p.id) + '">Löschen</button></div></td></tr>';
+          return '<tr><td><b>' + esc(p.name) + '</b>' + (p.description ? '<div class="sub">' + esc(p.description.length > 90 ? p.description.slice(0, 90) + '…' : p.description) + '</div>' : '') + '</td><td>' + pill(TYPES, p.type) + (p.type === 'RENTAL' ? '<div class="sub">' + INTERVALS[p.intervalUnit] + '</div>' : '') + '</td><td class="r num">' + priceText(p) + (p.setupFee > 0 ? '<div class="sub">+ ' + eur(p.setupFee) + ' Einrichtung</div>' : '') + '</td><td>' + esc(p.category ? p.category.name : '–') + '</td><td>' + (p.active ? '<span class="pill good">Aktiv</span>' : '<span class="pill neutral">Inaktiv</span>') + '</td><td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="prod-edit" data-id="' + esc(p.id) + '">Bearbeiten</button><button class="btn sm ghost" data-act="prod-toggle" data-id="' + esc(p.id) + '" data-active="' + (p.active ? '1' : '0') + '">' + (p.active ? 'Deaktivieren' : 'Aktivieren') + '</button><button class="btn sm ghost" data-act="prod-dup" data-id="' + esc(p.id) + '">Kopieren</button><button class="btn sm ghost danger" data-act="prod-del" data-id="' + esc(p.id) + '">Löschen</button></div></td></tr>';
         }).join('') : '<tr><td colspan="6" class="empty">' + (all.length ? 'In dieser Kategorie gibt es noch keine Produkte.' : 'Noch keine Produkte. Lege eine Kategorie und dein erstes Produkt an, z. B. „Webseitenerstellung einmalig“, „Webhosting“ oder „Projektarbeit nach Stunden“.') + '</td></tr>') + '</tbody></table></div></div>' +
         (all.length === 0 ? '<div class="card stack"><b>Schnellstart</b><p class="sub" style="margin:0">Lege einen Beispielkatalog an: Einmalleistungen (Webseite, Skripte, Druckaufträge), Mietprodukte (Webhosting, Domain, Miethomepage, Wartung, SEO) und Projektarbeit nach Stunden. Preise und Texte sind Vorschläge, alles ist zunächst inaktiv, bis du es prüfst und aktivierst.</p><div><button class="btn primary" data-act="catalog-examples">Beispielkatalog anlegen</button></div></div>' : '') +
         '<p class="sub">Aktive Produkte können Kunden im Kundenportal bestellen. Inaktive Produkte und Produkte in verborgenen Kategorien sind dort nicht sichtbar, du kannst sie aber weiter in Angebote und Rechnungen einfügen.</p>';
@@ -523,12 +500,8 @@
   }
   var qtyText = function (o) { return o.quantity.toLocaleString('de-DE') + (o.unit ? ' ' + esc(o.unit) : '×'); };
 
-  function licenseEffect(o) {
-    if (!o.licenseEnabled || !o.domain || o.productType === 'HOURLY') return '';
-    return ' Außerdem wird eine <b>Lizenz für ' + esc(o.domain) + '</b> erstellt' + (o.licensePayFirst && (o.unitPrice * o.quantity > 0) ? ' – sie wird erst nach der bezahlten ' + (o.productType === 'RENTAL' ? 'ersten Abo-Rechnung' : 'Rechnung') + ' freigeschaltet.' : ' und dem Kunden sofort per E-Mail geschickt.');
-  }
   function orderEffect(o) {
-    return orderEffectBase(o) + licenseEffect(o);
+    return orderEffectBase(o);
   }
   function orderEffectBase(o) {
     if (o.productType === 'ONE_TIME') return 'Beim Annehmen wird eine <b>Rechnung (Entwurf)</b> über ' + eur(o.totals.net) + ' netto erstellt.';
@@ -543,7 +516,6 @@
       if (o.invoice) made.push('<button class="link mono" data-act="open-invoice" data-id="' + esc(o.invoice.id) + '">Rechnung ' + esc(o.invoice.number) + '</button>');
       if (o.setupInvoice) made.push('<button class="link mono" data-act="open-invoice" data-id="' + esc(o.setupInvoice.id) + '">Einrichtungsrechnung ' + esc(o.setupInvoice.number) + '</button>');
       if (o.recurring) made.push('<button class="link" data-act="nav" data-v="recurring">Abo „' + esc(o.recurring.title) + '“</button>');
-      if (o.license) made.push('<button class="link" data-act="open-license" data-id="' + esc(o.license.id) + '">Lizenz für ' + esc(o.license.domain) + '</button>');
       if (o.project) made.push('<button class="link" data-act="open-project" data-id="' + esc(o.project.id) + '">Projekt „' + esc(o.project.name) + '“</button>');
       return '<button class="btn ghost sm back" data-act="nav" data-v="orders" style="align-self:flex-start">← Alle Bestellungen</button>' +
         head('<span class="mono">' + esc(o.number) + '</span>', pill(ORDER_STATUS, o.status) + ' &nbsp;<button class="link" data-act="open-client" data-id="' + esc(o.client.id) + '">' + esc(o.client.company || o.client.name) + '</button>' + (o.source === 'ADMIN' ? ' · von dir erfasst' : ' · über das Kundenportal'),
@@ -610,7 +582,7 @@
       '<label class="full" for="db-pass">Passwort' + (my.passwordSet ? ' <span class="pill good">gespeichert</span>' : '') + '<input id="db-pass" type="password" autocomplete="new-password" placeholder="' + (my.passwordSet ? '•••••••• (leer lassen = gespeichertes verwenden)' : '') + '"></label></div>' +
       '<div class="row" style="margin-top:12px"><button type="button" class="btn" data-act="db-test" data-target="mysql">Verbindung testen</button><button type="button" class="btn primary" data-act="db-switch" data-target="mysql">' + (isMy ? 'Zu dieser MySQL-Datenbank wechseln …' : 'Zu MySQL wechseln …') + '</button></div><div id="db-result" style="margin-top:10px"></div></form>';
     return '<section class="card stack" id="sec-database"><h2>Datenbank</h2>' + body +
-      '<p class="sub" style="margin:0">Du kannst jederzeit zwischen SQLite (eine Datei, keine Einrichtung) und MySQL/MariaDB (z. B. beim Hosting-Paket) wechseln – in beide Richtungen. Beim Wechsel wird <b>alles</b> übernommen (Kunden, Rechnungen, Lizenzen, Benutzer …), vorher entsteht ein Backup, und die bisherige Datenbank bleibt unverändert als Rückfall erhalten. Du bleibst angemeldet. Bitte während des Wechsels (wenige Sekunden) nichts bearbeiten.</p>' +
+      '<p class="sub" style="margin:0">Du kannst jederzeit zwischen SQLite (eine Datei, keine Einrichtung) und MySQL/MariaDB (z. B. beim Hosting-Paket) wechseln – in beide Richtungen. Beim Wechsel wird <b>alles</b> übernommen (Kunden, Rechnungen, Bestellungen, Benutzer …), vorher entsteht ein Backup, und die bisherige Datenbank bleibt unverändert als Rückfall erhalten. Du bleibst angemeldet. Bitte während des Wechsels (wenige Sekunden) nichts bearbeiten.</p>' +
       (isMy ? '<div class="row"><button type="button" class="btn" data-act="db-switch" data-target="sqlite">Zurück zu SQLite wechseln …</button></div>' : '') +
       '<h3 style="margin:6px 0 0;font-size:14px">' + (isMy ? 'Zu einer anderen MySQL-Datenbank wechseln' : 'Zu MySQL / MariaDB wechseln') + '</h3>' + form +
       '<div class="sub">Die Zugangsdaten werden in <span class="mono">' + esc(settingsFile) + '</span> gespeichert (nur für den Server lesbar). Die Datenbank im Hosting-Panel muss vorher angelegt sein; der Benutzer braucht das Recht, Tabellen anzulegen.</div></section>';
@@ -618,34 +590,11 @@
   var settingsFile = 'database/settings.json';
 
   function systemCard(sys) {
-    var l = sys.license;
-    var up = sys.update || {};
-    var updBlock = function (enabled) {
-      return '<h3 style="margin:8px 0 0;font-size:14px">Updates</h3><div class="row" style="align-items:center"><button class="btn primary" data-act="upd-check"' + (enabled ? '' : ' disabled') + '>Nach Updates suchen</button><span class="sub">Eingespielt wird erst nach Sicherung, Signatur- und Prüfsummenprüfung – bei Fehlern automatisch zurückgenommen. Hast du mehrere Versionen verpasst, wird alles in einem Schritt nachgeholt.' + (up.checkedAt ? ' Zuletzt gesucht: ' + ftime(up.checkedAt) + '.' : '') + '</span></div><div id="upd-result"></div>' +
-        (sys.history.length ? '<div class="sub"><b>Bisherige Updates:</b> ' + sys.history.slice(0, 5).map(function (h) { return esc(h.from) + ' → ' + esc(h.to) + ' (' + fdate(h.at) + ')'; }).join(' · ') + '</div>' : '');
-    };
-    if (!l.enforced) {
-      var canUpd = sys.updates && sys.updates.configured;
-      return '<section class="card stack" id="sec-system"><h2>Version &amp; Updates</h2><p style="margin:0">Webdesigner CRM <b>' + esc(l.version) + '</b>' + (canUpd ? '' : ' – Server-/Entwicklungsinstallation ohne Update-Server.') + '</p>' +
-        (canUpd ? updBlock(true) : '<div class="sub">Für Updates wird in <span class="mono">product.json</span> der Update-Server eingetragen (macht der Hersteller beim Bauen des Pakets).</div>') + '</section>';
-    }
-    return '<section class="card stack" id="sec-system"><h2>Lizenz &amp; Updates</h2>' +
-      '<div class="row" style="align-items:center">' + (l.valid ? '<span class="pill good">Lizenz gültig</span>' : '<span class="pill bad">Lizenz ungültig</span>') + (l.mode === 'grace' ? ' <span class="pill warn">Server nicht erreichbar – Kulanzfrist</span>' : '') + '</div>' +
-      (l.message ? '<div class="note ' + (l.valid ? 'ok' : 'err') + '">' + esc(l.message) + '</div>' : '') +
-      '<dl class="kv"><dt>Produkt</dt><dd>' + esc(l.name) + ' <span class="mono sub">' + esc(l.slug) + '</span></dd><dt>Version</dt><dd><b>' + esc(l.version) + '</b></dd>' +
-      '<dt>Paket</dt><dd>' + (l.plan ? esc(l.plan) : '–') + '</dd>' +
-      '<dt>Funktionen</dt><dd>' + (l.features.length ? l.features.map(function (k) { return '<span class="tag">' + esc(FEATURES[k] || k) + '</span>'; }).join(' ') : '<span class="sub">keine zusätzlichen</span>') + '</dd>' +
-      '<dt>Support</dt><dd>' + (l.valid ? (l.supportUntil ? 'bis ' + fdate(l.supportUntil) : 'unbegrenzt') + ' ' + (l.supportActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') : '–') + '</dd>' +
-      '<dt>Updates</dt><dd>' + (l.valid ? (l.updatesUntil ? 'für Versionen bis ' + fdate(l.updatesUntil) : 'unbegrenzt') + ' ' + (l.updatesActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') : '–') + '</dd>' +
-      '<dt>Zuletzt geprüft</dt><dd>' + (l.checkedAt ? ftime(l.checkedAt) : '–') + '</dd></dl>' +
-      '<div class="row"><button class="btn" data-act="lic-refresh">Jetzt prüfen</button><button class="btn" data-act="lic-key">Lizenzschlüssel ändern</button>' + (l.valid && l.supportActive ? '<a class="btn" href="' + esc(l.server) + '/portal" target="_blank" rel="noopener">Support beim Hersteller</a>' : '') + '</div>' +
-      updBlock(l.valid) + '</section>';
-  }
-  function licenseKeyDialog() {
-    modal('Lizenzschlüssel ändern', '<div class="form">' + field('lk-key', 'Neuer Lizenzschlüssel', '', 'text', { full: true, attrs: 'autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"' }) + '</div><div class="sub">Er wird geprüft, bevor er gespeichert wird. Die Lizenz muss für diese Domain (' + esc(location.hostname) + ') gelten.</div>', 'Prüfen und speichern', function (f) {
-      if (!v(f, 'lk-key')) return bad('Bitte den Schlüssel eingeben.');
-      return api('POST', '/api/system/license/key', { key: v(f, 'lk-key') }).then(function () { done('Lizenz gespeichert'); });
-    });
+    var up = sys.update || {}, canUpd = sys.updates && sys.updates.configured;
+    return '<section class="card stack" id="sec-system"><h2>Version &amp; Updates</h2><p style="margin:0">Webdesigner CRM <b>' + esc(sys.version) + '</b>' + (canUpd ? '' : ' – kein Update-Server eingetragen.') + '</p>' +
+      (canUpd ? '<div class="row" style="align-items:center"><button class="btn primary" data-act="upd-check">Nach Updates suchen</button><span class="sub">Eingespielt wird erst nach Sicherung, Signatur- und Prüfsummenprüfung – bei Fehlern automatisch zurückgenommen. Hast du mehrere Versionen verpasst, wird alles in einem Schritt nachgeholt.' + (up.checkedAt ? ' Zuletzt gesucht: ' + ftime(up.checkedAt) + '.' : '') + '</span></div><div id="upd-result"></div>' :
+        '<div class="sub">Für Updates wird in <span class="mono">product.json</span> die Adresse deines Update-Servers eingetragen. Pakete aus dem Admin unter System → Versionen &amp; Updates („Installationspaket“) enthalten sie schon.</div>') +
+      (sys.history.length ? '<div class="sub"><b>Bisherige Updates:</b> ' + sys.history.slice(0, 5).map(function (h) { return esc(h.from) + ' → ' + esc(h.to) + ' (' + fdate(h.at) + ')'; }).join(' · ') + '</div>' : '') + '</section>';
   }
   function updateCheck(btn) {
     var box = $('#upd-result'); btn.disabled = true; box.innerHTML = '<span class="sub">Suche …</span>';
@@ -656,7 +605,7 @@
       var steps = r.target && r.target.version !== r.latest.version ? '<div class="sub" style="margin-top:6px">Die Installation läuft in mehreren Schritten (zuerst ' + esc(r.target.version) + '), weil die neueste Version eine Zwischenversion voraussetzt.</div>' : '';
       box.innerHTML = '<div class="card" style="background:var(--surface-2)"><b>Version ' + esc(r.latest.version) + '</b> ist verfügbar (du hast ' + esc(r.current) + ') <span class="sub">· ' + fdate(r.latest.releasedAt) + ' · ' + fsize(r.latest.size) + (r.latest.channel === 'beta' ? ' · Beta' : '') + '</span>' +
         ((r.changes || []).length > 1 ? '<div class="sub" style="margin-top:6px">' + r.changes.length + ' Versionen seit deiner – alle Änderungen:</div>' : '') + log + steps + '<div style="height:8px"></div>' +
-        (r.entitled ? '<button class="btn primary" data-act="upd-install">Jetzt installieren</button>' : '<div class="note err">Diese Version erschien nach dem Ende deines Update-Zeitraums' + (r.updatesUntil ? ' (' + fdate(r.updatesUntil) + ')' : '') + '. Mit einer Verlängerung bekommst du sie.</div>') + '</div>';
+        (r.target ? '<button class="btn primary" data-act="upd-install">Jetzt installieren</button>' : '<div class="note err">Diese Version kann noch nicht installiert werden.</div>') + '</div>';
     }).catch(function (err) { btn.disabled = false; box.innerHTML = '<div class="note err">' + esc(err.message) + '</div>'; });
   }
   function updateInstall(btn) {
@@ -693,7 +642,7 @@
         var dd = res.docs[k], red = dd.missing.filter(function (m) { return m.level === 'red'; }).length;
         return '<button class="chip" data-act="legal-tab" data-v="' + k + '" aria-pressed="' + (k === t) + '">' + esc(dd.title) + ' <span class="pill ' + (dd.published ? (red ? 'warn' : 'good') : 'neutral') + '" style="margin-left:4px">' + (dd.published ? (red ? 'unvollständig' : 'online') : 'offline') + '</span></button>';
       }).join('');
-      var intro = { IMPRESSUM: 'Pflichtangaben nach § 5 DDG. Dein Impressum wird aus den Angaben erzeugt und ist unter /impressum öffentlich erreichbar.', DATENSCHUTZ: 'Die Erklärung entsteht aus dem, was dieses System tatsächlich tut (Kundenportal, Support, Rechnungen, Lizenzen, E-Mail …). Ergänze, was deine Webseite sonst noch verarbeitet.', AGB: 'Allgemeine Geschäftsbedingungen für Webdesign-Leistungen. Wähle die Module, die zu deinem Angebot passen.' }[t];
+      var intro = { IMPRESSUM: 'Pflichtangaben nach § 5 DDG. Dein Impressum wird aus den Angaben erzeugt und ist unter /impressum öffentlich erreichbar.', DATENSCHUTZ: 'Die Erklärung entsteht aus dem, was dieses System tatsächlich tut (Kundenportal, Support, Rechnungen, E-Mail …). Ergänze, was deine Webseite sonst noch verarbeitet.', AGB: 'Allgemeine Geschäftsbedingungen für Webdesign-Leistungen. Wähle die Module, die zu deinem Angebot passen.' }[t];
       return head('Rechtstexte', 'Impressum, Datenschutz und AGB – erzeugt aus deinen Angaben, jederzeit erweiter- und überschreibbar.') +
         '<div class="chips">' + chips + '</div>' +
         '<div class="note" style="background:var(--surface-2);color:var(--muted)"><b>Wichtig:</b> Die Texte sind sorgfältig formulierte Vorlagen nach deutschem Recht, aber keine Rechtsberatung. Du bist für Richtigkeit und Vollständigkeit verantwortlich – bei Unsicherheit bitte kurz anwaltlich prüfen lassen.</div>' +
@@ -734,7 +683,7 @@
     return Promise.all([api('GET', '/api/settings/all'), api('GET', '/api/system/status')]).then(function (all) {
       var res = all[0], sys = all[1];
       settingsFile = res.file || settingsFile;
-      var chips = [['system', sys.license.enforced ? 'Lizenz & Updates' : 'Version']].concat(res.groups.map(function (g) { return [g.id, g.title]; })).concat([['database', 'Datenbank']]);
+      var chips = [['system', 'Version & Updates']].concat(res.groups.map(function (g) { return [g.id, g.title]; })).concat([['database', 'Datenbank']]);
       return head('Einstellungen', 'Firmendaten, E-Mail, Portal und Datenbank – alles an einem Ort. Änderungen gelten sofort.') +
         '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="set-jump" data-v="' + c[0] + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
         systemCard(sys) + res.groups.map(function (g) { return settingsCard(g, res.mail); }).join('') + dbCard(res.database);
@@ -886,7 +835,6 @@
       var side = '<div class="stack">' +
         '<div class="card stack"><h2>Ticket</h2>' + sel('tk-status', 'Status', Object.keys(TSTATUS).map(function (k) { return [k, TSTATUS[k][0]]; }), t.status) + sel('tk-priority', 'Priorität', Object.keys(TPRIO).map(function (k) { return [k, TPRIO[k][0]]; }), t.priority) +
         sel('tk-assigneeId', 'Bearbeiter', [['', '– niemand –']].concat(meta.agents.map(function (a) { return [a.id, a.name]; })), t.assigneeId) + sel('tk-category', 'Kategorie', [['', '– keine –']].concat(cats.map(function (c) { return [c, c]; })), t.category) +
-        sel('tk-licenseId', 'Lizenz', [['', '– keine –']].concat(t.licenses.map(function (l) { return [l.id, l.productName + ' · ' + l.domain]; })), t.licenseId) +
         '<label class="tk-side" for="tk-tags">Stichworte<input id="tk-tags" data-tk="tags" value="' + esc(t.tags || '') + '" maxlength="200" placeholder="z. B. dringend, hosting"></label></div>' +
         '<div class="card stack"><h2>Kunde</h2><div><button class="link" data-act="open-client" data-id="' + esc(t.client.id) + '"><b>' + esc(t.client.company || t.client.name) + '</b></button><div class="sub">' + esc(t.client.name) + '</div></div>' +
         (t.client.email ? '<div class="sub"><a href="mailto:' + esc(t.client.email) + '">' + esc(t.client.email) + '</a></div>' : '') + (t.client.phone ? '<div class="sub">' + esc(t.client.phone) + '</div>' : '') +
@@ -896,7 +844,7 @@
         (t.rating ? '<div><b style="color:var(--warn)">' + stars(t.rating) + '</b>' + (t.ratingComment ? '<div class="sub">„' + esc(t.ratingComment) + '“</div>' : '') + '</div>' : '') + '</div>' +
         (me.role === 'ADMIN' ? '<button class="btn sm ghost danger" data-act="del-ticket" data-id="' + esc(t.id) + '">Ticket löschen</button>' : '') + '</div>';
       return '<button class="btn ghost sm back" data-act="nav" data-v="support" style="align-self:flex-start">← Alle Tickets</button>' +
-        head('<span class="mono">' + esc(t.number) + '</span> ' + esc(t.subject), pill(TSTATUS, t.status) + ' ' + pill(TPRIO, t.priority) + (t.license ? ' · Lizenz ' + esc(t.license.domain) : '') + (t.source === 'ADMIN' ? ' · telefonisch erfasst' : ''),
+        head('<span class="mono">' + esc(t.number) + '</span> ' + esc(t.subject), pill(TSTATUS, t.status) + ' ' + pill(TPRIO, t.priority) + (t.source === 'ADMIN' ? ' · telefonisch erfasst' : ''),
           (open ? '<button class="btn" data-act="tk-quick" data-v="RESOLVED">Als gelöst markieren</button>' : '<button class="btn" data-act="tk-quick" data-v="OPEN">Wieder öffnen</button>') + (t.status !== 'CLOSED' ? '<button class="btn ghost" data-act="tk-quick" data-v="CLOSED">Schließen</button>' : '')) +
         '<div class="tk-layout"><div class="stack"><div class="card tk-thread">' + thread + '</div>' + reply + '</div>' + side + '</div>';
     });
@@ -942,85 +890,27 @@
     }).catch(fail);
   }
 
-  function ltabs() {
-    if (me.role !== 'ADMIN') return '';
-    return '<div class="chips" style="margin-bottom:-6px">' + [['licenses', 'Lizenzen'], ['releases', 'Releases & Updates']].map(function (c) { return '<button class="chip" data-act="ltab" data-v="' + c[0] + '" aria-pressed="' + (ui.ltab === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>';
-  }
   function vReleases() {
     return Promise.all([api('GET', '/api/releases'), api('GET', '/api/releases/self')]).then(function (all) {
       var list = all[0], me2 = all[1];
-      var state = me2.released ? (me2.hasFull ? '<span class="pill good">Release und Vollpaket vorhanden</span>' : '<span class="pill warn">Release vorhanden, Vollpaket fehlt</span>') : '<span class="pill neutral">noch nicht erstellt</span>';
-      var selfBox = '<form class="card stack" id="selfform" novalidate><h2>Version aus diesem Server erstellen <span class="sub">– ohne Kommandozeile</span></h2>' +
+      var state = me2.released ? '<span class="pill good">Diese Version ist schon erstellt</span>' : '<span class="pill neutral">noch nicht erstellt</span>';
+      var selfBox = '<form class="card stack" id="selfform" novalidate><h2>Neue Version aus diesem Server erstellen <span class="sub">– ohne Kommandozeile</span></h2>' +
         '<p style="margin:0">Dieser Server hat die Version <b>' + esc(me2.version) + '</b> · ' + state + '</p>' +
-        '<div class="sub">Ein Klick erstellt das signierte Update-Paket <b>und</b> das Vollpaket (Erstinstallation für das Kundenportal) aus den Dateien dieses Servers. Das Vollpaket verweist auf <b class="mono">' + esc(me2.serverUrl || '– Adresse fehlt –') + '</b> als Lizenzserver.</div>' +
-        (me2.serverUrl ? '' : '<div class="note err">Bitte zuerst unter Einstellungen → Kundenportal die „Öffentliche Adresse“ (https://…) eintragen.</div>') +
-        '<div class="form">' + selectField('self-channel', 'Kanal', [['stable', 'Stabil'], ['beta', 'Beta']], 'stable') + selectField('self-access', 'Wer darf Updates laden?', [['licensed', 'Nur Kunden mit Update-Anspruch'], ['public', 'Jeder – auch ohne Lizenz']], 'licensed') +
-        '<label class="full" for="self-notes">Änderungen (Kunden sehen das vor dem Update)<textarea id="self-notes" rows="3" placeholder="• Neu: …"></textarea></label>' +
+        '<div class="sub">Ein Klick erstellt aus den Dateien dieses Servers das signierte Update-Paket. Installationen mit Update-Server laden es danach über „Nach Updates suchen“. Für ein weiteres Update muss die Versionsnummer (Datei <span class="mono">VERSION</span>) höher sein.</div>' +
+        '<div class="form">' + selectField('self-channel', 'Kanal', [['stable', 'Stabil'], ['beta', 'Beta (nur für Installationen mit Beta-Kanal)']], 'stable') +
+        '<label for="self-minfrom">Mindestversion für direktes Update (optional)<input id="self-minfrom" placeholder="z. B. 0.3.0" autocapitalize="off"><span class="sub" style="font-weight:400">Nur bei Umbauten nötig: ältere Installationen bekommen erst eine Zwischenversion. Sonst leer lassen.</span></label>' +
+        '<label class="full" for="self-notes">Änderungen (werden vor dem Update angezeigt)<textarea id="self-notes" rows="3" placeholder="• Neu: …"></textarea></label>' +
         '<label style="flex-direction:row;align-items:center;gap:8px"><input id="self-pub" type="checkbox" checked> Sofort veröffentlichen</label></div>' +
-        '<div><button type="submit" class="btn primary" id="self-send"' + (me2.serverUrl ? '' : ' disabled') + '>' + (me2.released && !me2.hasFull ? 'Vollpaket erstellen' : me2.released ? 'Vollpaket neu erstellen' : 'Release und Vollpaket erstellen') + '</button></div></form>';
-      return head('Lizenzen', 'Update-Pakete für deine Software. Nur Lizenzen mit gültigem Update-Zeitraum können sie laden.') + ltabs() + selfBox +
-        '<form class="card stack" id="relform" novalidate><h2>Neue Version hochladen</h2><div class="sub">Paket bauen: <span class="mono">php Lizenz-tools/build-release.php crm</span> – es liegt danach unter <span class="mono">Lizenz-tools/releases/</span>. Der Server prüft das Paket und signiert es mit deinem geheimen Lizenzschlüssel.</div>' +
-        '<div class="form"><label class="full">Paket (ZIP)<input id="rel-file" type="file" accept=".zip"></label>' + selectField('rel-channel', 'Kanal', [['stable', 'Stabil'], ['beta', 'Beta (nur wer es wünscht)']], 'stable') +
-        selectField('rel-access', 'Wer darf laden?', [['licensed', 'Nur Kunden mit gültigem Update-Anspruch'], ['public', 'Jeder – auch ohne Lizenz (z. B. Beta-Version)']], 'licensed') +
-        '<label for="rel-minfrom">Mindestversion für direktes Update (optional)<input id="rel-minfrom" placeholder="z. B. 0.3.0" autocapitalize="off"><span class="sub" style="font-weight:400">Nur bei Umbauten nötig: ältere Installationen bekommen erst die Zwischenversion. Sonst leer lassen – verpasste Versionen werden automatisch in einem Schritt nachgeholt.</span></label>' +
-        '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="rel-pub" type="checkbox" checked> Sofort veröffentlichen</label><label class="full" for="rel-notes">Änderungen (Kunden sehen das vor dem Update)<textarea id="rel-notes" rows="4" placeholder="• Neu: …&#10;• Behoben: …"></textarea></label></div>' +
-        '<div><button type="submit" class="btn primary" id="rel-send">Hochladen und signieren</button></div></form>' +
-        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Produkt</th><th>Version</th><th>Kanal</th><th>Zugang</th><th>Status</th><th class="r">Größe</th><th class="r">Downloads</th><th>Datum</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (r) {
-          return '<tr><td class="mono">' + esc(r.product) + '</td><td><b>' + esc(r.version) + '</b>' + (r.notes ? '<div class="sub" style="white-space:pre-wrap;max-width:360px">' + esc(r.notes.length > 140 ? r.notes.slice(0, 140) + '…' : r.notes) + '</div>' : '') + '</td><td>' + (r.channel === 'beta' ? '<span class="pill warn">Beta</span>' : 'Stabil') + '</td><td>' + (r.access === 'public' ? '<span class="pill warn">Öffentlich</span>' : 'Lizenz') + (r.minFrom ? '<div class="sub">ab ' + esc(r.minFrom) + '</div>' : '') + (r.hasFull ? '<div class="sub">Vollpaket ' + fsize(r.fullSize) + '</div>' : '<div class="sub">kein Vollpaket</div>') + '</td><td>' + (r.published ? '<span class="pill good">Veröffentlicht</span>' : '<span class="pill neutral">Entwurf</span>') + '</td><td class="r num">' + fsize(r.size) + '</td><td class="r num">' + r.downloads + '</td><td>' + fdate(r.releasedAt) + '</td>' +
-            '<td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="rel-toggle" data-id="' + esc(r.id) + '" data-pub="' + (r.published ? '1' : '0') + '">' + (r.published ? 'Zurückziehen' : 'Veröffentlichen') + '</button><button class="btn sm ghost" data-act="rel-full" data-id="' + esc(r.id) + '">' + (r.hasFull ? 'Vollpaket ersetzen' : 'Vollpaket hochladen') + '</button><button class="btn sm ghost" data-act="rel-access" data-id="' + esc(r.id) + '" data-acc="' + esc(r.access) + '">' + (r.access === 'public' ? 'Nur Lizenz' : 'Öffentlich') + '</button><button class="btn sm ghost" data-act="rel-dl" data-id="' + esc(r.id) + '">Laden</button><button class="btn sm ghost danger" data-act="rel-del" data-id="' + esc(r.id) + '">Löschen</button></div></td></tr>';
-        }).join('') : '<tr><td colspan="9" class="empty">Noch keine Releases.</td></tr>') + '</tbody></table></div></div>' +
-        '<p class="sub">Die Software prüft jede Version mit dem eingebauten öffentlichen Schlüssel, bevor sie sie einspielt. Ein Update erhält nur, wer bei Erscheinen der Version noch Update-Anspruch hatte.</p>';
+        '<div class="row"><button type="submit" class="btn primary" id="self-send"' + (me2.released ? ' disabled' : '') + '>Update-Paket erstellen</button>' +
+        '<button type="button" class="btn" data-act="rel-install">Installationspaket herunterladen</button></div>' +
+        (me2.serverUrl ? '<div class="sub">Das Installationspaket (für neue Installationen, z. B. bei Kunden) verweist auf <b class="mono">' + esc(me2.serverUrl) + '</b> als Update-Server.</div>' : '<div class="note err">Für das Installationspaket bitte zuerst unter Einstellungen → Kundenportal die „Öffentliche Adresse“ (https://…) eintragen.</div>') + '</form>';
+      return head('Versionen & Updates', 'Update-Pakete deiner Software. Installationen holen sich Updates von diesem Server.') + selfBox +
+        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Version</th><th>Kanal</th><th>Status</th><th class="r">Größe</th><th class="r">Downloads</th><th>Datum</th><th></th></tr></thead><tbody>' + (list.length ? list.map(function (r) {
+          return '<tr><td><b>' + esc(r.version) + '</b>' + (r.minFrom ? '<div class="sub">direkt ab ' + esc(r.minFrom) + '</div>' : '') + (r.notes ? '<div class="sub" style="white-space:pre-wrap;max-width:360px">' + esc(r.notes.length > 140 ? r.notes.slice(0, 140) + '…' : r.notes) + '</div>' : '') + '</td><td>' + (r.channel === 'beta' ? '<span class="pill warn">Beta</span>' : 'Stabil') + '</td><td>' + (r.published ? '<span class="pill good">Veröffentlicht</span>' : '<span class="pill neutral">Entwurf</span>') + '</td><td class="r num">' + fsize(r.size) + '</td><td class="r num">' + r.downloads + '</td><td>' + fdate(r.releasedAt) + '</td>' +
+            '<td class="r"><div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="rel-toggle" data-id="' + esc(r.id) + '" data-pub="' + (r.published ? '1' : '0') + '">' + (r.published ? 'Zurückziehen' : 'Veröffentlichen') + '</button><button class="btn sm ghost" data-act="rel-dl" data-id="' + esc(r.id) + '">Laden</button><button class="btn sm ghost danger" data-act="rel-del" data-id="' + esc(r.id) + '">Löschen</button></div></td></tr>';
+        }).join('') : '<tr><td colspan="7" class="empty">Noch keine Versionen.</td></tr>') + '</tbody></table></div></div>' +
+        '<p class="sub">Jede Installation prüft Pakete mit dem eingebauten öffentlichen Schlüssel, bevor sie etwas einspielt. Verpasste Versionen werden in einem Schritt nachgeholt.</p>';
     });
-  }
-
-  function vLicenses() {
-    if (ui.ltab === 'releases' && me.role === 'ADMIN') return vReleases();
-    return api('GET', '/api/licenses' + qs({ pageSize: 100, status: ui.lstatus, search: ui.lsearch })).then(function (res) {
-      var chips = [['', 'Alle']].concat(opts(LICENSE_STATUS));
-      return head('Lizenzen', 'Domain-Lizenzen für verkaufte Software. Die Software fragt den Schlüssel bei deinem CRM ab.', '<button class="btn primary" data-act="new-license">+ Lizenz ausstellen</button>') + ltabs() +
-        '<div class="row"><input id="lq" type="search" placeholder="Suchen (Schlüssel, Domain, Produkt)" value="' + esc(ui.lsearch) + '" aria-label="Lizenzen suchen" style="max-width:360px"></div>' +
-        '<div class="chips">' + chips.map(function (c) { return '<button class="chip" data-act="lfilter" data-v="' + c[0] + '" aria-pressed="' + (ui.lstatus === c[0]) + '">' + c[1] + '</button>'; }).join('') + '</div>' +
-        '<div class="card" style="padding:6px"><div class="tablewrap"><table><thead><tr><th>Domain</th><th>Produkt</th><th>Kunde</th><th>Gültig bis</th><th>Status</th></tr></thead><tbody>' + (res.items.length ? res.items.map(function (l) {
-          var until = l.paidThrough ? 'bezahlt bis ' + fdate(l.paidThrough) : l.validUntil ? fdate(l.validUntil) : 'unbefristet';
-          return '<tr class="click" data-act="open-license" data-id="' + esc(l.id) + '"><td><button class="link mono" data-act="open-license" data-id="' + esc(l.id) + '">' + esc(l.domain) + '</button>' + (l.subdomains ? '<div class="sub">inkl. Subdomains</div>' : '') + '</td><td>' + esc(l.productName) + '<div class="sub mono">' + esc(l.licenseKey) + '</div></td><td>' + esc(l.client ? (l.client.company || l.client.name) : '–') + '</td><td>' + until + '</td><td>' + pill(LICENSE_STATUS, l.effectiveStatus) + '</td></tr>';
-        }).join('') : '<tr><td colspan="5" class="empty">' + (ui.lstatus || ui.lsearch ? 'Keine Lizenzen für diese Auswahl.' : 'Noch keine Lizenzen. Sie entstehen, wenn du eine Bestellung für ein Lizenzprodukt annimmst – oder du stellst eine von Hand aus.') + '</td></tr>') + '</tbody></table></div></div>' +
-        '<div class="card"><h2>Lizenzprüfung in deine Software einbauen</h2><div class="sub" style="line-height:1.7">Lade die <a href="/license/client.php" download>Prüfklasse (LicenseClient.php)</a> herunter und lege sie in deine Software. Dann:<pre class="mono" style="white-space:pre-wrap;margin:8px 0">require __DIR__ . \'/LicenseClient.php\';\n$lic = new LicenseClient(\'' + esc(location.origin) + '\', \'ÖFFENTLICHER-SCHLÜSSEL\', $kundenSchluessel, __DIR__ . \'/license.cache\');\n$lic->require();</pre>Den öffentlichen Schlüssel findest du unter <a href="/api/license/public-key" target="_blank" rel="noopener">/api/license/public-key</a>. Der Kunde bekommt seinen Schlüssel per E-Mail und im Portal. Hinweis: Wer den PHP-Code ändert, kann die Prüfung entfernen – sie schützt vor Weitergabe, nicht vor Manipulation.</div></div>';
-    });
-  }
-
-  function licenseDialog(id) {
-    api('GET', '/api/licenses/' + id).then(function (l) {
-      var info = '<dl class="kv"><dt>Schlüssel</dt><dd><span class="mono">' + esc(l.licenseKey) + '</span> <button type="button" class="btn sm ghost" data-act="copy-text" data-text="' + esc(l.licenseKey) + '">Kopieren</button></dd>' +
-        '<dt>Produkt</dt><dd>' + esc(l.productName) + '</dd><dt>Kunde</dt><dd>' + (l.client ? esc(l.client.company || l.client.name) : '–') + '</dd>' +
-        '<dt>Status</dt><dd>' + pill(LICENSE_STATUS, l.effectiveStatus) + '</dd>' +
-        (l.order ? '<dt>Bestellung</dt><dd>' + esc(l.order.number) + '</dd>' : '') + (l.invoice ? '<dt>Rechnung</dt><dd>' + esc(l.invoice.number) + ' (' + (INVOICE_STATUS[l.invoice.status] || [l.invoice.status])[0] + ')</dd>' : '') +
-        (l.paidThrough ? '<dt>Bezahlt bis</dt><dd>' + fdate(l.paidThrough) + '</dd>' : '') + '<dt>Letzte Prüfung</dt><dd>' + (l.lastCheckedAt ? ftime(l.lastCheckedAt) + ' (' + l.checkCount + ' Prüfungen)' : 'noch nie') + '</dd>' +
-        '<dt>Domainwechsel</dt><dd>' + l.domainChanges + ' vom Kunden</dd>' +
-        (l.slug ? '<dt>Produkt-Kennung</dt><dd class="mono">' + esc(l.slug) + '</dd>' : '') + (l.plan ? '<dt>Paket</dt><dd>' + esc(l.plan) + '</dd>' : '') +
-        '<dt>Funktionen</dt><dd>' + (l.resolvedFeatures.length ? l.resolvedFeatures.map(function (k) { return '<span class="tag">' + esc(FEATURES[k] || k) + '</span>'; }).join(' ') : '<span class="sub">keine</span>') + '</dd>' +
-        '<dt>Support</dt><dd>' + (l.supportUntil ? 'bis ' + fdate(l.supportUntil) : 'unbegrenzt') + ' ' + (l.supportActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') + '</dd>' +
-        '<dt>Updates</dt><dd>' + (l.updatesUntil ? 'für Versionen bis ' + fdate(l.updatesUntil) : 'unbegrenzt') + ' ' + (l.updatesActive ? '<span class="pill good">aktiv</span>' : '<span class="pill bad">abgelaufen</span>') + '</dd></dl>';
-      var lists = (l.payments.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Bezahlte Rechnungen</h3><div class="sub">' + l.payments.map(function (x) { return esc(x.invoice.number) + ' (' + fdate(x.createdAt) + ')'; }).join(' · ') + '</div>' : '') +
-        (l.hosts && l.hosts.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Benutzt auf</h3><div class="sub">' + l.hosts.map(function (x) { return esc(x.domain) + (x.version ? ' (v' + esc(x.version) + ')' : '') + ' – ' + x.checks + '× geprüft, zuletzt ' + ago(x.lastSeenAt); }).join('<br>') + (l.hosts.filter(function (x) { return !/(^localhost$|\.test$|\.local$|^127\.)/.test(x.domain); }).length > 1 ? '<br><b style="color:var(--warn)">Achtung: mehrere echte Domains – wurde der Schlüssel weitergegeben?</b>' : '') + '</div>' : '') +
-        (l.attempts.length ? '<h3 style="margin:14px 0 4px;font-size:14px">Abgelehnte Prüfungen</h3><div class="sub">' + l.attempts.slice(0, 8).map(function (x) { return esc(x.domain) + ' – ' + (REASONS[x.reason] || x.reason) + ' (' + ftime(x.createdAt) + ')'; }).join('<br>') + '</div>' : '');
-      modal('Lizenz ' + esc(l.domain), info +
-        '<div class="form" style="margin-top:14px">' + field('ldomain', 'Domain', l.domain, 'text', { attrs: 'autocapitalize="off" spellcheck="false"' }) +
-        selectField('lstatus', 'Status', [['ACTIVE', 'Aktiv'], ['SUSPENDED', 'Gesperrt'], ['REVOKED', 'Widerrufen']].concat(l.status === 'PENDING' ? [['PENDING', 'Wartet auf Zahlung']] : []), l.status) +
-        field('luntil', 'Gültig bis (leer = unbefristet)', l.validUntil ? l.validUntil.slice(0, 10) : '', 'date') +
-        '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="lsubs" type="checkbox"' + (l.subdomains ? ' checked' : '') + '> Subdomains einschließen</label>' +
-        field('lslug', 'Produkt-Kennung', l.slug || '', 'text', { attrs: 'maxlength="40" autocapitalize="off" placeholder="crm"' }) + selectField('lplan', 'Paket', PLANS, l.plan || '') +
-        field('lsup', 'Support bis (leer = unbegrenzt)', l.supportUntil ? l.supportUntil.slice(0, 10) : '', 'date') + field('lupd', 'Updates bis (leer = unbegrenzt)', l.updatesUntil ? l.updatesUntil.slice(0, 10) : '', 'date') +
-        '<div class="full"><span class="sub">Funktionen (leer lassen = das Paket bestimmt)</span><div class="row" style="gap:14px;margin-top:4px">' + featureBoxes('lf-', String(l.features || '').split(',')) + '</div></div>' +
-        '<label class="full" for="lnote">Notiz (intern)<textarea id="lnote" rows="2">' + esc(l.note || '') + '</textarea></label></div>' + lists +
-        '<div class="row" style="margin-top:12px"><button type="button" class="btn sm" data-act="license-send" data-id="' + esc(l.id) + '">Schlüssel per E-Mail senden</button><button type="button" class="btn sm ghost danger" data-act="license-regen" data-id="' + esc(l.id) + '">Neuen Schlüssel erzeugen</button><button type="button" class="btn sm ghost danger" data-act="license-del" data-id="' + esc(l.id) + '">Löschen</button></div>', 'Speichern',
-        function (f) {
-          var body = { domain: v(f, 'ldomain'), subdomains: f.querySelector('#lsubs').checked, validUntil: v(f, 'luntil') ? v(f, 'luntil') + 'T23:59:59.000Z' : '', note: f.querySelector('#lnote').value.trim(),
-            slug: v(f, 'lslug'), plan: v(f, 'lplan'), features: featureVal(f, 'lf-'), supportUntil: v(f, 'lsup') ? v(f, 'lsup') + 'T23:59:59.000Z' : '', updatesUntil: v(f, 'lupd') ? v(f, 'lupd') + 'T23:59:59.000Z' : '' };
-          if (!body.domain) return bad('Bitte eine Domain eingeben.');
-          if (v(f, 'lstatus') !== 'PENDING') body.status = v(f, 'lstatus');
-          return api('PATCH', '/api/licenses/' + l.id, body).then(function () { done('Lizenz gespeichert'); });
-        });
-    }).catch(fail);
   }
 
   function confirmDialogTo() {
@@ -1028,20 +918,6 @@
       function (f) {
         return api('POST', '/api/settings/test-mail', { to: v(f, 'tm-to') }).then(function (r) { toast('Testmail an ' + r.to + ' gesendet'); });
       });
-  }
-
-  function newLicenseDialog() {
-    listAll('/api/clients', { sort: 'name' }).then(function (clients) {
-      if (!clients.length) return toast('Lege zuerst einen Kunden an.');
-      modal('Lizenz ausstellen',
-        '<div class="form">' + selectField('nlc', 'Kunde', clientOptions(clients), clients[0].id, true) + field('nlp', 'Produkt / Bezeichnung *', '', 'text', { full: true }) + field('nld', 'Domain *', '', 'text', { full: true, attrs: 'placeholder="meine-seite.de" autocapitalize="off" spellcheck="false"' }) +
-        field('nlu', 'Gültig bis (leer = unbefristet)', '', 'date') + '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="nls" type="checkbox"> Subdomains einschließen</label></div>' +
-        '<div class="sub">Die Lizenz ist sofort aktiv. Den Schlüssel kannst du danach dem Kunden per E-Mail senden.</div>', 'Ausstellen',
-        function (f) {
-          if (!v(f, 'nlp') || !v(f, 'nld')) return bad('Bitte Produkt und Domain eingeben.');
-          return api('POST', '/api/licenses', clean({ clientId: v(f, 'nlc'), productName: v(f, 'nlp'), domain: v(f, 'nld'), subdomains: f.querySelector('#nls').checked, validUntil: v(f, 'nlu') ? v(f, 'nlu') + 'T23:59:59.000Z' : '' })).then(function () { done('Lizenz ausgestellt'); });
-        });
-    }).catch(fail);
   }
 
   var fsize = function (b) { return b >= 1048576 ? (b / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(b / 1024)).toLocaleString('de-DE') + ' KB'; };
@@ -1069,7 +945,7 @@
   }
 
   /* ---------- Rendern ---------- */
-  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, licenses: vLicenses, settings: vSettings, support: vSupport, ticket: vTicket, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam, legal: vLegal };
+  var VIEWS = { dashboard: vDashboard, clients: vClients, client: vClient, products: vProducts, orders: vOrders, order: vOrder, releases: vReleases, settings: vSettings, support: vSupport, ticket: vTicket, projects: vProjects, times: vTimes, quotes: vQuotes, quote: vQuote, invoices: vInvoices, invoice: vInvoice, reminders: vReminders, recurring: vRecurring, team: vTeam, legal: vLegal };
   var seq = 0;
   function render() {
     if (!token || !me) return;
@@ -1080,10 +956,8 @@
     if (!main.firstChild) main.innerHTML = '<div class="empty">Lädt …</div>';
     return VIEWS[ui.view]().then(function (html) {
       if (mine !== seq) return;
-      var focusId = document.activeElement && document.activeElement.id === 'q', focusL = document.activeElement && document.activeElement.id === 'lq';
+      var focusId = document.activeElement && document.activeElement.id === 'q';
       main.innerHTML = html;
-      drawBanner();
-      if (focusL) { var lq = $('#lq'); if (lq) { lq.focus(); lq.setSelectionRange(lq.value.length, lq.value.length); } }
       if (focusId) { var q = $('#q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
     }).catch(function (err) {
       if (mine !== seq || !token) return;
@@ -1318,15 +1192,6 @@
         '<label for="pprice"><span id="plabel">Preis (netto) in €</span><input id="pprice" type="number" min="0" step="0.01" value="' + esc(prod.price) + '"></label>' + field('ptax', 'MwSt. (%)', prod.taxRate, 'number', { attrs: 'min="0" max="100" step="1"' }) +
         '<div class="form full" id="rentalFields" style="padding:0">' + selectField('pint', 'Abrechnung', Object.keys(PERIOD).map(function (k) { return [k, INTERVALS[k]]; }), prod.intervalUnit || 'YEARLY') + field('psetup', 'Einrichtungsgebühr (netto, einmalig)', prod.setupFee || 0, 'number', { attrs: 'min="0" step="0.01"' }) + '</div>' +
         '<div class="form full" id="unitFields" style="padding:0">' + field('punit', 'Einheit (z. B. Stück, Seite)', prod.unit, 'text', { attrs: 'maxlength="50"' }) + field('pmin', 'Mindestmenge', prod.minQuantity, 'number', { attrs: 'min="0.01" step="any"' }) + '</div>' +
-        '<div class="full" id="licFields" style="padding:0;display:grid;gap:8px"><label style="flex-direction:row;align-items:center;gap:8px"><input id="plic" type="checkbox"' + (prod.licenseEnabled ? ' checked' : '') + '> Mit Lizenz für eine Domain verkaufen</label>' +
-        '<div class="form full" id="licOpts" style="padding:0 0 0 24px">' + '<label style="flex-direction:row;align-items:center;gap:8px"><input id="psubs" type="checkbox"' + (prod.licenseSubdomains ? ' checked' : '') + '> Subdomains der Domain einschließen</label>' +
-        '<label style="flex-direction:row;align-items:center;gap:8px"><input id="ppayfirst" type="checkbox"' + (prod.licensePayFirst !== false ? ' checked' : '') + '> Lizenz erst nach bezahlter Rechnung freischalten</label>' +
-        '<span id="pdaysw">' + field('pdays', 'Gültigkeit in Tagen (leer = unbefristet)', prod.licenseDays || '', 'number', { attrs: 'min="1" step="1"' }) + '</span>' +
-        '<div class="sub full" id="licNote">Bei Mietprodukten gilt die Lizenz, solange die Abo-Rechnungen bezahlt werden (plus Kulanzfrist). Support und Updates laufen dann mit der Miete.</div>' +
-        field('pslug', 'Produkt-Kennung (für Updates, z. B. crm)', prod.licenseSlug || '', 'text', { attrs: 'maxlength="40" autocapitalize="off" placeholder="crm"' }) + selectField('pplan', 'Paket', PLANS, prod.licensePlan || '') +
-        '<div class="full"><span class="sub">Funktionen der Software (leer lassen = das Paket bestimmt)</span><div class="row" style="gap:14px;margin-top:4px">' + featureBoxes('pf-', String(prod.licenseFeatures || '').split(',')) + '</div></div>' +
-        field('psup', 'Support in Tagen (leer = unbegrenzt, 0 = nicht enthalten)', prod.licenseSupportDays == null ? '' : prod.licenseSupportDays, 'number', { attrs: 'min="0" step="1"' }) +
-        field('pupd', 'Updates in Tagen (leer = unbegrenzt, 0 = nicht enthalten)', prod.licenseUpdateDays == null ? '' : prod.licenseUpdateDays, 'number', { attrs: 'min="0" step="1"' }) + '</div></div>' +
         '<label class="full" for="pdesc">Beschreibung (im Portal sichtbar)<textarea id="pdesc" rows="3">' + esc(prod.description || '') + '</textarea></label>' +
         field('psort', 'Reihenfolge', prod.sortOrder, 'number', { attrs: 'step="1"' }) + '<label style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input id="pactive" type="checkbox"' + (prod.active ? ' checked' : '') + '> Im Portal bestellbar</label></div>', 'Speichern',
         function (f) {
@@ -1334,10 +1199,6 @@
           var price = parseFloat(v(f, 'pprice'));
           if (isNaN(price) || price < 0) return bad('Bitte einen Preis ab 0 eingeben.');
           var body = { name: v(f, 'pname'), categoryId: v(f, 'pcat'), type: v(f, 'ptype'), price: price, taxRate: num(f, 'ptax'), description: f.querySelector('#pdesc').value.trim(), unit: v(f, 'punit'), minQuantity: num(f, 'pmin'), sortOrder: parseInt(v(f, 'psort'), 10) || 0, active: f.querySelector('#pactive').checked };
-          body.licenseEnabled = body.type !== 'HOURLY' && f.querySelector('#plic').checked;
-          if (body.licenseEnabled) { body.licenseSubdomains = f.querySelector('#psubs').checked; body.licensePayFirst = f.querySelector('#ppayfirst').checked; body.licenseDays = body.type === 'ONE_TIME' && v(f, 'pdays') ? parseInt(v(f, 'pdays'), 10) : '';
-            body.licenseSlug = v(f, 'pslug'); body.licensePlan = v(f, 'pplan'); body.licenseFeatures = featureVal(f, 'pf-');
-            body.licenseSupportDays = v(f, 'psup') === '' ? '' : parseInt(v(f, 'psup'), 10); body.licenseUpdateDays = v(f, 'pupd') === '' ? '' : parseInt(v(f, 'pupd'), 10); }
           if (body.type === 'RENTAL') { body.intervalUnit = v(f, 'pint'); body.setupFee = num(f, 'psetup') || 0; }
           return (prod.id ? api('PATCH', '/api/products/' + prod.id, body) : api('POST', '/api/products', body)).then(function () {
             // Das gespeicherte Produkt soll sichtbar sein: den Filter auf seine Kategorie umstellen, falls ein anderer aktiv ist
@@ -1350,12 +1211,8 @@
             f.querySelector('#plabel').textContent = t === 'RENTAL' ? 'Preis je Abrechnungszeitraum (netto) in €' : t === 'HOURLY' ? 'Stundensatz (netto) in €' : 'Preis (netto) in €';
             f.querySelector('#rentalFields').hidden = t !== 'RENTAL';
             f.querySelector('#unitFields').hidden = t === 'HOURLY' ? true : false;
-            f.querySelector('#licFields').hidden = t === 'HOURLY';
-            f.querySelector('#licOpts').hidden = !f.querySelector('#plic').checked;
-            f.querySelector('#pdaysw').hidden = t !== 'ONE_TIME';
-            f.querySelector('#licNote').hidden = t !== 'RENTAL';
           };
-          f.querySelector('#ptype').addEventListener('change', sync); f.querySelector('#plic').addEventListener('change', sync); sync();
+          f.querySelector('#ptype').addEventListener('change', sync); sync();
         });
     }).catch(fail);
   }
@@ -1369,17 +1226,11 @@
       modal('Bestellung erfassen',
         '<div class="form">' + selectField('okc', 'Kunde', clientOptions(clients), clients[0].id, true) +
         selectField('okp', 'Produkt', products.map(function (p) { return [p.id, (p.category ? p.category.name + ' › ' : '') + p.name + ' – ' + priceText(p) + (p.active ? '' : ' (inaktiv)')]; }), products[0].id, true) +
-        field('okq', 'Menge', 1, 'number', { attrs: 'min="0.01" step="any"' }) + '<span class="full" id="okdw">' + field('okd', 'Domain für die Lizenz *', '', 'text', { full: true, attrs: 'placeholder="meine-seite.de" autocapitalize="off" spellcheck="false"' }) + '</span><label class="full" for="okn">Anmerkung<textarea id="okn" rows="3"></textarea></label></div>', 'Bestellung anlegen',
+        field('okq', 'Menge', 1, 'number', { attrs: 'min="0.01" step="any"' }) + '<label class="full" for="okn">Anmerkung<textarea id="okn" rows="3"></textarea></label></div>', 'Bestellung anlegen',
         function (f) {
           var q = num(f, 'okq');
           if (!(q > 0)) return bad('Bitte eine Menge über 0 eingeben.');
-          var prod = products.filter(function (x) { return x.id === v(f, 'okp'); })[0];
-          var lic = prod && prod.licenseEnabled && prod.type !== 'HOURLY';
-          if (lic && !v(f, 'okd')) return bad('Bitte die Domain für die Lizenz eingeben.');
-          return api('POST', '/api/orders', clean({ clientId: v(f, 'okc'), productId: v(f, 'okp'), quantity: q, note: f.querySelector('#okn').value.trim(), domain: lic ? v(f, 'okd') : '' })).then(function (o) { ui.orderId = o.id; ui.view = 'order'; done('Bestellung ' + o.number + ' angelegt'); });
-        }, function (f) {
-          var sync = function () { var prod = products.filter(function (x) { return x.id === f.querySelector('#okp').value; })[0]; f.querySelector('#okdw').hidden = !(prod && prod.licenseEnabled && prod.type !== 'HOURLY'); };
-          f.querySelector('#okp').addEventListener('change', sync); sync();
+          return api('POST', '/api/orders', clean({ clientId: v(f, 'okc'), productId: v(f, 'okp'), quantity: q, note: f.querySelector('#okn').value.trim() })).then(function (o) { ui.orderId = o.id; ui.view = 'order'; done('Bestellung ' + o.number + ' angelegt'); });
         });
     }).catch(fail);
   }
@@ -1580,7 +1431,6 @@
       case 'del-ticket': return confirmDialog('Das Ticket wird samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('DELETE', '/api/tickets/' + id).then(function () { go('support'); toast('Ticket gelöscht'); }); });
       case 'bulk-delete': return confirmDialog(ui.tsel.length + ' Ticket(s) werden samt Nachrichten und Anhängen endgültig gelöscht.', 'Endgültig löschen', function () { return api('POST', '/api/tickets/bulk', { ids: ui.tsel, action: 'delete' }).then(function () { ui.tsel = []; done('Gelöscht'); }); });
       case 'nav-group': ui.navOpen = ui.navOpen === el.dataset.v ? null : el.dataset.v; return drawNav();
-      case 'ltab': ui.ltab = el.dataset.v; return render();
       case 'legal-tab': ui.legalTab = el.dataset.v; return render();
       case 'legal-pub': {
         if (el.dataset.pub === '0') return confirmDialog('Die Seite ist danach nicht mehr öffentlich erreichbar.', 'Zurückziehen', function () { return legalSave(false); });
@@ -1593,24 +1443,11 @@
       case 'health-go': if (el.dataset.v === 'legal' && el.dataset.tab) ui.legalTab = el.dataset.tab; return go({ tickets: 'support', backups: 'settings', system: 'settings' }[el.dataset.v] || el.dataset.v);
       case 'health-all': ui.healthAll = true; return render();
       case 'rel-toggle': return api('PATCH', '/api/releases/' + id, { published: el.dataset.pub !== '1' }).then(function () { done(el.dataset.pub === '1' ? 'Zurückgezogen' : 'Veröffentlicht'); }).catch(fail);
-      case 'rel-full': return modal('Vollpaket (Erstinstallation) hochladen', '<p style="margin:0">Das ZIP, das Kunden im Portal als „Software herunterladen“ bekommen – gebaut mit <span class="mono">php Lizenz-tools/build-product.php crm --server=… --key-file=…</span> (liegt unter <span class="mono">Lizenz-tools/dist/</span>). Es muss zur Version passen.</p><label class="full" style="margin-top:10px">ZIP-Datei<input id="full-file" type="file" accept=".zip"></label>', 'Hochladen', function (f) {
-        var file = f.querySelector('#full-file').files[0]; if (!file) return bad('Bitte die ZIP-Datei auswählen.');
-        var fd = new FormData(); fd.append('file', file);
-        return api('POST', '/api/releases/' + id + '/full', fd, true).then(function () { done('Vollpaket gespeichert'); });
-      });
-      case 'rel-access': return api('PATCH', '/api/releases/' + id, { access: el.dataset.acc === 'public' ? 'licensed' : 'public' }).then(function () { done('Zugang geändert'); }).catch(fail);
+      case 'rel-install': return downloadPdf(el, '/api/releases/install-package');
       case 'rel-dl': return downloadPdf(el, '/api/releases/' + id + '/file');
       case 'rel-del': return confirmDialog('Die Version wird gelöscht. Wer sie schon geladen hat, behält sie; neue Downloads sind nicht mehr möglich.', 'Löschen', function () { return api('DELETE', '/api/releases/' + id).then(function () { done('Gelöscht'); }); });
-      case 'lic-refresh': el.disabled = true; return api('POST', '/api/system/license/refresh', {}).then(function () { done('Lizenz geprüft'); }).catch(function (err) { el.disabled = false; toast(err.message); });
-      case 'lic-key': return licenseKeyDialog();
       case 'upd-check': return updateCheck(el);
       case 'upd-install': return updateInstall(el);
-      case 'lfilter': ui.lstatus = el.dataset.v; return render();
-      case 'open-license': return licenseDialog(id);
-      case 'new-license': return newLicenseDialog();
-      case 'license-send': return api('POST', '/api/licenses/' + id + '/send', {}).then(function () { toast('Schlüssel gesendet'); }).catch(fail);
-      case 'license-regen': return confirmDialog('Der bisherige Schlüssel funktioniert danach nicht mehr. Der Kunde muss den neuen Schlüssel in seiner Software eintragen.', 'Neuen Schlüssel erzeugen', function () { return api('POST', '/api/licenses/' + id + '/regenerate', {}).then(function () { done('Neuer Schlüssel erzeugt'); }); });
-      case 'license-del': return confirmDialog('Die Lizenz wird gelöscht; der Schlüssel funktioniert danach nicht mehr. (Zum Sperren lieber den Status ändern.)', 'Löschen', function () { return api('DELETE', '/api/licenses/' + id).then(function () { done('Lizenz gelöscht'); }); });
       case 'order-accept': return api('GET', '/api/orders/' + ui.orderId).then(acceptOrderDialog).catch(fail);
       case 'order-reject': return api('GET', '/api/orders/' + ui.orderId).then(rejectOrderDialog).catch(fail);
       case 'copy-text': return copyText(el.dataset.text, 'Link kopiert');
@@ -1710,15 +1547,7 @@
     if (e.target.id !== 'selfform') return;
     e.preventDefault();
     var btn = $('#self-send'); btn.disabled = true; btn.textContent = 'Wird erstellt …';
-    api('POST', '/api/releases/build-self', { channel: $('#self-channel').value, access: $('#self-access').value, notes: $('#self-notes').value.trim(), published: $('#self-pub').checked }).then(function (r) { done('Version ' + r.version + ' erstellt – Release und Vollpaket sind bereit'); }).catch(function (err) { btn.disabled = false; toast(err.message); render(); });
-  });
-  document.addEventListener('submit', function (e) {
-    if (e.target.id !== 'relform') return;
-    e.preventDefault();
-    var file = $('#rel-file').files[0]; if (!file) return toast('Bitte das Release-Paket (ZIP) auswählen.');
-    var fd = new FormData(); fd.append('file', file); fd.append('channel', $('#rel-channel').value); fd.append('notes', $('#rel-notes').value.trim()); fd.append('published', $('#rel-pub').checked ? 'true' : 'false'); fd.append('access', $('#rel-access').value); fd.append('minFrom', $('#rel-minfrom').value.trim());
-    var btn = $('#rel-send'); btn.disabled = true;
-    api('POST', '/api/releases', fd, true).then(function (r) { done('Version ' + r.version + ' hochgeladen und signiert'); }).catch(function (err) { btn.disabled = false; toast(err.message); });
+    api('POST', '/api/releases/build-self', { channel: $('#self-channel').value, minFrom: $('#self-minfrom').value.trim(), notes: $('#self-notes').value.trim(), published: $('#self-pub').checked }).then(function (r) { done('Version ' + r.version + ' erstellt'); }).catch(function (err) { btn.disabled = false; toast(err.message); render(); });
   });
   document.addEventListener('submit', function (e) {
     if (e.target.id !== 'tk-reply') return;
@@ -1732,9 +1561,7 @@
     btn.disabled = true;
     api('POST', '/api/tickets/' + ui.ticketId + '/messages', fd, true).then(function () { return render(); }).then(function () { toast(mode === 'STAFF' ? 'Antwort gesendet' : 'Notiz gespeichert'); }).catch(function (err) { btn.disabled = false; toast(err.message); });
   });
-  var licTimer;
   document.addEventListener('input', function (e) {
-    if (e.target.id === 'lq') { ui.lsearch = e.target.value; clearTimeout(licTimer); licTimer = setTimeout(render, 300); return; }
     if (e.target.id !== 'q') return;
     ui.q = e.target.value;
     clearTimeout(searchTimer);

@@ -22,7 +22,7 @@ final class BackupService
 {
     public const NAME_PATTERN = '/^crm-backup-(\d{8})-(\d{6})\.zip$/';
     private const DB_ENTRY = 'database.sqlite';
-    private const KEY_ENTRY = 'license.key';
+    private const KEY_ENTRY = 'update.key';
 
     public static function dir(): string
     {
@@ -96,9 +96,9 @@ final class BackupService
                 'migrations' => array_column(Db::all('SELECT "name" FROM "_migrations" ORDER BY "name"'), 'name'),
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-            // Der Signaturschlüssel der Lizenzen muss ein Backup überleben: ohne ihn lassen sich ausgelieferte Software-Versionen nicht mehr prüfen
-            $keyFile = LicenseService::keyFile();
-            $withKey = trim(Env::get('LICENSE_SECRET_KEY', '') ?? '') === '' && is_file($keyFile);
+            // Der Signaturschlüssel für Updates muss ein Backup überleben: ohne ihn können ausgelieferte Installationen keine Updates mehr prüfen
+            $keyFile = UpdateSigner::keyFile();
+            $withKey = trim(Env::get('UPDATE_SECRET_KEY', '') ?? '') === '' && is_file($keyFile);
             if ($withKey) {
                 $zip->addFile($keyFile, self::KEY_ENTRY);
             }
@@ -276,10 +276,10 @@ final class BackupService
             }
         }
 
-        // Signaturschlüssel der Lizenzen zurückspielen (ein abweichender vorhandener wird als Kopie aufgehoben)
-        $keyData = trim(Env::get('LICENSE_SECRET_KEY', '') ?? '') === '' ? $zip->getFromName(self::KEY_ENTRY) : false;
+        // Signaturschlüssel für Updates zurückspielen (ein abweichender vorhandener wird als Kopie aufgehoben)
+        $keyData = trim(Env::get('UPDATE_SECRET_KEY', '') ?? '') === '' ? ($zip->getFromName(self::KEY_ENTRY) ?: $zip->getFromName('license.key')) : false; // „license.key“ = Backups früherer Versionen
         if ($keyData !== false && $keyData !== '') {
-            $keyFile = LicenseService::keyFile();
+            $keyFile = UpdateSigner::keyFile();
             self::ensureDir(dirname($keyFile));
             if (is_file($keyFile) && trim((string) file_get_contents($keyFile)) !== trim($keyData)) {
                 copy($keyFile, $keyFile . '.vor-wiederherstellung-' . gmdate('Ymd-His'));

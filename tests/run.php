@@ -57,8 +57,8 @@ $env = [
     'CRON_TOKEN' => 'cron-token-cron-token-123',
     'REMINDER_FEE_2' => '5',
     'BACKUP_DIR' => "$tmp/backups",
-    'LICENSE_KEY_FILE' => "$tmp/license.key",
-    'LICENSE_REQUIRE_HTTPS' => 'false',
+    'UPDATE_KEY_FILE' => "$tmp/update.key",
+    'UPDATE_REQUIRE_HTTPS' => 'false',
     'UPLOAD_DIR' => "$tmp/uploads",
     'APP_URL' => 'https://crm.example.com',
     'PRIVACY_URL' => 'https://crm.example.com/datenschutz',
@@ -661,7 +661,7 @@ foreach ($res[1] as $bp) {
 }
 
 $res = call('POST', '/api/catalog/examples', [], $token);
-check('Beispielkatalog: 3 Kategorien, 10 Produkte, alle inaktiv', $res[0] === 201 && $res[1]['categories'] === 3 && $res[1]['products'] === 10, $res[2]);
+check('Beispielkatalog: 3 Kategorien, 9 Produkte, alle inaktiv', $res[0] === 201 && $res[1]['categories'] === 3 && $res[1]['products'] === 9, $res[2]);
 $res = call('GET', '/api/products?active=false&search=' . urlencode('Miethomepage'), null, $token);
 check('Beispielprodukt „Miethomepage“: Miete monatlich, 49 €, 199 € Einrichtung, inaktiv', count($res[1]) === 1 && $res[1][0]['type'] === 'RENTAL' && $res[1][0]['intervalUnit'] === 'MONTHLY' && $res[1][0]['price'] == 49 && $res[1][0]['setupFee'] == 199 && $res[1][0]['active'] === false, $res[2]);
 $res = call('POST', '/api/catalog/examples', [], $token);
@@ -691,14 +691,14 @@ $allProducts = array_merge(...array_column($catalog, 'products'));
 $allNames = array_column($allProducts, 'name');
 check('Portal-Katalog: inaktive Produkte und Produkte verborgener Kategorien sind unsichtbar', !in_array('Auslaufprodukt', $allNames, true) && !in_array('Nur intern', $allNames, true) && in_array('Webhosting M', $allNames, true) && in_array('Beratung vor Ort', $allNames, true) && count($allNames) === 10, $allNames);
 $hostP = current(array_filter($allProducts, static fn ($x) => $x['id'] === $pHost));
-check('Portal-Produkt: nur freigegebene Felder', array_diff(array_keys($hostP), ['id', 'name', 'description', 'type', 'price', 'taxRate', 'unit', 'intervalUnit', 'setupFee', 'minQuantity', 'license', 'licenseSubdomains', 'licensePayFirst', 'licenseDays', 'licensePlan', 'licenseSupportDays', 'licenseUpdateDays']) === [] && !isset($hostP['active'], $hostP['categoryId'], $hostP['sortOrder']) && $hostP['intervalUnit'] === 'MONTHLY' && $hostP['setupFee'] == 19, array_keys($hostP));
+check('Portal-Produkt: nur freigegebene Felder', array_diff(array_keys($hostP), ['id', 'name', 'description', 'type', 'price', 'taxRate', 'unit', 'intervalUnit', 'setupFee', 'minQuantity']) === [] && !isset($hostP['active'], $hostP['categoryId'], $hostP['sortOrder']) && $hostP['intervalUnit'] === 'MONTHLY' && $hostP['setupFee'] == 19, array_keys($hostP));
 
 $before = count(mails());
 $res = call('POST', '/api/portal/orders', ['productId' => $pWeb, 'quantity' => 1, 'note' => 'Bitte mit Blog und Kontaktformular'], null, $OP);
 expect('Kunde bestellt Webseitenerstellung', $res, 201);
 $o1 = $res[1];
 check('Bestellung: Nummer BE-JJJJ-0001, Status „Eingegangen“, Schnappschuss, Summen', $o1['number'] === "BE-$year-0001" && $o1['status'] === 'PENDING' && $o1['productName'] === 'Webseitenerstellung einmalig' && $o1['unitPrice'] == 1500 && $o1['totals']['net'] == 1500 && $o1['totals']['tax'] == 285 && $o1['totals']['gross'] == 1785 && $o1['note'] === 'Bitte mit Blog und Kontaktformular', $o1);
-check('Bestellung im Portal: nur freigegebene Felder', array_diff(array_keys($o1), ['id', 'number', 'status', 'createdAt', 'decidedAt', 'productName', 'productType', 'unitPrice', 'taxRate', 'quantity', 'unit', 'intervalUnit', 'setupFee', 'note', 'rejectReason', 'domain', 'licenseEnabled', 'totals']) === [] && !isset($o1['clientId'], $o1['invoiceId'], $o1['recurringId'], $o1['projectId'], $o1['source']), array_keys($o1));
+check('Bestellung im Portal: nur freigegebene Felder', array_diff(array_keys($o1), ['id', 'number', 'status', 'createdAt', 'decidedAt', 'productName', 'productType', 'unitPrice', 'taxRate', 'quantity', 'unit', 'intervalUnit', 'setupFee', 'note', 'rejectReason', 'totals']) === [] && !isset($o1['clientId'], $o1['invoiceId'], $o1['recurringId'], $o1['projectId'], $o1['source']), array_keys($o1));
 $all = mails();
 $recent = array_slice($all, $before);
 $subjects = array_map(static fn ($m) => $m['head'], $recent);
@@ -1245,7 +1245,7 @@ $restoredExists = static function () use ($mysqlMode, $restoredDb, $restoreDbEnv
     }
     return (int) $mysqlPdo($restoreDbEnv['DB_NAME'])->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'Client'")->fetchColumn() > 0;
 };
-$restoreEnv = $restoreDbEnv + ['UPLOAD_DIR' => "$tmp/restored-uploads", 'BACKUP_DIR' => "$tmp/restore-safety", 'BACKUP_PASSPHRASE' => $secret, 'LICENSE_KEY_FILE' => "$tmp/restored-license.key"];
+$restoreEnv = $restoreDbEnv + ['UPLOAD_DIR' => "$tmp/restored-uploads", 'BACKUP_DIR' => "$tmp/restore-safety", 'BACKUP_PASSPHRASE' => $secret, 'UPDATE_KEY_FILE' => "$tmp/restored-update.key"];
 [$code, $out] = $cli('restore.php', [$encFile], $restoreEnv);
 check('Wiederherstellung verlangt ausdrückliche Bestätigung (--yes), tut ohne nichts', $code === 1 && str_contains($out, '--yes') && !$restoredExists(), $out);
 [$code, $out] = $cli('restore.php', [$encFile, '--yes'], ['BACKUP_PASSPHRASE' => 'falsches-passwort'] + $restoreEnv);
@@ -1290,7 +1290,7 @@ $seedEnv = $dbEnv('seedtest') + ['BACKUP_DIR' => "$tmp/seed-backups"];
 [$c2, $o2] = $cli('seed.php', [], $seedEnv);
 [$c3, $o3] = $cli('seed-catalog.php', [], $seedEnv);
 [$c4, $o4] = $cli('seed-catalog.php', [], $seedEnv);
-check('bin/seed.php und bin/seed-catalog.php sind beliebig oft ausführbar', $code === 0 && $c1 === 0 && $c2 === 0 && $c3 === 0 && $c4 === 0 && str_contains($o3, '3 Kategorie(n) und 10 Produkt(e)') && str_contains($o4, '0 Kategorie(n) und 0 Produkt(e)'), [$o2, $o4]);
+check('bin/seed.php und bin/seed-catalog.php sind beliebig oft ausführbar', $code === 0 && $c1 === 0 && $c2 === 0 && $c3 === 0 && $c4 === 0 && str_contains($o3, '3 Kategorie(n) und 9 Produkt(e)') && str_contains($o4, '0 Kategorie(n) und 0 Produkt(e)'), [$o2, $o4]);
 
 // Cron-Anbindung
 foreach (glob("$tmp/backups/crm-backup-*.zip") as $f) {
@@ -1303,249 +1303,26 @@ check('Cron: zweiter Lauf sichert nicht erneut', $res[1]['backup'] === null, $re
 [$code, $out] = $cli('cron.php', [], []);
 check('bin/cron.php meldet „Backup aktuell“', $code === 0 && str_contains($out, 'Backup aktuell'), $out);
 
-echo "Domain-Lizenzen\n";
+echo "Update-Schlüssel und Kunden für die folgenden Abschnitte\n";
 $dbx()->exec('DELETE FROM RateLimit'); // Sperren der vorigen Abschnitte aufheben
-require_once $root . '/examples/license-client/LicenseClient.php';
-$res = call('GET', '/api/license/public-key');
-$pubKey = $res[1]['publicKey'] ?? '';
-check('Öffentlicher Schlüssel abrufbar (Ed25519, 32 Byte)', $res[0] === 200 && strlen((string) base64_decode($pubKey, true)) === 32, $res[2]);
-$res = call('GET', '/license/client.php');
-check('Prüfklasse zum Download', $res[0] === 200 && str_contains($res[2], 'final class LicenseClient'), substr($res[2], 0, 80));
-
 $lc = call('POST', '/api/clients', ['name' => 'Lia Lizenz', 'email' => 'lia@lizenz.de'], $token)[1]['id'];
 $LP = ['X-Portal-Token: ' . call('POST', "/api/clients/$lc/portal", [], $token)[1]['token']];
 $otherC = call('POST', '/api/clients', ['name' => 'Otto Fremd', 'email' => 'otto@fremd.de'], $token)[1]['id'];
 $OTP = ['X-Portal-Token: ' . call('POST', "/api/clients/$otherC/portal", [], $token)[1]['token']];
-
-$mk = static fn (array $x) => call('POST', '/api/products', $x + ['type' => 'ONE_TIME', 'price' => 100, 'taxRate' => 19, 'active' => true, 'licenseEnabled' => true], $token);
-$res = $mk(['name' => 'Skript Pro', 'licensePayFirst' => true]);
-expect('Lizenzprodukt anlegen', $res, 201);
-$pLic = $res[1]['id'];
-$pLicSub = $mk(['name' => 'Skript Agentur', 'licenseSubdomains' => true, 'licensePayFirst' => false, 'licenseDays' => 30])[1]['id'];
-$pLicRent = $mk(['name' => 'Theme-Abo', 'type' => 'RENTAL', 'intervalUnit' => 'MONTHLY', 'price' => 10, 'licensePayFirst' => true])[1]['id'];
-$pLicFree = $mk(['name' => 'Gratis-Plugin', 'price' => 0, 'licensePayFirst' => true])[1]['id'];
-$res = $mk(['name' => 'Stunden mit Lizenz', 'type' => 'HOURLY', 'licenseEnabled' => true, 'licenseDays' => 10]);
-check('Zeitprodukt kann keine Lizenz haben', $res[0] === 201 && $res[1]['licenseEnabled'] === false, $res[2]);
-
-expect('Lizenzprodukt ohne Domain bestellen → 400', call('POST', '/api/portal/orders', ['productId' => $pLic], null, $LP), 400);
-expect('Ungültige Domain → 400', call('POST', '/api/portal/orders', ['productId' => $pLic, 'domain' => 'kein domain!'], null, $LP), 400);
-expect('Domain mit Pfad/Schema wird bereinigt', $res = call('POST', '/api/portal/orders', ['productId' => $pLic, 'domain' => 'https://WWW.Meine-Seite.DE/shop?x=1'], null, $LP), 201);
-check('Bestellung speichert die normalisierte Domain', $res[1]['domain'] === 'meine-seite.de' && $res[1]['licenseEnabled'] === true, $res[2]);
-$oL1 = $res[1];
-
-$before = count(mails());
-$res = call('POST', "/api/orders/{$oL1['id']}/accept", [], $token);
-expect('Lizenzbestellung annehmen', $res, 200);
-$lic1 = $res[1]['license'] ?? null;
-check('Lizenz entsteht, wartet auf Zahlung (PENDING)', $lic1 !== null && $lic1['status'] === 'PENDING' && $lic1['domain'] === 'meine-seite.de' && preg_match('/^[A-Z2-9]{5}(-[A-Z2-9]{5}){4}$/', $lic1['licenseKey']) === 1, $res[2]);
-$key1 = $lic1['licenseKey'];
-$inv1 = $res[1]['invoice']['id'];
-check('Noch keine Lizenz-Mail vor der Zahlung', count(array_filter(array_slice(mails(), $before), static fn ($m) => str_contains(mailText($m), $key1))) === 0);
-
-$res = call('GET', '/api/portal/licenses', null, null, $LP);
-check('Portal: Lizenz sichtbar, Schlüssel verborgen solange offen', $res[0] === 200 && count($res[1]) === 1 && $res[1][0]['status'] === 'PENDING' && !str_contains($res[2], $key1), $res[2]);
-
-$verify = static fn (string $k, string $d, ?string $n = null) => call('POST', '/api/license/verify', ['key' => $k, 'domain' => $d, 'nonce' => $n ?? 'n' . bin2hex(random_bytes(10)), 'ts' => time()]);
-$decode = static function (array $res) use ($pubKey) {
-    $b = static fn (string $s) => base64_decode(strtr($s, '-_', '+/'));
-    $ok = sodium_crypto_sign_verify_detached($b($res[1]['signature']), $b($res[1]['payload']), base64_decode($pubKey));
-    return [$ok, json_decode($b($res[1]['payload']), true)];
-};
-[$ok, $p] = $decode($verify($key1, 'meine-seite.de'));
-check('Vor Zahlung: signiert, aber ungültig (pending)', $ok && $p['valid'] === false && $p['reason'] === 'pending', $p);
-
-// Zahlung schaltet frei
-call('POST', "/api/invoices/$inv1/send", [], $token);
-$res = call('POST', "/api/invoices/$inv1/payments", ['amount' => 50], $token);
-expect('Teilzahlung erfassen', $res, 201);
-$tz = call('GET', "/api/licenses/{$lic1['id']}", null, $token); check('Teilzahlung schaltet noch nicht frei', $tz[1]['status'] === 'PENDING', [$tz[2], call('GET', "/api/invoices/$inv1", null, $token)[1]['totals']]);
-$before = count(mails());
-call('POST', "/api/invoices/$inv1/payments", ['amount' => 69], $token);
-$res = call('GET', "/api/licenses/{$lic1['id']}", null, $token);
-check('Volle Zahlung schaltet die Lizenz frei', $res[1]['status'] === 'ACTIVE' && $res[1]['activatedAt'] !== null && count($res[1]['payments']) === 1, $res[2]);
-$mailsNew = array_slice(mails(), $before);
-check('Kunde erhält den Schlüssel per E-Mail', count(array_filter($mailsNew, static fn ($m) => str_contains($m['head'], 'X-Envelope-To: lia@lizenz.de') && str_contains(mailText($m), $key1) && str_contains(mailText($m), 'meine-seite.de'))) === 1, count($mailsNew));
-$res = call('GET', '/api/portal/licenses', null, null, $LP);
-check('Portal zeigt den Schlüssel jetzt', str_contains($res[2], $key1) && $res[1][0]['changesLeft'] === 2, $res[2]);
-call('POST', "/api/invoices/$inv1/payments", ['amount' => 5], $token);
-check('Weitere Zahlung wirkt nicht doppelt', (int) $dbx()->query('SELECT COUNT(*) FROM LicensePayment')->fetchColumn() === 1);
-
-// Prüfung durch den Server
-[$ok, $p] = $decode($verify($key1, 'meine-seite.de', 'abcdefgh-1'));
-check('Gültig: signiert, Nonce zurückgegeben, Produkt genannt', $ok && $p['valid'] === true && $p['reason'] === null && $p['nonce'] === 'abcdefgh-1' && $p['product'] === 'Skript Pro' && $p['domain'] === 'meine-seite.de', $p);
-[, $p] = $decode($verify(strtolower(str_replace('-', '', $key1)), 'WWW.Meine-Seite.de:8080'));
-check('Schlüssel ohne Striche/klein und Domain mit www/Port werden akzeptiert', $p['valid'] === true, $p);
-[, $p] = $decode($verify($key1, 'andere-seite.de'));
-check('Andere Domain → domain', $p['valid'] === false && $p['reason'] === 'domain', $p);
-[, $p] = $decode($verify($key1, 'shop.meine-seite.de'));
-check('Subdomain ohne Subdomain-Option → domain', $p['reason'] === 'domain', $p);
-[, $p] = $decode($verify($key1, 'localhost'));
-check('Entwicklungsdomain localhost ist erlaubt', $p['valid'] === true, $p);
-[, $p] = $decode($verify($key1, 'kunde.test'));
-check('Entwicklungsdomain *.test ist erlaubt', $p['valid'] === true, $p);
-[, $p] = $decode($verify('AAAAA-BBBBB-CCCCC-DDDDD-EEEEE', 'meine-seite.de'));
-check('Unbekannter Schlüssel → unknown', $p['valid'] === false && $p['reason'] === 'unknown' && $p['product'] === null, $p);
-$res = $verify($key1, 'meine-seite.de');
-$res[1]['payload'] = substr($res[1]['payload'], 0, -2) . 'AA';
-check('Manipulierte Antwort fällt bei der Signaturprüfung auf', $decode($res)[0] === false);
-expect('Verify ohne Nonce → 400', call('POST', '/api/license/verify', ['key' => $key1, 'domain' => 'a.de']), 400);
-$res = call('GET', "/api/licenses/{$lic1['id']}", null, $token);
-check('Fehlversuche sind im Verlauf der Lizenz sichtbar', count($res[1]['attempts']) >= 2 && $res[1]['checkCount'] >= 1, $res[2]);
-
-// Prüfklasse gegen den echten Server
-$cacheFile = "$tmp/lic1.cache";
-@unlink($cacheFile);
-$client = new LicenseClient($base, $pubKey, $key1, $cacheFile, ['domain' => 'meine-seite.de']);
-check('Client: gültige Lizenz', $client->check() === true && $client->product === 'Skript Pro' && is_file($cacheFile), [$client->reason, $client->error]);
-$offline = new LicenseClient('http://127.0.0.1:1', $pubKey, $key1, $cacheFile, ['domain' => 'meine-seite.de', 'timeout' => 1]);
-check('Client: frischer Zwischenspeicher gilt ohne Serveranfrage', $offline->check() === true);
-$tampered = json_decode((string) file_get_contents($cacheFile), true);
-$tampered['payload'] = substr($tampered['payload'], 0, -3) . 'AAA';
-file_put_contents($cacheFile, json_encode($tampered));
-$offline = new LicenseClient('http://127.0.0.1:1', $pubKey, $key1, $cacheFile, ['domain' => 'meine-seite.de', 'timeout' => 1]);
-check('Client: manipulierter Zwischenspeicher wird verworfen → offline', $offline->check() === false && $offline->reason === 'offline', $offline->reason);
-$wrongDomain = new LicenseClient($base, $pubKey, $key1, "$tmp/lic2.cache", ['domain' => 'fremd.de']);
-check('Client: falsche Domain → abgelehnt', $wrongDomain->check() === false && $wrongDomain->reason === 'domain' && str_contains($wrongDomain->message(), 'fremd.de'), $wrongDomain->reason);
-$forged = new LicenseClient($base, base64_encode(sodium_crypto_sign_publickey(sodium_crypto_sign_keypair())), $key1, "$tmp/lic3.cache", ['domain' => 'meine-seite.de']);
-check('Client: Antwort eines Servers mit anderem Schlüssel wird nicht anerkannt', $forged->check() === false && $forged->error === 'Signatur ungültig', [$forged->reason, $forged->error]);
-// Ein „Fake-Server“, der immer „gültig“ sagt, aber nicht signieren kann
-$fake = proc_open([PHP_BINARY, '-S', '127.0.0.1:8799', '-t', "$tmp"], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
-file_put_contents("$tmp/index.php", '<?php $b=json_decode(file_get_contents("php://input"),true); $p=["v"=>1,"valid"=>true,"reason"=>null,"product"=>"X","domain"=>$b["domain"],"expiresAt"=>null,"issuedAt"=>gmdate("Y-m-d\TH:i:s.v\Z"),"nonce"=>$b["nonce"],"cacheHours"=>24,"graceDays"=>7]; $e=fn($s)=>rtrim(strtr(base64_encode($s),"+/","-_"),"="); header("Content-Type: application/json"); echo json_encode(["payload"=>$e(json_encode($p)),"signature"=>$e(random_bytes(64))]);');
-usleep(500000);
-$fakeClient = new LicenseClient('http://127.0.0.1:8799', $pubKey, $key1, "$tmp/lic4.cache", ['domain' => 'meine-seite.de', 'timeout' => 2]);
-check('Client: Fake-Server mit erfundener Signatur wird abgewiesen', $fakeClient->check() === false && $fakeClient->error === 'Signatur ungültig', [$fakeClient->reason, $fakeClient->error]);
-proc_terminate($fake);
-@unlink("$tmp/index.php");
-
-// Statuswechsel durch die Verwaltung
-expect('Lizenz sperren', $res = call('PATCH', "/api/licenses/{$lic1['id']}", ['status' => 'SUSPENDED'], $token), 200);
-[, $p] = $decode($verify($key1, 'meine-seite.de'));
-check('Gesperrt → suspended', $p['reason'] === 'suspended', $p);
-call('PATCH', "/api/licenses/{$lic1['id']}", ['status' => 'ACTIVE'], $token);
-[, $p] = $decode($verify($key1, 'meine-seite.de'));
-check('Wieder aktiviert → gültig', $p['valid'] === true, $p);
-call('PATCH', "/api/licenses/{$lic1['id']}", ['validUntil' => gmdate('Y-m-d\TH:i:s.000\Z', time() - 3600)], $token);
-[, $p] = $decode($verify($key1, 'meine-seite.de'));
-check('Gültigkeit überschritten → expired', $p['reason'] === 'expired', $p);
-check('Verwaltung zeigt abgelaufene Lizenz als EXPIRED', call('GET', '/api/licenses?status=EXPIRED', null, $token)[1]['meta']['total'] === 1);
-call('PATCH', "/api/licenses/{$lic1['id']}", ['validUntil' => ''], $token);
-
-// Domainwechsel
-$res = call('POST', "/api/portal/licenses/{$lic1['id']}/domain", ['domain' => 'neue-seite.de'], null, $LP);
-check('Kunde ändert die Domain (noch 1 Wechsel übrig)', $res[0] === 200 && $res[1]['domain'] === 'neue-seite.de' && $res[1]['changesLeft'] === 1, $res[2]);
-[, $p] = $decode($verify($key1, 'meine-seite.de'));
-check('Alte Domain ist danach ungültig', $p['reason'] === 'domain');
-[, $p] = $decode($verify($key1, 'neue-seite.de'));
-check('Neue Domain gilt', $p['valid'] === true);
-expect('Fremder Kunde: Domain ändern → 404', call('POST', "/api/portal/licenses/{$lic1['id']}/domain", ['domain' => 'klau.de'], null, $OTP), 404);
-check('Fremder Kunde sieht keine Lizenzen', count(call('GET', '/api/portal/licenses', null, null, $OTP)[1]) === 0);
-call('POST', "/api/portal/licenses/{$lic1['id']}/domain", ['domain' => 'dritte-seite.de'], null, $LP);
-expect('Zu viele Domainwechsel → 409', call('POST', "/api/portal/licenses/{$lic1['id']}/domain", ['domain' => 'vierte-seite.de'], null, $LP), 409);
-expect('Ungültige Domain beim Wechsel → 400', call('POST', "/api/portal/licenses/{$lic1['id']}/domain", ['domain' => 'x y'], null, $LP), 400);
-check('Verwaltung darf unbegrenzt ändern', call('PATCH', "/api/licenses/{$lic1['id']}", ['domain' => 'vierte-seite.de'], $token)[1]['domain'] === 'vierte-seite.de');
-
-// Schlüssel erneuern
-$res = call('POST', "/api/licenses/{$lic1['id']}/regenerate", [], $token);
-$newKey = $res[1]['licenseKey'] ?? '';
-check('Neuer Schlüssel, alter wird unbekannt', $res[0] === 200 && $newKey !== $key1 && $decode($verify($key1, 'vierte-seite.de'))[1]['reason'] === 'unknown' && $decode($verify($newKey, 'vierte-seite.de'))[1]['valid'] === true, $res[2]);
-$before = count(mails());
-expect('Lizenz erneut senden', call('POST', "/api/licenses/{$lic1['id']}/send", [], $token), 200);
-check('Erneut gesendete Mail enthält den neuen Schlüssel', count(array_slice(mails(), $before)) === 1 && str_contains(mailText(array_slice(mails(), $before)[0]), $newKey));
-call('PATCH', "/api/licenses/{$lic1['id']}", ['status' => 'REVOKED'], $token);
-check('Widerrufen → revoked, Client lehnt ab', $decode($verify($newKey, 'vierte-seite.de'))[1]['reason'] === 'revoked' && !(new LicenseClient($base, $pubKey, $newKey, "$tmp/lic5.cache", ['domain' => 'vierte-seite.de']))->check());
-expect('Widerrufene Lizenz: Kunde ändert Domain → 409', call('POST', "/api/portal/licenses/{$lic1['id']}/domain", ['domain' => 'x.de'], null, $LP), 409);
-expect('Widerrufene Lizenz wieder aktivieren geht (Verwaltung entscheidet)', call('PATCH', "/api/licenses/{$lic1['id']}", ['status' => 'ACTIVE'], $token), 200);
-
-// Subdomains, sofort aktiv, befristet
-$o2 = call('POST', '/api/portal/orders', ['productId' => $pLicSub, 'domain' => 'agentur.de'], null, $LP)[1];
-$lic2 = call('POST', "/api/orders/{$o2['id']}/accept", [], $token)[1]['license'];
-$days = (strtotime($lic2['validUntil']) - time()) / 86400;
-check('Ohne „erst nach Zahlung“: sofort aktiv, 30 Tage befristet', $lic2['status'] === 'ACTIVE' && $days > 29 && $days < 31, $lic2);
-foreach (['agentur.de', 'kunde1.agentur.de', 'a.b.agentur.de'] as $d) {
-    check("Subdomain-Lizenz gilt für $d", $decode($verify($lic2['licenseKey'], $d))[1]['valid'] === true);
+$res = call('GET', '/api/updates/public-key');
+check('Öffentlicher Schlüssel des Update-Servers abrufbar (Ed25519, 32 Byte)', $res[0] === 200 && strlen((string) base64_decode($res[1]['publicKey'] ?? '', true)) === 32, $res[2]);
+foreach (['/api/licenses', '/api/license/verify', '/api/portal/licenses'] as $gone) {
+    check("Lizenz-Schnittstelle $gone gibt es nicht mehr", in_array(call('GET', $gone, null, $token)[0], [404, 405], true) && in_array(call('POST', $gone, [], $token)[0], [404, 405], true));
 }
-foreach (['xagentur.de', 'agentur.de.evil.com', 'agentur.com'] as $d) {
-    check("Subdomain-Lizenz gilt nicht für $d", $decode($verify($lic2['licenseKey'], $d))[1]['reason'] === 'domain');
-}
-
-// Miete: Verlängerung je bezahlter Rechnung
-$o3 = call('POST', '/api/portal/orders', ['productId' => $pLicRent, 'domain' => 'miete.de'], null, $LP)[1];
-$acc3 = call('POST', "/api/orders/{$o3['id']}/accept", [], $token)[1];
-check('Mietlizenz wartet auf die erste Abo-Rechnung', $acc3['license']['status'] === 'PENDING' && $acc3['license']['recurringId'] === $acc3['recurring']['id'] && $acc3['invoice'] !== null, $acc3);
-$res = call('POST', "/api/invoices/{$acc3['invoice']['id']}/payments", ['amount' => 11.9], $token);
-$l3 = call('GET', "/api/licenses/{$acc3['license']['id']}", null, $token)[1];
-$m = (strtotime($l3['paidThrough']) - time()) / 86400;
-$g = (strtotime($l3['validUntil']) - strtotime($l3['paidThrough'])) / 86400;
-check('Zahlung aktiviert Miete: bezahlt bis in ~1 Monat, +14 Tage Kulanz', $l3['status'] === 'ACTIVE' && $m > 27 && $m < 32 && round($g) == 14, $l3);
-$paid1 = $l3['paidThrough'];
-// zweite Abo-Rechnung: fällig stellen und abrechnen
-$licDb = $dbx();
-$licDb->prepare('UPDATE Recurring SET startDate = ?, nextRunDate = ? WHERE id = ?')->execute([gmdate('Y-m-d', strtotime('-1 month')) . 'T00:00:00.000Z', gmdate('Y-m-d') . 'T00:00:00.000Z', $acc3['recurring']['id']]);
-$res = call('POST', '/api/recurring/run-due', null, $token);
-$inv3b = $res[1]['runs'][0]['invoiceId'] ?? null;
-check('Zweite Abo-Rechnung entsteht', $res[0] === 200 && $inv3b !== null && $inv3b !== $acc3['invoice']['id'], $res[2]);
-check('Unbezahlte Rechnung verlängert nicht', call('GET', "/api/licenses/{$acc3['license']['id']}", null, $token)[1]['paidThrough'] === $paid1);
-call('POST', "/api/invoices/$inv3b/payments", ['amount' => 11.9], $token);
-$l3 = call('GET', "/api/licenses/{$acc3['license']['id']}", null, $token)[1];
-$diff = (strtotime($l3['paidThrough']) - strtotime($paid1)) / 86400;
-check('Bezahlte zweite Rechnung verlängert um einen Monat', $diff >= 28 && $diff <= 31 && count($l3['payments']) === 2, [$paid1, $l3['paidThrough']]);
-call('PATCH', "/api/invoices/$inv3b", ['status' => 'PAID'], $token);
-check('Erneutes Markieren als bezahlt verlängert nicht doppelt', call('GET', "/api/licenses/{$acc3['license']['id']}", null, $token)[1]['paidThrough'] === $l3['paidThrough']);
-
-// Berechtigungen aus dem Produkt: Paket, Funktionen, Support- und Update-Zeitraum
-expect('Ungültige Produkt-Kennung → 400', $mk(['name' => 'Kennung falsch', 'licenseSlug' => 'Böse Kennung']), 400);
-expect('Negative Support-Tage → 400', $mk(['name' => 'Tage falsch', 'licenseSupportDays' => -1]), 400);
-$res = $mk(['name' => 'Zeitprodukt mit Rest', 'type' => 'HOURLY', 'licensePlan' => 'pro', 'licenseSlug' => 'x', 'licenseSupportDays' => 5]);
-check('Zeitprodukte verlieren alle Lizenzangaben', $res[0] === 201 && $res[1]['licensePlan'] === null && $res[1]['licenseSlug'] === null && $res[1]['licenseSupportDays'] === null, $res[2]);
-$pEnt = $mk(['name' => 'Tool mit Berechtigungen', 'licensePayFirst' => false, 'licensePlan' => 'pro', 'licenseSlug' => 'tool', 'licenseFeatures' => 'support,shop', 'licenseSupportDays' => 30, 'licenseUpdateDays' => 0]);
-expect('Produkt mit Paket, Funktionen und Zeiträumen anlegen', $pEnt, 201);
-$oEnt = call('POST', '/api/portal/orders', ['productId' => $pEnt[1]['id'], 'domain' => 'tool-kunde.de'], null, $LP)[1];
-$lEnt = call('POST', "/api/orders/{$oEnt['id']}/accept", [], $token)[1]['license'];
-$dEnt = call('GET', "/api/licenses/{$lEnt['id']}", null, $token)[1];
-$supDays = (strtotime($dEnt['supportUntil']) - time()) / 86400;
-check('Lizenz übernimmt Paket, Kennung, Funktionen; Support 30 Tage, Updates „nicht enthalten“', $dEnt['plan'] === 'pro' && $dEnt['slug'] === 'tool' && $dEnt['resolvedFeatures'] === ['support', 'shop'] && $supDays > 29 && $supDays < 31 && $dEnt['supportActive'] === true && $dEnt['updatesActive'] === false, $dEnt);
-$pl = $verify($dEnt['licenseKey'], 'tool-kunde.de');
-[, $pp2] = $decode($pl);
-check('Signierte Antwort enthält Funktionen und Zeiträume', $pp2['plan'] === 'pro' && $pp2['features'] === ['support', 'shop'] && $pp2['supportUntil'] === $dEnt['supportUntil'] && $pp2['slug'] === 'tool', $pp2);
-$tb = 'XBL' . bin2hex(random_bytes(4));
-$res = call('POST', '/api/portal/tickets', "--$tb\r\nContent-Disposition: form-data; name=\"subject\"\r\n\r\nFrage\r\n--$tb\r\nContent-Disposition: form-data; name=\"message\"\r\n\r\nHallo\r\n--$tb\r\nContent-Disposition: form-data; name=\"licenseId\"\r\n\r\n{$dEnt['id']}\r\n--$tb--\r\n", null, array_merge($LP, ["Content-Type: multipart/form-data; boundary=$tb"]));
-check('Ticket zu dieser Lizenz ist erlaubt (Support läuft)', $res[0] === 201, $res[2]);
-call('DELETE', "/api/tickets/{$res[1]['id']}", null, $token);
-$o2 = call('POST', '/api/portal/orders', ['productId' => $pLicRent, 'domain' => 'miete-support.de'], null, $LP)[1];
-$a2 = call('POST', "/api/orders/{$o2['id']}/accept", [], $token)[1];
-call('POST', "/api/invoices/{$a2['invoice']['id']}/payments", ['amount' => 11.9], $token);
-$d2 = call('GET', "/api/licenses/{$a2['license']['id']}", null, $token)[1];
-check('Mietlizenz: Support und Updates laufen mit dem bezahlten Zeitraum', $d2['supportUntil'] === $d2['paidThrough'] && $d2['updatesUntil'] === $d2['paidThrough'], [$d2['supportUntil'], $d2['paidThrough']]);
-
-// Kostenloses Produkt und manuelle Ausstellung
-$before = count(mails());
-$o4 = call('POST', '/api/portal/orders', ['productId' => $pLicFree, 'domain' => 'gratis.de'], null, $LP)[1];
-$lic4 = call('POST', "/api/orders/{$o4['id']}/accept", [], $token)[1]['license'];
-check('Kostenlose Lizenz ist sofort aktiv und wird per Mail geschickt', $lic4['status'] === 'ACTIVE' && count(array_filter(array_slice(mails(), $before), static fn ($m) => str_contains(mailText($m), $lic4['licenseKey']))) === 1, $lic4);
-$res = call('POST', '/api/licenses', ['clientId' => $lc, 'productName' => 'Individuelles Script', 'domain' => 'Sonder.de', 'subdomains' => true], $token);
-check('Lizenz manuell ausstellen (sofort aktiv)', $res[0] === 201 && $res[1]['status'] === 'ACTIVE' && $res[1]['domain'] === 'sonder.de' && $decode($verify($res[1]['licenseKey'], 'x.sonder.de'))[1]['valid'] === true, $res[2]);
-expect('Manuelle Lizenz mit ungültiger Domain → 400', call('POST', '/api/licenses', ['clientId' => $lc, 'productName' => 'X', 'domain' => '###'], $token), 400);
-expect('Lizenzverwaltung ohne Login → 401', call('GET', '/api/licenses'), 401);
-$res = call('GET', "/api/licenses?clientId=$lc", null, $token);
-check('Lizenzliste je Kunde', $res[1]['meta']['total'] === 7, $res[2]);
-$res = call('GET', '/api/licenses?search=agentur', null, $token);
-check('Suche in Lizenzen', $res[1]['meta']['total'] === 1, $res[2]);
-check('Lizenz nur über Produkt-Bestellung ohne Domain-Feld nicht möglich (Bestellung ohne Lizenz-Produkt ignoriert Domain)', call('POST', '/api/portal/orders', ['productId' => $pWeb, 'domain' => 'egal.de'], null, $LP)[1]['licenseEnabled'] === false);
+check('Produkte haben keine Lizenzfelder mehr', !str_contains(call('GET', '/api/products', null, $token)[2], 'licenseEnabled'));
 
 // Backup enthält den Signaturschlüssel
 $res = call('POST', '/api/backups', [], $token);
 $zip = new ZipArchive();
 $zip->open("$tmp/backups/{$res[1]['name']}");
-check('Backup enthält den Lizenz-Signaturschlüssel', $zip->getFromName('license.key') === file_get_contents("$tmp/license.key") && strlen((string) file_get_contents("$tmp/license.key")) > 40, $res[2]);
+check('Backup enthält den Signaturschlüssel für Updates', $zip->getFromName('update.key') === file_get_contents("$tmp/update.key") && strlen((string) file_get_contents("$tmp/update.key")) > 40, $res[2]);
 $zip->close();
-check('Schlüsseldatei ist nicht für alle lesbar', (fileperms("$tmp/license.key") & 0077) === 0);
-
-// Durchprobieren von Schlüsseln
-$last = 0;
-for ($i = 0; $i < 40 && $last !== 429; $i++) {
-    $last = $verify(sprintf('ZZZZ%d-BBBBB-CCCCC-DDDDD-EEEEE', $i % 10), 'a.de')[0];
-}
-check('Durchprobieren unbekannter Schlüssel wird gebremst (429)', $last === 429, $i);
+check('Schlüsseldatei ist nicht für alle lesbar', (fileperms("$tmp/update.key") & 0077) === 0);
 
 echo "Anmeldung mit Benutzername\n";
 $dbx()->exec("UPDATE \"User\" SET username = 'ralphtest' WHERE email = 'ralph@example.com'");
@@ -1596,12 +1373,11 @@ expect('Tickets-Verwaltung ohne Login → 401', call('GET', '/api/tickets'), 401
 $res = $pcall('/api/portal/tickets', ['message' => 'Hilfe'], [], $LP);
 expect('Ticket ohne Betreff → 400', $res, 400);
 expect('Ticket mit ungültiger Kategorie → 400', $pcall('/api/portal/tickets', ['subject' => 'Test', 'message' => 'Hilfe', 'category' => 'Quatsch'], [], $LP), 400);
-expect('Ticket mit Lizenz eines anderen Kunden → 400', $pcall('/api/portal/tickets', ['subject' => 'Test', 'message' => 'Hilfe', 'licenseId' => $lic4['id']], [], $OTP), 400);
 $before = count(mails());
-$res = $pcall('/api/portal/tickets', ['subject' => 'Kontaktformular sendet nichts', 'message' => "Hallo, seit gestern kommen keine Mails mehr an.\nBitte um Hilfe!", 'category' => 'Technik', 'priority' => 'HIGH', 'licenseId' => $lic2['id']], [['fehler.png', $png], ['log.txt', 'Zeile 1']], $LP);
+$res = $pcall('/api/portal/tickets', ['subject' => 'Kontaktformular sendet nichts', 'message' => "Hallo, seit gestern kommen keine Mails mehr an.\nBitte um Hilfe!", 'category' => 'Technik', 'priority' => 'HIGH'], [['fehler.png', $png], ['log.txt', 'Zeile 1']], $LP);
 expect('Kunde eröffnet ein Ticket (mit Bild und Log-Datei)', $res, 201);
 $t1 = $res[1];
-check('Ticket: Nummer TK-JJJJ-0001, offen, Lizenz verknüpft, Nachricht + 2 Anhänge', $t1['number'] === "TK-$year-0001" && $t1['status'] === 'OPEN' && $t1['priority'] === 'HIGH' && $t1['license']['domain'] === 'agentur.de' && count($t1['messages']) === 1 && count($t1['messages'][0]['attachments']) === 2, $res[2]);
+check('Ticket: Nummer TK-JJJJ-0001, offen, Nachricht + 2 Anhänge', $t1['number'] === "TK-$year-0001" && $t1['status'] === 'OPEN' && $t1['priority'] === 'HIGH' && count($t1['messages']) === 1 && count($t1['messages'][0]['attachments']) === 2, $res[2]);
 check('Kundensicht ohne interne Felder (Zuweisung, Quelle, interne Zeiten)', !isset($t1['assigneeId'], $t1['unreadStaff'], $t1['source'], $t1['tags'], $t1['firstResponseAt']) && !isset($t1['messages'][0]['authorId']), array_keys($t1));
 $recent = array_slice(mails(), $before);
 $heads = implode("\n", array_column($recent, 'head'));
@@ -1637,21 +1413,19 @@ check('Verwaltung: Liste mit Kunde, SLA, Vorschau, Nachrichtenzahl; ungelesen', 
 check('Hohe Priorität halbiert die Reaktionszeit (12 statt 24 Stunden)', abs((strtotime($row['sla']['firstDueAt']) - strtotime($row['createdAt'])) / 3600 - 12) < 0.1);
 check('Menü-Zähler: neues Ticket wird gemeldet', call('GET', '/api/settings', null, $agentToken)[1]['newTickets'] === 1);
 $res = call('GET', "/api/tickets/{$t1['id']}", null, $agentToken);
-check('Mitarbeiter öffnet das Ticket: Kunde, Lizenzen, Verlauf; als gelesen markiert', $res[0] === 200 && $res[1]['client']['email'] === 'lia@lizenz.de' && count($res[1]['licenses']) >= 3 && $res[1]['unreadStaff'] === 0 && call('GET', '/api/settings', null, $agentToken)[1]['newTickets'] === 0, $res[2]);
+check('Mitarbeiter öffnet das Ticket: Kunde, Verlauf; als gelesen markiert', $res[0] === 200 && $res[1]['client']['email'] === 'lia@lizenz.de' && $res[1]['unreadStaff'] === 0 && call('GET', '/api/settings', null, $agentToken)[1]['newTickets'] === 0, $res[2]);
 $s = call('GET', '/api/tickets/stats', null, $token)[1];
 check('Statistik: offen, unzugewiesen, Kategorien', $s['open'] === 1 && $s['unassigned'] === 1 && $s['overdue'] === 0 && $s['created30'] === 1 && $s['byCategory'][0]['category'] === 'Technik', $s);
 
 // Zuweisung, Priorität, Verlauf
 $before = count(mails());
-$res = call('PATCH', "/api/tickets/{$t1['id']}", ['assigneeId' => $agentId, 'priority' => 'URGENT', 'category' => 'Lizenz', 'tags' => 'wichtig, mail'], $token);
+$res = call('PATCH', "/api/tickets/{$t1['id']}", ['assigneeId' => $agentId, 'priority' => 'URGENT', 'category' => 'Rechnung & Zahlung', 'tags' => 'wichtig, mail'], $token);
 $ev = array_values(array_filter($res[1]['messages'], static fn ($m) => $m['kind'] === 'EVENT'));
-check('Ticket zuweisen und einstufen; Änderungen stehen im Verlauf', $res[0] === 200 && $res[1]['assignee']['name'] === 'Sabine Support' && $res[1]['priority'] === 'URGENT' && $res[1]['category'] === 'Lizenz' && count($ev) === 4, $res[2]);
+check('Ticket zuweisen und einstufen; Änderungen stehen im Verlauf', $res[0] === 200 && $res[1]['assignee']['name'] === 'Sabine Support' && $res[1]['priority'] === 'URGENT' && $res[1]['category'] === 'Rechnung & Zahlung' && count($ev) === 4, $res[2]);
 $recent = array_slice(mails(), $before);
 check('Zugewiesener Mitarbeiter bekommt eine E-Mail', count($recent) === 1 && str_contains($recent[0]['head'], 'X-Envelope-To: sabine@example.com'), count($recent));
 expect('Ungültige Priorität → 400', call('PATCH', "/api/tickets/{$t1['id']}", ['priority' => 'MEGA'], $token), 400);
 expect('Unbekannter Mitarbeiter → 400', call('PATCH', "/api/tickets/{$t1['id']}", ['assigneeId' => 'gibtsnicht'], $token), 400);
-$otherLic = call('POST', '/api/licenses', ['clientId' => $otherC, 'productName' => 'Fremd', 'domain' => 'fremd-lizenz.de'], $token)[1]['id'];
-expect('Lizenz eines anderen Kunden → 400', call('PATCH', "/api/tickets/{$t1['id']}", ['licenseId' => $otherLic], $token), 400);
 check('Ohne Änderung kein Verlaufseintrag', count(array_filter(call('PATCH', "/api/tickets/{$t1['id']}", ['priority' => 'URGENT'], $token)[1]['messages'], static fn ($m) => $m['kind'] === 'EVENT')) === 4);
 check('Filter „mir zugewiesen“ / „nicht zugewiesen“', call('GET', '/api/tickets?assigneeId=me', null, $agentToken)[1]['meta']['total'] === 1 && call('GET', '/api/tickets?assigneeId=me', null, $token)[1]['meta']['total'] === 0 && call('GET', '/api/tickets?assigneeId=none', null, $token)[1]['meta']['total'] === 0);
 
@@ -1759,11 +1533,11 @@ expect('Textbaustein anlegen (auch als Mitarbeiter)', $res, 201);
 $cid = $res[1]['id'];
 check('Textbaustein ändern, lesen, löschen', call('PATCH', "/api/canned/$cid", ['title' => 'Spam prüfen'], $token)[1]['title'] === 'Spam prüfen' && count(call('GET', '/api/canned', null, $agentToken)[1]) === 1 && call('DELETE', "/api/canned/$cid", null, $token)[0] === 204 && call('GET', '/api/canned', null, $token)[1] === []);
 expect('Textbaustein ohne Titel → 400', call('POST', '/api/canned', ['body' => 'x'], $token), 400);
-$f1 = call('POST', '/api/faq', ['title' => 'Wie ändere ich meine Domain?', 'body' => "Im Portal unter „Lizenzen“.\nDort auf „Domain ändern“ klicken.", 'category' => 'Lizenz', 'published' => true], $token);
+$f1 = call('POST', '/api/faq', ['title' => 'Wie ändere ich mein Passwort?', 'body' => "Im Portal auf „Passwort ändern“ klicken.", 'category' => 'Konto', 'published' => true], $token);
 $f2 = call('POST', '/api/faq', ['title' => 'Interner Entwurf', 'body' => 'noch nicht fertig', 'published' => false], $token);
 expect('Hilfe-Artikel anlegen', $f1, 201);
 $res = call('GET', '/api/portal/faq', null, null, $LP);
-check('Portal zeigt nur veröffentlichte Hilfe-Artikel', $res[0] === 200 && count($res[1]) === 1 && $res[1][0]['title'] === 'Wie ändere ich meine Domain?' && !str_contains($res[2], 'Entwurf'), $res[2]);
+check('Portal zeigt nur veröffentlichte Hilfe-Artikel', $res[0] === 200 && count($res[1]) === 1 && $res[1][0]['title'] === 'Wie ändere ich mein Passwort?' && !str_contains($res[2], 'Entwurf'), $res[2]);
 expect('Hilfe-Artikel im Portal ohne Zugang → 401', call('GET', '/api/portal/faq'), 401);
 check('Hilfe-Artikel veröffentlichen/ändern/löschen', call('PATCH', "/api/faq/{$f2[1]['id']}", ['published' => true, 'title' => 'Fertig'], $token)[1]['published'] == 1 && count(call('GET', '/api/portal/faq', null, null, $LP)[1]) === 2 && call('DELETE', "/api/faq/{$f2[1]['id']}", null, $token)[0] === 204 && count(call('GET', '/api/faq', null, $token)[1]) === 1);
 expect('Hilfe-Artikel ohne Text → 400', call('POST', '/api/faq', ['title' => 'Nur Titel'], $token), 400);
@@ -1808,11 +1582,11 @@ $fld = static function (array $groups, string $key): ?array {
     return null;
 };
 $groups = $res[1]['groups'] ?? [];
-check('Einstellungen: Gruppen Firma, Zahlung, E-Mail, Portal, Support, Lizenzen, Backup', $res[0] === 200 && array_column($groups, 'id') === ['company', 'billing', 'mail', 'portal', 'support', 'license', 'backup'], $res[2]);
+check('Einstellungen: Gruppen Firma, Zahlung, E-Mail, Portal, Support, Updates, Backup', $res[0] === 200 && array_column($groups, 'id') === ['company', 'billing', 'mail', 'portal', 'support', 'updates', 'backup'], $res[2]);
 check('Geheimnisse (SMTP-Passwort) werden nie ausgeliefert, nur „gesetzt“', $fld($groups, 'SMTP_PASSWORD')['isSet'] === true && $fld($groups, 'SMTP_PASSWORD')['value'] === '' && !str_contains($res[2], '"value":"secret') && !str_contains($res[2], 'test-secret'), $fld($groups, 'SMTP_PASSWORD'));
 check('Von der Server-Umgebung vorgegebene Werte sind gesperrt', $fld($groups, 'COMPANY_NAME')['locked'] === true && $fld($groups, 'COMPANY_NAME')['value'] === 'Ralph Design' && $fld($groups, 'COMPANY_PHONE')['locked'] === false, $fld($groups, 'COMPANY_NAME'));
 
-$res = call('PUT', '/api/settings/all', ['values' => ['COMPANY_PHONE' => '+49 40 123456', 'COMPANY_BANK' => 'Hamburger Sparkasse', 'COMPANY_NAME' => 'Hackerfirma', 'PAYMENT_DAYS' => '21', 'LICENSE_ALLOW_DEV' => 'false']], $token);
+$res = call('PUT', '/api/settings/all', ['values' => ['COMPANY_PHONE' => '+49 40 123456', 'COMPANY_BANK' => 'Hamburger Sparkasse', 'COMPANY_NAME' => 'Hackerfirma', 'PAYMENT_DAYS' => '21', 'BACKUP_AUTO' => 'false']], $token);
 expect('Einstellungen speichern', $res, 200);
 $groups = $res[1]['groups'];
 check('Gespeicherte Werte kommen zurück (Quelle: Einstellungen); gesperrte Felder bleiben unverändert', $fld($groups, 'COMPANY_PHONE')['value'] === '+49 40 123456' && $fld($groups, 'COMPANY_PHONE')['source'] === 'settings' && $fld($groups, 'COMPANY_NAME')['value'] === 'Ralph Design' && $fld($groups, 'PAYMENT_DAYS')['value'] === '21', $res[2]);
@@ -1830,7 +1604,7 @@ $f = $fld($res[1]['groups'], 'BACKUP_PASSPHRASE');
 check('Geheimnis speichern: „gesetzt“, nie im Klartext in der Antwort', $f['isSet'] === true && $f['value'] === '' && !str_contains($res[2], 'neues-passwort-1'), $res[2]);
 call('PUT', '/api/settings/all', ['values' => ['BACKUP_PASSPHRASE' => '']], $token);
 check('Leeres Geheimnis-Feld lässt den Wert unverändert', json_decode((string) file_get_contents($settingsFile), true)['BACKUP_PASSPHRASE'] === 'neues-passwort-1');
-$res = call('PUT', '/api/settings/all', ['values' => [], 'reset' => ['BACKUP_PASSPHRASE', 'COMPANY_PHONE', 'COMPANY_BANK', 'PAYMENT_DAYS', 'LICENSE_ALLOW_DEV']], $token);
+$res = call('PUT', '/api/settings/all', ['values' => [], 'reset' => ['BACKUP_PASSPHRASE', 'COMPANY_PHONE', 'COMPANY_BANK', 'PAYMENT_DAYS', 'BACKUP_AUTO']], $token);
 $saved = json_decode((string) file_get_contents($settingsFile), true);
 check('Zurücksetzen entfernt die eigenen Einstellungen', $res[0] === 200 && $saved === [], $saved);
 $res = call('PUT', '/api/settings/all', ['values' => ['COMPANY_PHONE' => '']], $token);
@@ -1877,7 +1651,6 @@ if ($mysqlMode) {
 
     $clientsNow = call('GET', '/api/clients?pageSize=1', null, $token)[1]['meta']['total'];
     $invoicesNow = call('GET', '/api/invoices?pageSize=1', null, $token)[1]['meta']['total'];
-    $licensesNow = call('GET', '/api/licenses?pageSize=1', null, $token)[1]['meta']['total'];
     $sqliteBefore = (int) (new PDO('sqlite:' . "$tmp/test.db"))->query('SELECT COUNT(*) FROM Client')->fetchColumn();
     $res = call('POST', '/api/settings/database/switch', $target + ['confirm' => 'WECHSELN'], $token);
     check('Wechsel SQLite → MySQL: alle Tabellen übernommen, Vorab-Backup erstellt', $res[0] === 200 && $res[1]['driver'] === 'mysql' && $res[1]['rows'] > 50 && $res[1]['backup'] !== null, $res[2]);
@@ -1887,12 +1660,12 @@ if ($mysqlMode) {
     check('Zugang zur MySQL-Datenbank steht in der Einstellungsdatei (0600)', $settingsAfter['DB_DRIVER'] === 'mysql' && $settingsAfter['DB_NAME'] === $swName && (fileperms($settingsFile) & 0077) === 0);
     $res = call('GET', '/api/settings/all', null, $token);
     check('Angemeldet bleiben nach dem Wechsel (gleiches Token), Status zeigt MySQL ohne Passwort', $res[0] === 200 && $res[1]['database']['driver'] === 'mysql' && !str_contains($res[2], $my['password']) && $res[1]['database']['mysql']['passwordSet'] === true, $res[2]);
-    check('Daten bleiben vollständig lesbar (Kunden, Rechnungen, Lizenzen)', call('GET', '/api/clients?pageSize=1', null, $token)[1]['meta']['total'] === $clientsNow && call('GET', '/api/invoices?pageSize=1', null, $token)[1]['meta']['total'] === $invoicesNow && call('GET', '/api/licenses?pageSize=1', null, $token)[1]['meta']['total'] === $licensesNow);
+    check('Daten bleiben vollständig lesbar (Kunden, Rechnungen)', call('GET', '/api/clients?pageSize=1', null, $token)[1]['meta']['total'] === $clientsNow && call('GET', '/api/invoices?pageSize=1', null, $token)[1]['meta']['total'] === $invoicesNow);
     $res = call('POST', '/api/clients', ['name' => 'Nur in MySQL', 'email' => 'mysql@wechsel.example'], $token);
     $onlyMy = $res[1]['id'] ?? '';
     check('Neue Daten landen in MySQL, nicht mehr in SQLite', $res[0] === 201 && (int) $my2->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 1 && (int) (new PDO('sqlite:' . "$tmp/test.db"))->query("SELECT COUNT(*) FROM Client WHERE name = 'Nur in MySQL'")->fetchColumn() === 0, $res[2]);
-    $res = call('POST', '/api/license/verify', ['key' => 'AAAAA-BBBBB-CCCCC-DDDDD-EEEEE', 'domain' => 'a.de', 'nonce' => 'abcdefgh12' . bin2hex(random_bytes(4)), 'ts' => time()]);
-    check('Auch die öffentliche Lizenzprüfung arbeitet mit MySQL', $res[0] === 200 && isset($res[1]['signature']), $res[2]);
+    $res = call('POST', '/api/updates/check', ['product' => 'crm', 'version' => '0.0.1', 'nonce' => 'abcdefgh12' . bin2hex(random_bytes(4)), 'ts' => time()]);
+    check('Auch der Update-Server arbeitet mit MySQL', $res[0] === 200 && isset($res[1]['signature']), $res[2]);
     $res = call('POST', '/api/backups', [], $token);
     $bz = new ZipArchive();
     $bz->open("$tmp/backups/{$res[1]['name']}");

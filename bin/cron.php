@@ -13,13 +13,7 @@ use App\Services\RecurringService;
 App\Services\HealthService::touchCron();
 App\Services\UpdateService::checkIfDue(); // neue Version nur als Hinweis im Dashboard vormerken
 
-if (App\Support\Product::enforced()) {
-    $license = App\Services\ProductLicense::state(true); // Lizenz einmal täglich frisch prüfen
-    if (!$license['valid']) {
-        echo 'Lizenz ungültig (' . App\Services\ProductLicense::message($license['reason']) . ") – Abos werden nicht abgerechnet.\n";
-    }
-}
-$results = App\Services\ProductLicense::feature('recurring') ? RecurringService::runDue() : [];
+$results = RecurringService::runDue();
 
 if ($results === []) {
     echo "Keine fälligen Abos.\n";

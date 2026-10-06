@@ -50,7 +50,7 @@ final class PortalSupportController
             TicketsController::text($b, 'message', 10000, true),
             [
                 'source' => 'PORTAL', 'priority' => TicketsController::enum($b, 'priority', ['NORMAL', 'HIGH'], 'NORMAL'), 'category' => $category,
-                'licenseId' => TicketsController::text($b, 'licenseId', 64), 'files' => TicketService::uploads($r),
+                'files' => TicketService::uploads($r),
             ],
         );
 

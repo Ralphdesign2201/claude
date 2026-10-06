@@ -13,5 +13,3 @@ database/license.key
 database/*.key
 database/settings.json*
 !uploads/.htaccess
-Lizenz-tools/releases/
-Lizenz-tools/dist/

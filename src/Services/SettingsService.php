@@ -10,7 +10,7 @@ use App\Support\Env;
 /**
  * Einstellungen, die in der Oberfläche änderbar sind. Gespeichert werden sie in der Einstellungsdatei (database/settings.json),
  * nicht in der Datenbank – so überleben sie einen Wechsel der Datenbank und lassen sich auch ohne Datenbank lesen.
- * Absichtlich nicht dabei: JWT_SECRET, CRON_TOKEN, Speicherorte (Pfade) und Lizenz-Signaturschlüssel.
+ * Absichtlich nicht dabei: JWT_SECRET, CRON_TOKEN, Speicherorte (Pfade) und der Signaturschlüssel für Updates.
  */
 final class SettingsService
 {
@@ -63,22 +63,16 @@ final class SettingsService
                 $f('PORTAL_SESSION_DAYS', 'Anmeldung gültig (Tage)', 'int', ['min' => 1, 'max' => 365, 'default' => '14']),
             ]],
             ['id' => 'support', 'title' => 'Support', 'intro' => 'Kunden erreichen den Support im Kundenportal. Die Zeiten steuern die Fälligkeitsanzeige (SLA); bei „Hoch“ gilt die halbe, bei „Dringend“ ein Viertel der Zeit, bei „Niedrig“ die doppelte.', 'fields' => [
-                $f('TICKET_CATEGORIES', 'Kategorien (kommagetrennt)', 'text', ['max' => 400, 'default' => 'Allgemein,Rechnung & Zahlung,Technik,Lizenz,Bestellung']),
+                $f('TICKET_CATEGORIES', 'Kategorien (kommagetrennt)', 'text', ['max' => 400, 'default' => 'Allgemein,Rechnung & Zahlung,Technik,Bestellung']),
                 $f('TICKET_FIRST_RESPONSE_HOURS', 'Erste Antwort innerhalb (Stunden)', 'int', ['min' => 1, 'max' => 720, 'default' => '24']),
                 $f('TICKET_RESOLVE_HOURS', 'Lösung innerhalb (Stunden)', 'int', ['min' => 1, 'max' => 2160, 'default' => '72']),
                 $f('TICKET_AUTOCLOSE_DAYS', 'Gelöste Tickets schließen nach (Tage, 0 = nie)', 'int', ['min' => 0, 'max' => 365, 'default' => '7']),
                 $f('TICKET_PENDING_DAYS', '„Wartet auf Kunde“ als gelöst markieren nach (Tage, 0 = nie)', 'int', ['min' => 0, 'max' => 365, 'default' => '14']),
                 $f('TICKET_NOTIFY_EMAIL', 'Benachrichtigung über neue Tickets an', 'email', ['help' => 'Leer = Firmen-E-Mail. Der zugewiesene Mitarbeiter bekommt zusätzlich eine Mail.']),
-                $f('TICKET_REQUIRE_SUPPORT', 'Tickets zu einer Lizenz nur mit aktivem Support', 'bool', ['default' => 'true', 'help' => 'Ist der Support-Zeitraum einer Lizenz abgelaufen, können Kunden dazu keine Tickets mehr eröffnen (allgemeine Anfragen bleiben möglich).']),
                 $f('TICKET_ATTACHMENT_MB', 'Größe eines Anhangs (MB)', 'int', ['min' => 1, 'max' => 50, 'default' => '5', 'help' => 'Zusätzlich begrenzt durch die PHP-Einstellung upload_max_filesize deines Servers.']),
             ]],
-            ['id' => 'license', 'title' => 'Lizenzen', 'fields' => [
-                $f('LICENSE_GRACE_DAYS', 'Kulanzfrist bei Mietlizenzen (Tage)', 'int', ['min' => 0, 'max' => 365, 'default' => '14']),
-                $f('LICENSE_CACHE_HOURS', 'Prüfergebnis zwischenspeichern (Stunden)', 'int', ['min' => 1, 'max' => 720, 'default' => '24']),
-                $f('LICENSE_OFFLINE_DAYS', 'Weiterlaufen ohne Server (Tage)', 'int', ['min' => 0, 'max' => 90, 'default' => '7']),
-                $f('LICENSE_DOMAIN_CHANGES', 'Domainwechsel durch Kunden (Anzahl)', 'int', ['min' => 0, 'max' => 100, 'default' => '2']),
-                $f('UPDATE_CHANNEL', 'Update-Kanal dieser Installation', 'select', ['options' => [['stable', 'Stabil (empfohlen)'], ['beta', 'Beta (neue Versionen früher, weniger getestet)']], 'default' => 'stable', 'help' => 'Betrifft nur Installationen mit Update-Server (ausgelieferte Produktversion).']),
-                $f('LICENSE_ALLOW_DEV', 'Entwicklungsadressen erlauben (localhost, *.test)', 'bool', ['default' => 'true']),
+            ['id' => 'updates', 'title' => 'Updates', 'fields' => [
+                $f('UPDATE_CHANNEL', 'Update-Kanal dieser Installation', 'select', ['options' => [['stable', 'Stabil (empfohlen)'], ['beta', 'Beta (neue Versionen früher, weniger getestet)']], 'default' => 'stable', 'help' => 'Betrifft nur Installationen mit eingetragenem Update-Server (product.json).']),
             ]],
             ['id' => 'backup', 'title' => 'Datensicherung', 'fields' => [
                 $f('BACKUP_AUTO', 'Automatisch sichern (beim Cron-Lauf)', 'bool', ['default' => 'true']),

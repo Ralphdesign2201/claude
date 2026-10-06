@@ -60,18 +60,6 @@ final class MailTemplates
         ];
     }
 
-    /** Lizenzschlüssel an den Kunden. @param array<string,mixed> $license @return array{subject:string,message:string} */
-    public static function license(array $client, array $license): array
-    {
-        $until = $license['validUntil'] ? "\nGültig bis: " . Format::date($license['validUntil']) : '';
-        return [
-            'subject' => "Ihre Lizenz für {$license['productName']}",
-            'message' => self::greeting($client) . "\n\nIhre Lizenz ist freigeschaltet:\n\nProdukt:  {$license['productName']}\nDomain:   {$license['domain']}"
-                . ($license['subdomains'] ? ' (inklusive Subdomains)' : '') . "\nSchlüssel: {$license['licenseKey']}$until\n\n"
-                . "Im Kundenportal finden Sie den Schlüssel jederzeit, dort können Sie auch die Anleitung zur Einbindung in Ihre Software einsehen und die Domain ändern.",
-        ];
-    }
-
     /** Eingangsbestätigung für ein Support-Ticket. @return array{subject:string,message:string} */
     public static function ticketCreated(array $client, array $t): array
     {

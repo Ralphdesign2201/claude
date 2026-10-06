@@ -26,7 +26,7 @@ final class OrderService
     public const MAX_QUANTITY = 100000;
 
     /** @return array<string,mixed> */
-    public static function create(string $clientId, string $productId, float $quantity, string $note, string $source, bool $portal, string $domain = ''): array
+    public static function create(string $clientId, string $productId, float $quantity, string $note, string $source, bool $portal): array
     {
         $product = Db::one('SELECT p.*, c.active AS categoryActive FROM "Product" p LEFT JOIN "Category" c ON c.id = p.categoryId WHERE p."id" = ?', [$productId])
             ?? throw ApiError::notFound('Produkt nicht gefunden');
@@ -39,15 +39,7 @@ final class OrderService
         if ($quantity > self::MAX_QUANTITY) {
             throw ApiError::badRequest('Menge zu groß');
         }
-        // Lizenzprodukte brauchen die Domain, für die die Lizenz gelten soll
-        $licensed = (bool) $product['licenseEnabled'] && in_array($product['type'], ['ONE_TIME', 'RENTAL'], true);
-        $licenseDomain = null;
-        if ($licensed) {
-            $licenseDomain = LicenseService::normalizeDomain($domain)
-                ?? throw ApiError::badRequest('Bitte gib die Domain an, für die die Lizenz gelten soll (z. B. meine-seite.de)');
-        }
-
-        $id = (string) Db::transaction(static function () use ($clientId, $product, $quantity, $note, $source, $licensed, $licenseDomain) {
+        $id = (string) Db::transaction(static function () use ($clientId, $product, $quantity, $note, $source) {
             if ($source === 'PORTAL' && (int) Db::value('SELECT COUNT(*) FROM "ProductOrder" WHERE "clientId" = ? AND "status" = \'PENDING\'', [$clientId]) >= self::MAX_PENDING_PER_CLIENT) {
                 throw ApiError::conflict('Es liegen bereits sehr viele offene Bestellungen vor – bitte warte auf unsere Bestätigung');
             }
@@ -65,15 +57,6 @@ final class OrderService
                 'intervalUnit' => $product['intervalUnit'],
                 'setupFee' => $product['setupFee'],
                 'note' => $note !== '' ? $note : null,
-                'domain' => $licenseDomain,
-                'licenseEnabled' => (int) $licensed,
-                'licenseSubdomains' => (int) $product['licenseSubdomains'],
-                'licensePayFirst' => (int) $product['licensePayFirst'],
-                'licenseDays' => $product['licenseDays'],
-                'licensePlan' => $licensed ? $product['licensePlan'] : null,
-                'licenseFeatures' => $licensed ? $product['licenseFeatures'] : null,
-                'licenseSupportDays' => $licensed ? $product['licenseSupportDays'] : null,
-                'licenseUpdateDays' => $licensed ? $product['licenseUpdateDays'] : null,
             ]);
         });
 
@@ -108,7 +91,6 @@ final class OrderService
         $result = Db::transaction(static function () use ($id, $startDate, $autoSend, $userId) {
             $o = self::requirePending($id);
             $links = [];
-            $licenseId = null;
             $notes = "Bestellung {$o['number']}";
             $payDays = max(0, Env::int('PAYMENT_DAYS', 14));
             $due = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify("+$payDays days")->format(Dates::FORMAT);
@@ -148,21 +130,12 @@ final class OrderService
                     break;
             }
 
-            if ($o['licenseEnabled'] && $o['domain'] && in_array($o['productType'], ['ONE_TIME', 'RENTAL'], true)) {
-                $licenseId = LicenseService::issueForOrder($o, $links['invoiceId'] ?? null, $links['recurringId'] ?? null, $start ?? null);
-                $links['licenseId'] = $licenseId;
-            }
             Db::update('ProductOrder', $id, ['status' => 'ACCEPTED', 'decidedAt' => Dates::now()] + $links);
             // Wer etwas bestellt hat und angenommen wurde, ist kein Interessent mehr
             Db::run('UPDATE "Client" SET "status" = \'ACTIVE\', "updatedAt" = ? WHERE "id" = ? AND "status" = \'LEAD\'', [Dates::now(), $o['clientId']]);
             Activity::log('ORDER_ACCEPTED', "Bestellung {$o['number']} angenommen", $o['clientId'], $links['projectId'] ?? null, $userId);
-            return ['links' => $links, 'start' => $start ?? null, 'licenseId' => $licenseId];
+            return ['links' => $links, 'start' => $start ?? null];
         });
-
-        // Ist die Lizenz sofort aktiv (keine Zahlung vorab nötig), bekommt der Kunde den Schlüssel gleich per E-Mail
-        if ($result['licenseId'] !== null && Db::value('SELECT "status" FROM "License" WHERE "id" = ?', [$result['licenseId']]) === 'ACTIVE') {
-            LicenseService::sendLicenseMail($result['licenseId']);
-        }
 
         // Erste Rechnung eines Mietprodukts sofort erzeugen, wenn der Start heute oder früher liegt
         $links = $result['links'];
@@ -215,8 +188,8 @@ final class OrderService
         $o['setupInvoice'] = $o['setupInvoiceId'] ? Db::one('SELECT "id", "number", "status" FROM "Invoice" WHERE "id" = ?', [$o['setupInvoiceId']]) : null;
         $o['recurring'] = $o['recurringId'] ? Db::one('SELECT "id", "title", "active" FROM "Recurring" WHERE "id" = ?', [$o['recurringId']]) : null;
         $o['project'] = $o['projectId'] ? Db::one('SELECT "id", "name" FROM "Project" WHERE "id" = ?', [$o['projectId']]) : null;
-        $o['license'] = $o['licenseId'] ? Db::one('SELECT "id", "licenseKey", "status", "domain", "validUntil", "paidThrough", "recurringId" FROM "License" WHERE "id" = ?', [$o['licenseId']]) : null;
         $o['totals'] = self::totals($o);
+        $o = array_filter($o, static fn ($k) => !str_starts_with((string) $k, 'license') && $k !== 'domain', ARRAY_FILTER_USE_KEY); // Spalten des früheren Lizenzsystems
         return $o;
     }
 
@@ -272,13 +245,6 @@ final class OrderService
             'intervalUnit' => $p['intervalUnit'],
             'setupFee' => $p['setupFee'],
             'minQuantity' => $p['minQuantity'],
-            'license' => (bool) $p['licenseEnabled'] && $p['type'] !== 'HOURLY',
-            'licenseSubdomains' => (bool) $p['licenseSubdomains'],
-            'licensePayFirst' => (bool) $p['licensePayFirst'],
-            'licenseDays' => $p['licenseDays'],
-            'licensePlan' => $p['licensePlan'],
-            'licenseSupportDays' => $p['licenseSupportDays'],
-            'licenseUpdateDays' => $p['licenseUpdateDays'],
         ];
     }
 

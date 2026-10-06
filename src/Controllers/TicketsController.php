@@ -23,7 +23,6 @@ final class TicketsController
         'category' => ['max' => 80, 'emptyOk' => true],
         'tags' => ['max' => 200, 'emptyOk' => true],
         'assigneeId' => ['max' => 64, 'emptyOk' => true],
-        'licenseId' => ['max' => 64, 'emptyOk' => true],
     ];
 
     private const LIST_SQL = 'SELECT t.*, c."id" AS client__id, c."name" AS client__name, c."company" AS client__company, u."id" AS assignee__id, u."name" AS assignee__name,
@@ -103,9 +102,6 @@ final class TicketsController
     public static function forClient(Request $r): Response
     {
         Db::require('Client', $r->param('id'), 'Kunde nicht gefunden');
-        if (!\App\Services\ProductLicense::feature('support')) {
-            return Response::json([]);
-        }
         $ids = Db::all('SELECT "id" FROM "Ticket" WHERE "clientId" = ? ORDER BY "lastActivityAt" DESC LIMIT 30', [$r->param('id')]);
 
         return Response::json(array_map(static fn ($t) => TicketService::detail($t['id'], true), $ids));
@@ -129,7 +125,7 @@ final class TicketsController
         $priority = self::enum($b, 'priority', array_keys(TicketService::PRIORITIES), 'NORMAL');
         $ticket = TicketService::create($clientId, $subject, $body, [
             'source' => 'ADMIN', 'priority' => $priority, 'category' => self::text($b, 'category', 80), 'assigneeId' => self::text($b, 'assigneeId', 64),
-            'licenseId' => self::text($b, 'licenseId', 64), 'files' => TicketService::uploads($r), 'notifyCustomer' => self::flag($b, 'notifyCustomer'),
+            'files' => TicketService::uploads($r), 'notifyCustomer' => self::flag($b, 'notifyCustomer'),
         ], $r->user + ['name' => self::staffName($r)]);
 
         return Response::json(TicketService::detail($ticket['id'], true), 201);
@@ -138,7 +134,7 @@ final class TicketsController
     public static function update(Request $r): Response
     {
         $data = Validator::validate($r->body(), self::UPDATE_SCHEMA, partial: true);
-        foreach (['category', 'tags', 'assigneeId', 'licenseId'] as $k) {
+        foreach (['category', 'tags', 'assigneeId'] as $k) {
             if (array_key_exists($k, $data) && $data[$k] === '') {
                 $data[$k] = null;
             }

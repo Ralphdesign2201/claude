@@ -60,7 +60,6 @@ final class LegalService
                 $f('registration', 'Kunden können sich selbst registrieren', 'select', ['options' => $yn]),
                 $f('tickets', 'Support-Tickets mit Anhängen', 'select', ['options' => $yn, 'default' => '1']),
                 $f('shop', 'Produkt-Bestellungen (Shop)', 'select', ['options' => $yn]),
-                $f('licenses', 'Software-Lizenzen und Updates', 'select', ['options' => $yn]),
                 $f('mail', 'E-Mail-Versand (Rechnungen, Benachrichtigungen)', 'select', ['options' => $yn]),
                 $f('mailProvider', 'E-Mail-Anbieter (SMTP)', 'text', ['help' => 'Name des Anbieters, der die Mails versendet, z. B. „IONOS SE“.']),
                 $f('contactForm', 'Kontaktformular auf der Webseite', 'select', ['options' => $yn]),
@@ -88,7 +87,6 @@ final class LegalService
                 $f('hosting', 'Hosting und Wartung als Leistung anbieten', 'select', ['options' => $yn]),
                 $f('recurring', 'Laufende Leistungen mit Mindestlaufzeit (Abo)', 'select', ['options' => $yn]),
                 $f('noticeMonths', 'Kündigungsfrist laufender Leistungen (Monate)', 'int', ['default' => '1', 'min' => 0, 'max' => 12]),
-                $f('licenses', 'Software-Lizenzen und Updates verkaufen', 'select', ['options' => $yn]),
                 $f('withdrawal', 'Hinweis auf das Widerrufsrecht für Verbraucher aufnehmen', 'select', ['options' => $yn, 'default' => '1']),
             ],
         ];
@@ -123,10 +121,8 @@ final class LegalService
             $out['registration'] = (Env::get('PORTAL_REGISTRATION', 'open') ?? 'open') === 'open' ? '1' : '0';
             $out['mail'] = (Env::get('SMTP_HOST', '') ?? '') !== '' ? '1' : '0';
             $out['shop'] = (int) Db::value('SELECT COUNT(*) FROM "Product" WHERE "active" = 1') > 0 ? '1' : '0';
-            $out['licenses'] = (int) Db::value('SELECT COUNT(*) FROM "License"') > 0 ? '1' : '0';
         } else {
             $out['jurisdiction'] = $city;
-            $out['licenses'] = (int) Db::value('SELECT COUNT(*) FROM "License"') > 0 ? '1' : '0';
         }
         return $out;
     }
@@ -399,7 +395,7 @@ final class LegalService
 
         if ($on('portal')) {
             $h('Kundenportal und Benutzerkonto');
-            $L[] = 'Für Kunden bieten wir einen geschützten Bereich an. Dafür verarbeiten wir Name, Firma, E-Mail-Adresse, Benutzername, das (nur als Hash gespeicherte) Passwort sowie Zugriffszeitpunkte. Im Portal siehst du deine Rechnungen, Angebote, Verträge, Lizenzen, Bestellungen und Support-Anfragen. Rechtsgrundlage ist die Durchführung des Vertrags bzw. vorvertraglicher Maßnahmen (Art. 6 Abs. 1 lit. b DSGVO). Dein Konto kannst du jederzeit zur Löschung freigeben lassen; gesetzliche Aufbewahrungspflichten bleiben unberührt.';
+            $L[] = 'Für Kunden bieten wir einen geschützten Bereich an. Dafür verarbeiten wir Name, Firma, E-Mail-Adresse, Benutzername, das (nur als Hash gespeicherte) Passwort sowie Zugriffszeitpunkte. Im Portal siehst du deine Rechnungen, Angebote, Verträge, Bestellungen und Support-Anfragen. Rechtsgrundlage ist die Durchführung des Vertrags bzw. vorvertraglicher Maßnahmen (Art. 6 Abs. 1 lit. b DSGVO). Dein Konto kannst du jederzeit zur Löschung freigeben lassen; gesetzliche Aufbewahrungspflichten bleiben unberührt.';
             if ($on('registration')) {
                 $L[] = '';
                 $L[] = '**Registrierung:** Bei der Selbstregistrierung erheben wir Name, Firma und E-Mail-Adresse. Zur Bestätigung senden wir einen Link an die angegebene Adresse (Double-Opt-in); erst danach wird das Konto aktiv. Die Zustimmung zu dieser Erklärung wird mit Zeitpunkt gespeichert (Art. 6 Abs. 1 lit. b und f DSGVO, Nachweis der Einwilligung nach Art. 7 Abs. 1 DSGVO). Nicht bestätigte Registrierungen werden gelöscht.';
@@ -407,7 +403,7 @@ final class LegalService
         }
         if ($on('tickets')) {
             $h('Support-Anfragen');
-            $L[] = 'Wenn du den Support nutzt, verarbeiten wir Betreff, Nachrichten, hochgeladene Anhänge, Kategorie, Priorität, Status und Zeitpunkte sowie – wenn du es angibst – die zugehörige Lizenz oder Domain. Mitarbeiter von uns sehen diese Angaben, um die Anfrage zu bearbeiten. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO. Bitte lade keine Dateien mit Zugangsdaten oder besonders sensiblen Daten hoch, die nicht erforderlich sind.';
+            $L[] = 'Wenn du den Support nutzt, verarbeiten wir Betreff, Nachrichten, hochgeladene Anhänge, Kategorie, Priorität, Status und Zeitpunkte sowie – wenn du es angibst – weitere Angaben zu deiner Anfrage. Mitarbeiter von uns sehen diese Angaben, um die Anfrage zu bearbeiten. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO. Bitte lade keine Dateien mit Zugangsdaten oder besonders sensiblen Daten hoch, die nicht erforderlich sind.';
         }
 
         $h('Angebote, Aufträge, Rechnungen und Verträge');
@@ -415,10 +411,6 @@ final class LegalService
         if ($on('shop')) {
             $h('Bestellungen');
             $L[] = 'Bei einer Bestellung im Kundenportal verarbeiten wir die bestellten Produkte, Preise, Laufzeiten und deine Rechnungsdaten, um die Bestellung abzuwickeln und die Rechnung zu erstellen (Art. 6 Abs. 1 lit. b DSGVO).';
-        }
-        if ($on('licenses')) {
-            $h('Software-Lizenzen und Update-Prüfung');
-            $L[] = 'Für lizenzierte Software verarbeiten wir Lizenzschlüssel, die hinterlegte(n) Domain(s), Versionsnummern, Zeitpunkte der Prüfungen sowie – aus technischen Gründen – die IP-Adresse der anfragenden Installation. Das dient der Lizenzprüfung, der Missbrauchsabwehr und der Bereitstellung von Updates (Art. 6 Abs. 1 lit. b und f DSGVO). Weitere Daten aus deiner Installation, insbesondere Inhalte oder Kundendaten, werden dabei nicht übertragen.';
         }
         if ($on('mail')) {
             $h('E-Mail-Versand');
@@ -511,7 +503,7 @@ final class LegalService
             $L[] = '';
         };
         $h('Geltungsbereich');
-        $L[] = '(1) Diese Bedingungen gelten für alle Verträge zwischen ' . $name . ' (nachfolgend „Auftragnehmer“) und seinen Kunden (nachfolgend „Auftraggeber“) über Webdesign, Webentwicklung, Gestaltung, Beratung' . ($on('hosting') ? ', Hosting und Wartung' : '') . ($on('licenses') ? ' sowie die Überlassung von Software' : '') . '.';
+        $L[] = '(1) Diese Bedingungen gelten für alle Verträge zwischen ' . $name . ' (nachfolgend „Auftragnehmer“) und seinen Kunden (nachfolgend „Auftraggeber“) über Webdesign, Webentwicklung, Gestaltung, Beratung' . ($on('hosting') ? ', Hosting und Wartung' : '')  . '.';
         $L[] = '';
         $L[] = $b2b
             ? '(2) Das Angebot richtet sich ausschließlich an Unternehmer im Sinne des § 14 BGB. Abweichende oder ergänzende Bedingungen des Auftraggebers gelten nur, wenn der Auftragnehmer ihnen schriftlich zugestimmt hat.'
@@ -577,14 +569,6 @@ final class LegalService
         if ($on('recurring')) {
             $h('Laufzeit und Kündigung laufender Leistungen');
             $L[] = 'Laufende Leistungen (z. B. Wartung, Hosting, Pflege) laufen auf unbestimmte Zeit, sofern nichts anderes vereinbart ist, und können mit einer Frist von ' . (int) ($d['noticeMonths'] ?? 1) . ' Monat(en) zum Ende der jeweiligen Abrechnungsperiode in Textform gekündigt werden. Das Recht zur außerordentlichen Kündigung aus wichtigem Grund bleibt unberührt.';
-        }
-        if ($on('licenses')) {
-            $h('Software-Lizenzen, Updates und Support');
-            $L[] = '(1) Der Auftragnehmer räumt dem Auftraggeber das nicht ausschließliche, nicht übertragbare Recht ein, die lizenzierte Software für die im Lizenzschlüssel genannte Domain bzw. den vereinbarten Umfang zu nutzen. Eine Weitergabe, Vervielfältigung oder Vermietung der Software ist nicht gestattet.';
-            $L[] = '';
-            $L[] = '(2) Updates und Support stehen für den im Angebot bzw. der Lizenz angegebenen Zeitraum zur Verfügung. Mietlizenzen enden mit Ablauf der Laufzeit, sofern sie nicht verlängert werden; danach kann die Software eingeschränkt (nur lesend) laufen. Daten des Auftraggebers bleiben exportierbar.';
-            $L[] = '';
-            $L[] = '(3) Die Lizenzprüfung überträgt Lizenzschlüssel, Domain und Versionsnummer an den Lizenzserver des Auftragnehmers (siehe Datenschutzerklärung).';
         }
         if (!$b2b && $on('withdrawal')) {
             $h('Widerrufsrecht für Verbraucher');

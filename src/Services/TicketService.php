@@ -36,7 +36,7 @@ final class TicketService
     /** @return list<string> */
     public static function categories(): array
     {
-        $raw = Env::get('TICKET_CATEGORIES', '') ?: 'Allgemein,Rechnung & Zahlung,Technik,Lizenz,Bestellung';
+        $raw = Env::get('TICKET_CATEGORIES', '') ?: 'Allgemein,Rechnung & Zahlung,Technik,Bestellung';
         return array_values(array_unique(array_filter(array_map('trim', explode(',', $raw)), static fn ($c) => $c !== '')));
     }
 
@@ -63,7 +63,7 @@ final class TicketService
     /* ---------- Anlegen und Antworten ---------- */
 
     /**
-     * @param array{source?:string,priority?:string,category?:?string,licenseId?:?string,tags?:?string,assigneeId?:?string,files?:list<array<string,mixed>>,notifyCustomer?:bool} $opts
+     * @param array{source?:string,priority?:string,category?:?string,tags?:?string,assigneeId?:?string,files?:list<array<string,mixed>>,notifyCustomer?:bool} $opts
      * @param array<string,mixed>|null $staff angemeldeter Mitarbeiter bei Erfassung im Admin
      * @return array<string,mixed>
      */
@@ -71,16 +71,6 @@ final class TicketService
     {
         $client = Db::require('Client', $clientId, 'Kunde nicht gefunden');
         $source = $opts['source'] ?? 'PORTAL';
-        if (!empty($opts['licenseId'])) {
-            $license = Db::one('SELECT * FROM "License" WHERE "id" = ? AND "clientId" = ?', [$opts['licenseId'], $clientId]);
-            if ($license === null) {
-                throw ApiError::badRequest('Die Lizenz gehört nicht zu diesem Kunden');
-            }
-            // Support gibt es nur im gebuchten Zeitraum; Mitarbeiter dürfen bewusst eine Ausnahme machen
-            if ($source === 'PORTAL' && !Entitlements::supportActive($license) && Env::bool('TICKET_REQUIRE_SUPPORT', true)) {
-                throw new ApiError(403, 'Für diese Lizenz (' . $license['productName'] . ', ' . $license['domain'] . ') ist der Support-Zeitraum abgelaufen. Bitte verlängern Sie den Support – oder schreiben Sie uns ohne Bezug auf diese Lizenz, z. B. zu Rechnungen.');
-            }
-        }
         $files = self::checkFiles($opts['files'] ?? []);
         $now = Dates::now();
 
@@ -90,7 +80,7 @@ final class TicketService
             $id = Db::insert('Ticket', [
                 'number' => $number, 'clientId' => $client['id'], 'subject' => $subject,
                 'priority' => $opts['priority'] ?? 'NORMAL', 'category' => $opts['category'] ?? null, 'tags' => $opts['tags'] ?? null,
-                'source' => $source, 'assigneeId' => $assignee, 'licenseId' => $opts['licenseId'] ?? null,
+                'source' => $source, 'assigneeId' => $assignee,
                 'unreadStaff' => $source === 'PORTAL' ? 1 : 0, 'lastActivityAt' => $now, 'lastCustomerAt' => $now,
             ]);
             $msgId = Db::insert('TicketMessage', [
@@ -177,7 +167,7 @@ final class TicketService
     /**
      * Ändert Felder eines Tickets (nur Mitarbeiter) und protokolliert jede Änderung im Verlauf.
      *
-     * @param array<string,mixed> $changes subject, status, priority, category, tags, assigneeId, licenseId
+     * @param array<string,mixed> $changes subject, status, priority, category, tags, assigneeId
      * @param array<string,mixed> $staff
      */
     public static function update(string $ticketId, array $changes, array $staff): array
@@ -225,15 +215,6 @@ final class TicketService
                     if ($value !== $t['subject']) {
                         $set['subject'] = $value;
                         $log[] = 'Betreff geändert';
-                    }
-                    break;
-                case 'licenseId':
-                    if (($value ?? null) !== $t['licenseId']) {
-                        if ($value !== null && Db::value('SELECT 1 FROM "License" WHERE "id" = ? AND "clientId" = ?', [$value, $t['clientId']]) === null) {
-                            throw ApiError::badRequest('Die Lizenz gehört nicht zu diesem Kunden');
-                        }
-                        $set['licenseId'] = $value;
-                        $log[] = 'Lizenz verknüpft';
                     }
                     break;
             }
@@ -346,17 +327,13 @@ final class TicketService
         unset($m);
 
         $t['messages'] = $messages;
-        $t['license'] = $t['licenseId'] ? Db::one('SELECT "id", "productName", "domain", "supportUntil" FROM "License" WHERE "id" = ?', [$t['licenseId']]) : null;
-        if ($t['license'] !== null) {
-            $t['license']['supportActive'] = Entitlements::supportActive($t['license']);
-        }
+        unset($t['licenseId']); // Spalte des früheren Lizenzsystems
         if ($forStaff) {
             $t['client'] = Db::one('SELECT "id", "name", "company", "email", "phone" FROM "Client" WHERE "id" = ?', [$t['clientId']]);
             $t['assignee'] = $t['assigneeId'] ? Db::one('SELECT "id", "name" FROM "User" WHERE "id" = ?', [$t['assigneeId']]) : null;
             $t['sla'] = self::sla($t);
             $t['firstResponseMinutes'] = $t['firstResponseAt'] ? (int) round((strtotime($t['firstResponseAt']) - strtotime($t['createdAt'])) / 60) : null;
             $t['related'] = Db::all('SELECT "id", "number", "subject", "status" FROM "Ticket" WHERE "clientId" = ? AND "id" != ? ORDER BY "createdAt" DESC LIMIT 5', [$t['clientId'], $ticketId]);
-            $t['licenses'] = Db::all('SELECT "id", "productName", "domain", "status", "supportUntil" FROM "License" WHERE "clientId" = ? ORDER BY "createdAt" DESC', [$t['clientId']]);
         } else {
             unset($t['assigneeId'], $t['unreadStaff'], $t['tags'], $t['source'], $t['lastCustomerAt'], $t['lastStaffAt'], $t['firstResponseAt']);
         }

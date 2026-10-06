@@ -153,49 +153,15 @@ Die Portal-Links ohne Passwort (siehe oben) funktionieren weiter.
 | `PORTAL_SESSION_DAYS` | Dauer einer Anmeldung (Standard 14 Tage) |
 | `REGISTER_RATE_LIMIT_MAX`, `LOGIN_RATE_LIMIT_MAX` | Registrierungen je IP und Stunde (Standard 10) bzw. Fehlversuche beim Anmelden (Standard 10) |
 
-## Domain-Lizenzen
-
-Produkte (Einmalkauf oder Miete) können mit einer **Lizenz für eine Domain** verkauft werden – z. B. Skripte, Themes, Plugins.
-Im Produkt-Dialog: „Mit Lizenz für eine Domain verkaufen“, dazu optional Subdomains, „erst nach bezahlter Rechnung freischalten“ (Standard) und bei Einmalkäufen eine Gültigkeit in Tagen.
-Zeitprodukte (nach Stunden) können keine Lizenz haben.
-
-**Ablauf:** Der Kunde gibt beim Bestellen seine Domain an (wird bereinigt: ohne `https://`, Pfad, Port, `www.`; Umlaut-Domains werden zu Punycode) →
-du nimmst die Bestellung an → die Lizenz entsteht mit einem Schlüssel `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` →
-sobald die Rechnung **vollständig bezahlt** ist (Zahlung erfassen oder Status „Bezahlt“), wird sie aktiv und der Kunde bekommt den Schlüssel per E-Mail (und im Portal unter „Lizenzen“).
-Kostenlose Produkte und Produkte ohne „erst nach Zahlung“ sind sofort aktiv. Bei **Mietprodukten** verlängert jede bezahlte Abo-Rechnung die Lizenz um einen Abrechnungszeitraum; zusätzlich gilt eine Kulanzfrist (`LICENSE_GRACE_DAYS`, 14 Tage).
-Jede Rechnung wirkt nur einmal (erneutes Markieren als bezahlt verlängert nicht doppelt). Unter „Lizenzen“ kannst du Domain, Status (aktiv/gesperrt/widerrufen), Ablaufdatum ändern, den Schlüssel neu erzeugen, per E-Mail senden und von Hand Lizenzen ausstellen.
-Der Kunde kann seine Domain im Portal selbst ändern (`LICENSE_DOMAIN_CHANGES`, Standard 2 Mal).
-
-**Prüfung in der verkauften Software:** `examples/license-client/LicenseClient.php` (auch unter `/license/client.php`) in die Software legen:
-
-```php
-require __DIR__ . '/LicenseClient.php';
-$lic = new LicenseClient(
-    'https://crm.example.com',        // dein CRM (APP_URL)
-    'ÖFFENTLICHER-SCHLÜSSEL',         // https://crm.example.com/api/license/public-key
-    $kundenSchluessel,                // vom Kunden eingetragen
-    __DIR__ . '/license.cache'        // beschreibbare Datei
-);
-$lic->require();                      // beendet mit Meldung, wenn die Lizenz nicht gilt (oder: if ($lic->check()) { … })
-```
-
-Technik: `POST /api/license/verify {key, domain, nonce}` antwortet mit einer **Ed25519-signierten** Nutzlast (libsodium). Der Client prüft Signatur, Nonce, Domain und Zeitstempel; eine gefälschte „gültig“-Antwort (z. B. von einem Fake-Server oder aus der Datei `hosts`) wird abgelehnt.
-Gültige Antworten werden `LICENSE_CACHE_HOURS` (24) zwischengespeichert; ist der Server nicht erreichbar, läuft die Software noch `LICENSE_OFFLINE_DAYS` (7) Tage weiter. Der Zwischenspeicher ist signiert und wird bei jedem Lesen neu geprüft.
-Entwicklungsadressen (`localhost`, `*.test`, `*.local`, `127.x`) sind erlaubt (`LICENSE_ALLOW_DEV=false` schaltet das ab). Unbekannte Schlüssel werden pro IP gebremst; abgelehnte Prüfungen siehst du im Lizenz-Detail.
-
-**Der Signaturschlüssel** wird beim ersten Gebrauch erzeugt und in `database/license.key` gespeichert (oder `LICENSE_SECRET_KEY` bzw. `LICENSE_KEY_FILE`). **Geht er verloren, funktioniert keine ausgelieferte Software mehr** – er ist deshalb im Backup enthalten (bei Verschlüsselung: `BACKUP_PASSPHRASE` setzen!). Die Datei gehört nie ins Git.
-
-**Ehrliche Grenzen:** Eine Lizenzprüfung in PHP-Code, den der Kunde besitzt, kann jemand mit Programmierkenntnissen aus der Software entfernen. Sie verhindert Weitergabe an ehrliche Dritte und zeigt dir, wo die Software läuft – echten Schutz bringt nur, was der Kunde nicht selbst ändern kann (Updates, Support, Funktionen über deine API). Sinnvoll ist, die Prüfung an mehreren Stellen einzubauen und Quellcode ggf. zu verschleiern.
-
 ## Support (Tickets)
 
-Kunden schreiben im Kundenportal unter **„Support“** eine Anfrage (Betreff, Kategorie, Dringlichkeit, optional eine betroffene Lizenz, bis zu 5 Dateien) und verfolgen sie dort. Beim Schreiben schlägt das Portal passende **Hilfe-Artikel** vor.
+Kunden schreiben im Kundenportal unter **„Support“** eine Anfrage (Betreff, Kategorie, Dringlichkeit, bis zu 5 Dateien) und verfolgen sie dort. Beim Schreiben schlägt das Portal passende **Hilfe-Artikel** vor.
 Sie bekommen eine Eingangsbestätigung, jede Antwort des Teams per E-Mail (mit Portal-Link), sehen ungelesene Antworten, können das Ticket schließen oder wieder öffnen und nach der Lösung 1–5 Sterne vergeben. Antwortet der Kunde auf ein gelöstes/geschlossenes Ticket, öffnet es sich von selbst wieder.
 
 Für das Team gibt es im Menü **„Support“** (mit Zähler für neue Tickets):
 - Kennzahlen: offen, überfällig, nicht zugewiesen, Ø erste Antwortzeit, Zufriedenheit; Klick auf eine Kachel filtert die Liste.
 - Filter: offene, mir zugewiesen, nicht zugewiesen, neu/ungelesen, überfällig, gelöst, geschlossen, alle – plus Suche (Nummer, Betreff, Kunde, **Nachrichtentext**), Priorität und Kategorie. **Sammelaktionen** für Status, Priorität, Zuweisung und (Admin) Löschen.
-- Ticket-Ansicht: Verlauf als Unterhaltung, **interne Notizen** (nie für den Kunden sichtbar, auch ihre Anhänge nicht), automatischer Änderungsverlauf (Status, Zuweisung, Priorität …), Antworten mit Dateien, **Textbausteine** mit Platzhaltern (`{kunde}`, `{ticket}`, `{betreff}`, `{mitarbeiter}`, `{firma}`) und Status-Wechsel direkt beim Senden (z. B. „Wartet auf Kunde“). Seitenleiste: Status, Priorität, Bearbeiter (bekommt eine Mail), Kategorie, Lizenz, Stichworte, Kundendaten, weitere Tickets des Kunden, Zeiten und Bewertung.
+- Ticket-Ansicht: Verlauf als Unterhaltung, **interne Notizen** (nie für den Kunden sichtbar, auch ihre Anhänge nicht), automatischer Änderungsverlauf (Status, Zuweisung, Priorität …), Antworten mit Dateien, **Textbausteine** mit Platzhaltern (`{kunde}`, `{ticket}`, `{betreff}`, `{mitarbeiter}`, `{firma}`) und Status-Wechsel direkt beim Senden (z. B. „Wartet auf Kunde“). Seitenleiste: Status, Priorität, Bearbeiter (bekommt eine Mail), Kategorie, Stichworte, Kundendaten, weitere Tickets des Kunden, Zeiten und Bewertung.
 - **Fälligkeiten (SLA):** `TICKET_FIRST_RESPONSE_HOURS` (24) und `TICKET_RESOLVE_HOURS` (72); bei „Hoch“ gilt die halbe, bei „Dringend“ ein Viertel, bei „Niedrig“ die doppelte Zeit. „Wartet auf Kunde“ und „Zurückgestellt“ stoppen die Uhr. Überfällige Tickets sind markiert und filterbar.
 - Tickets lassen sich auch **im Namen des Kunden erfassen** (z. B. nach einem Anruf), optional mit Benachrichtigung.
 - **Automatik per Cron** (`bin/cron.php`): gelöste Tickets werden nach `TICKET_AUTOCLOSE_DAYS` (7) geschlossen, „Wartet auf Kunde“ ohne Reaktion nach `TICKET_PENDING_DAYS` (14) als gelöst markiert.
@@ -206,9 +172,9 @@ Missbrauchsbremse im Portal: höchstens 15 neue Tickets und 60 Nachrichten pro K
 
 ## Einstellungen und Datenbank
 
-Oben rechts in der Kopfleiste (nur für Admins) öffnet **„Einstellungen“** eine Seite für Firmendaten, Zahlung/Mahnwesen, E-Mail (SMTP, mit Testmail), Kundenportal, Lizenzen, Datensicherung und die Datenbank.
+Oben rechts in der Kopfleiste (nur für Admins) öffnet **„Einstellungen“** eine Seite für Firmendaten, Zahlung/Mahnwesen, E-Mail (SMTP, mit Testmail), Kundenportal, Updates, Datensicherung und die Datenbank.
 Änderungen gelten sofort und stehen in `database/settings.json` (Rechte 0600, nicht im Git, nicht im Web-Verzeichnis). Reihenfolge der Quellen: echte Server-Umgebungsvariable → Einstellungsseite → `.env` → Standardwert.
-Von der Server-Umgebung vorgegebene Werte sind in der Oberfläche gesperrt; Passwörter werden nie wieder angezeigt (leer lassen = unverändert). Bewusst nicht änderbar: `JWT_SECRET`, `CRON_TOKEN`, Speicherorte und der Lizenz-Signaturschlüssel.
+Von der Server-Umgebung vorgegebene Werte sind in der Oberfläche gesperrt; Passwörter werden nie wieder angezeigt (leer lassen = unverändert). Bewusst nicht änderbar: `JWT_SECRET`, `CRON_TOKEN`, Speicherorte und der Signaturschlüssel für Updates.
 Die Zugangsdaten liegen im Klartext in der Einstellungsdatei – sie ist nur durch Dateirechte geschützt und gehört nicht in Backups, die du weitergibst.
 
 **Datenbank wechseln (SQLite ↔ MySQL/MariaDB, in beide Richtungen):** Unter „Datenbank“ Zugangsdaten eintragen, „Verbindung testen“, dann „Zu MySQL wechseln“. Der Ablauf:
@@ -225,29 +191,36 @@ Unter **System → Rechtstexte** (nur Admin) erzeugst du Impressum, Datenschutze
 
 * **Impressum** nach § 5 DDG (Rechtsform, Vertretung, Register, USt-IdNr., Streitbeilegung …).
 * **Datenschutzerklärung** nach DSGVO: baut sich aus dem, was das System tatsächlich verarbeitet (Hosting/Logfiles, Kundenportal, Registrierung,
-  Support, Rechnungen, Bestellungen, Lizenzen, E-Mail) plus deinen Angaben (Hoster, Newsletter, Analyse, Schriftarten, Zahlungsdienste, Drittländer).
-* **AGB** für Webdesign-Leistungen mit Modulen (Hosting/Wartung, Abo, Lizenzen, Verbraucher-Widerruf).
+  Support, Rechnungen, Bestellungen, E-Mail) plus deinen Angaben (Hoster, Newsletter, Analyse, Schriftarten, Zahlungsdienste, Drittländer).
+* **AGB** für Webdesign-Leistungen mit Modulen (Hosting/Wartung, Abo, Verbraucher-Widerruf).
 * Jeder Text lässt sich **ergänzen** (eigener Abschnitt am Ende) oder **komplett selbst schreiben**; live-Vorschau, Veröffentlichen/Zurückziehen.
 * Öffentlich erreichbar unter `/impressum`, `/datenschutz`, `/agb`; das Kundenportal verlinkt sie bei der Registrierung automatisch, wenn kein eigener Link eingetragen ist.
 
 Das **Dashboard** zeigt rote (muss behoben werden) und gelbe (empfohlen) Hinweise: fehlende/unveröffentlichte Rechtstexte, fehlende Firmen- und Steuerangaben,
-kein HTTPS, E-Mail nicht eingerichtet, Cron läuft nicht, Backup alt/unverschlüsselt, Update verfügbar, Lizenz ungültig, unbeantwortete Tickets.
+kein HTTPS, E-Mail nicht eingerichtet, Cron läuft nicht, Backup alt/unverschlüsselt, Update verfügbar, unbeantwortete Tickets.
 Die Texte sind sorgfältige Vorlagen, **keine Rechtsberatung** – bitte bei Unsicherheit prüfen lassen.
 
-## Lizenz-Tools: Produkt, Support-Anspruch und Updates
+## Updates
 
-Das CRM selbst ist das erste lizenzierte Produkt. Ordner **`Lizenz-tools/`** (siehe dort die README): `build-product.php` baut die auslieferbare, lizenzgeschützte Fassung (`Lizenz-tools/crm/`), `build-release.php` baut Update-Pakete.
-Dein Server ist der Lizenzserver; die Kopie beim Kunden enthält `product.json` (Server, öffentlicher Schlüssel) und prüft ihre Lizenz dort.
+Damit du bei neuen Versionen nicht jedes Mal alles löschen und neu hochladen musst, gibt es einen eingebauten **Update-Server**: deine eigene Installation
+liefert signierte Pakete aus, andere Installationen (z. B. bei Kunden) holen sie mit einem Klick.
 
-- **Berechtigungen je Lizenz:** Paket (Starter, Pro, Agency), Funktionen (`support`, `shop`, `recurring`, `licenses`), Support-Zeitraum, Update-Zeitraum und eine Produkt-Kennung (`crm`). Am Produkt (Lizenz-Optionen) legst du sie fest, in der Lizenz kannst du sie je Kunde ändern. Sie stehen in der **signierten** Prüfantwort – die Software kann sie nicht selbst ändern.
-- **In der Produktversion:** Nicht enthaltene Funktionen sind gesperrt und im Menü ausgeblendet. Bei ungültiger Lizenz (widerrufen, abgelaufen, falsche Domain, kein Schlüssel) läuft die Software im **Nur-Lesen-Modus**: Daten bleiben les- und exportierbar (auch Backups), Änderungen sind gesperrt, Abos werden nicht abgerechnet. Server-Ausfälle überbrückt eine Kulanzfrist (`LICENSE_OFFLINE_DAYS`, 7 Tage). Im Programm: Einstellungen → **Lizenz & Updates**.
-- **Support-Anspruch:** Ist der Support-Zeitraum einer Lizenz abgelaufen, können Kunden zu dieser Lizenz keine Tickets mehr eröffnen (`TICKET_REQUIRE_SUPPORT`); das Portal zeigt Support- und Update-Ende je Lizenz.
-- **Updates:** Releases hochladen (Lizenzen → Releases & Updates), der Server signiert sie. Die Software lädt nur mit gültiger Lizenz und Update-Anspruch (kurzlebiges Token), prüft SHA-256 und Signatur, erlaubt nur Code-Ordner, sichert vorher Code und Daten und macht bei Fehlern alles rückgängig (`php bin/update.php --check|--install|--rollback=…`). Kanal „Beta“ per `UPDATE_CHANNEL`.
-- **API-Sicherheit:** signierte Antworten (Ed25519, mit Schlüsselkennung für Schlüsselwechsel), Zeitstempel + einmaliger Zufallswert gegen Replay, HTTPS-Pflicht (`LICENSE_REQUIRE_HTTPS`, standardmäßig an, wenn `APP_URL` mit https beginnt) mit HSTS, Bremsen je IP und **je Lizenz** (`LICENSE_MAX_CHECKS_HOUR`), Protokoll der Domains, auf denen ein Schlüssel benutzt wird.
-- **Installer:** In der Produktversion fragt `install.php` den Lizenzschlüssel ab und prüft ihn vorher.
+- **Version erstellen:** Admin → System → **Versionen & Updates** → „Update-Paket erstellen“. Der Server baut das Paket aus seinen eigenen Dateien
+  (Version = Datei `VERSION`, vorher hochzählen), prüft es und **signiert** es mit seinem geheimen Schlüssel (`database/update.key` bzw. `UPDATE_SECRET_KEY`;
+  beim Backup dabei – **ohne ihn können ausgelieferte Installationen keine Updates mehr prüfen**).
+- **Neue Installationen:** Dort auch „Installationspaket herunterladen“: ein ZIP mit `install.php` und `product.json` (Adresse deines Update-Servers
+  = „Öffentliche Adresse“ aus den Einstellungen, plus öffentlicher Schlüssel). Hochladen, `install.php` aufrufen, fertig.
+- **Updates einspielen:** Einstellungen → Version & Updates → „Nach Updates suchen“ (oder `php bin/update.php --check | --install`). Vor dem Einspielen werden
+  SHA-256 **und** Signatur geprüft, Code und Daten gesichert; bei jedem Fehler wird automatisch zurückgenommen (`php bin/update.php --rollback=<Sicherung>`).
+  Nie überschrieben werden `.env`, Datenbank, Uploads, Einstellungen, `product.json` und `install.php`.
+- **Verpasste Versionen:** Jedes Paket ist ein vollständiger Stand (Code + alle Datenbank-Migrationen). Wer mehrere Versionen übersprungen hat, springt in
+  **einem** Schritt zur neuesten. Nur bei Umbauten, die einen Zwischenstand brauchen, trägst du beim Erstellen eine **Mindestversion** ein; die Software
+  spielt dann automatisch erst den Zwischenstand und danach die neueste Version ein. Vor dem Update sieht man die Änderungen **aller** Versionen seit der eigenen.
+- **Kanäle:** Stabil und Beta (`UPDATE_CHANNEL`). Die tägliche Cron-Prüfung zeigt neue Versionen als gelben Hinweis im Dashboard.
+- **API-Sicherheit:** Antworten sind mit Ed25519 signiert, Anfragen tragen Zeitstempel und einmaligen Zufallswert (Replay-Schutz), HTTPS ist Pflicht
+  (`UPDATE_REQUIRE_HTTPS`, Standard: an, wenn die Adresse mit https beginnt).
 
-Ehrlich: Wer den PHP-Code beim Kunden verändert, kann die Prüfung entfernen. Durchsetzen lässt sich nur, was dein Server liefert (signierte Updates, Support, Berechtigungen). Die Pakete der Releases liegen in `uploads/releases/` und sind nicht im Backup – bewahre die ZIP-Dateien aus `Lizenz-tools/releases/` selbst auf.
-Tests: `php tests/run.php` (Anwendung) und `php tests/product.php` (Lizenzserver + Produkt + Updates + Installer).
+Tests: `php tests/run.php` (Anwendung) und `php tests/product.php` (Update-Server, Installationen, Updates, Installer).
 
 ## Datensicherung (Backup)
 
@@ -305,9 +278,8 @@ Alle Endpunkte (außer `/`, `/health`, `/uploads/*`, `/api/auth/register|login`)
 | Katalog       | `GET/POST /api/categories`, `PATCH/DELETE /api/categories/:id`, `GET/POST /api/products`, `GET/PATCH/DELETE /api/products/:id`, `POST /api/products/:id/duplicate`, `POST /api/catalog/examples` |
 | Bestellungen  | `GET/POST /api/orders`, `GET /api/orders/:id`, `POST /api/orders/:id/accept`, `POST /api/orders/:id/reject`; Portal: `GET /api/portal/products`, `GET/POST /api/portal/orders`, `POST /api/portal/orders/:id/cancel` |
 | Kundenkonten  | Portal: `GET /api/portal/config`, `POST /api/portal/register`, `/verify-info`, `/verify`, `/login`, `/logout`, `/forgot`, `/reset`, `/password`; Verwaltung: `POST /api/portal-accounts/:id/active`, `/reset`, `DELETE /api/portal-accounts/:id` |
-| Lizenzen      | `GET/POST /api/licenses`, `GET/PATCH/DELETE /api/licenses/:id`, `POST /api/licenses/:id/regenerate`, `POST /api/licenses/:id/send`; öffentlich: `POST /api/license/verify`, `GET /api/license/public-key`, `GET /license/client.php`; Portal: `GET /api/portal/licenses`, `POST /api/portal/licenses/:id/domain` |
 | Support       | Team: `GET/POST /api/tickets`, `GET /api/tickets/stats|meta`, `GET/PATCH/DELETE /api/tickets/:id`, `POST /api/tickets/:id/messages` (multipart), `POST /api/tickets/bulk`, `GET /api/tickets/attachments/:id`, `/api/canned`, `/api/faq`; Portal: `GET/POST /api/portal/tickets`, `GET /api/portal/tickets/:id`, `POST …/messages|close|reopen|rating`, `GET /api/portal/attachments/:id`, `GET /api/portal/faq` |
-| Lizenz-Updates | Software: `POST /api/license/update-check`, `POST /api/license/update-public` (ohne Lizenz, nur öffentliche Releases), `POST /api/license/download`; Team (Admin): `GET/POST /api/releases`, `PATCH/DELETE /api/releases/:id`, `GET /api/releases/:id/file`, `GET /api/license-entitlements`; Produkt (Admin): `GET /api/system/status`, `POST /api/system/license/refresh|key`, `POST /api/system/update/check|install` |
+| Updates       | Installationen: `POST /api/updates/check`, `POST /api/updates/download`, `GET /api/updates/public-key`; Admin: `GET/POST /api/releases`, `GET /api/releases/self`, `POST /api/releases/build-self`, `GET /api/releases/install-package`, `PATCH/DELETE /api/releases/:id`, `GET /api/releases/:id/file`, `GET /api/system/status`, `POST /api/system/update/check|install` |
 | Rechtstexte & Check | Admin: `GET /api/legal`, `PUT /api/legal/:type`, `POST /api/legal/:type/preview` (IMPRESSUM, DATENSCHUTZ, AGB), `GET /api/health`; öffentlich: `GET /impressum`, `/datenschutz`, `/agb`; Kunde im Team: `GET /api/clients/:id/tickets` |
 | Einstellungen | `GET/PUT /api/settings/all`, `POST /api/settings/test-mail`, `POST /api/settings/database/test`, `POST /api/settings/database/switch` (nur Admin) |
 | Backups       | `GET/POST /api/backups`, `GET/DELETE /api/backups/:name` (nur Admin) |
