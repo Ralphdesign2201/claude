@@ -57,6 +57,16 @@ mit dem eingebauten öffentlichen Schlüssel, erlaubt nur Dateien in `src/`, `pu
 (nie `.env`, Datenbank, Uploads, Einstellungen, `product.json`), sichert den alten Code und macht bei jedem Fehler alles rückgängig.
 Rücksicherung von Hand: `php bin/update.php --rollback=backups/code-vor-update-<Version>-<Zeit>.zip`.
 
+### Software-Download für Kunden (Vollpaket)
+
+Nach der Zahlung sieht der Kunde im Portal bei seiner Lizenz den Schlüssel **und** den Knopf „Software herunterladen“. Damit der Knopf erscheint:
+
+1. Vollpaket bauen: `php Lizenz-tools/build-product.php crm --server=https://lizenz.deine-domain.de --key-file=database/license.key` → `Lizenz-tools/dist/crm-<Version>.zip`
+2. Update-Paket derselben Version bauen (`build-release.php crm`) und unter Lizenzen → Releases & Updates hochladen und veröffentlichen.
+3. In der Release-Zeile **„Vollpaket hochladen“** und die ZIP aus Schritt 1 wählen (muss zur Version passen).
+
+Kunden bekommen die neueste stabile Version mit Vollpaket, für die noch Update-Anspruch besteht (bei Mietlizenzen nur solange aktiv). Die Lizenz muss freigeschaltet sein (bezahlt).
+
 ### Verpasste Updates
 
 Kunden pflegen ihre Installation unterschiedlich – manche überspringen Versionen. Das ist abgesichert:

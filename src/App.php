@@ -198,6 +198,7 @@ final class App
         $r->add('POST', '/api/license/download', [LicenseApiController::class, 'download'], $pub);
         $r->add('GET', '/api/releases', [ReleasesController::class, 'index'], $admin);
         $r->add('POST', '/api/releases', [ReleasesController::class, 'create'], $admin);
+        $r->add('POST', '/api/releases/:id/full', [ReleasesController::class, 'uploadFull'], $admin);
         $r->add('PATCH', '/api/releases/:id', [ReleasesController::class, 'update'], $admin);
         $r->add('DELETE', '/api/releases/:id', [ReleasesController::class, 'delete'], $admin);
         $r->add('GET', '/api/releases/:id/file', [ReleasesController::class, 'file'], $admin);
@@ -212,6 +213,7 @@ final class App
         $r->add('POST', '/api/licenses/:id/regenerate', [LicensesController::class, 'regenerate']);
         $r->add('POST', '/api/licenses/:id/send', [LicensesController::class, 'send']);
         $r->add('GET', '/api/portal/licenses', [PortalController::class, 'licenseList'], $pub);
+        $r->add('GET', '/api/portal/licenses/:id/download', [PortalController::class, 'licenseDownload'], $pub);
         $r->add('POST', '/api/portal/licenses/:id/domain', [PortalController::class, 'changeLicenseDomain'], $pub);
         $r->add('GET', '/api/portal/products', [PortalController::class, 'products'], $pub);
         $r->add('GET', '/api/portal/orders', [PortalController::class, 'orderList'], $pub);

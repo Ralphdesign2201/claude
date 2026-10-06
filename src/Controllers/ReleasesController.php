@@ -16,7 +16,7 @@ final class ReleasesController
 {
     public static function index(Request $r): Response
     {
-        $rows = Db::all('SELECT "id", "product", "version", "channel", "notes", "size", "sha256", "minPhp", "access", "minFrom", "published", "downloads", "releasedAt" FROM "Release"');
+        $rows = Db::all('SELECT "id", "product", "version", "channel", "notes", "size", "sha256", "minPhp", "access", "minFrom", "fullSize", "published", "downloads", "releasedAt" FROM "Release"');
         usort($rows, static fn ($a, $b) => strcmp($a['product'], $b['product']) ?: version_compare($b['version'], $a['version']));
 
         return Response::json(array_map(static fn ($x) => $x + ['isPublished' => (bool) $x['published']], $rows));
@@ -36,6 +36,17 @@ final class ReleasesController
         $release = ReleaseService::create($file['tmp_name'], $channel, $notes, TicketsController::flag($b, 'published'), $access, $minFrom);
 
         return Response::json(self::view($release), 201);
+    }
+
+    /** Vollpaket (Erstinstallation) zu einer bestehenden Version hochladen oder ersetzen. */
+    public static function uploadFull(Request $r): Response
+    {
+        $file = $r->files['file'] ?? null;
+        if (!is_array($file) || !is_string($file['tmp_name'] ?? null) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw ApiError::badRequest('Bitte das Vollpaket (ZIP) hochladen (Feld „file“).');
+        }
+
+        return Response::json(self::view(ReleaseService::attachFull($r->param('id'), $file['tmp_name'])));
     }
 
     public static function update(Request $r): Response
@@ -78,7 +89,8 @@ final class ReleasesController
     /** @param array<string,mixed> $r @return array<string,mixed> */
     private static function view(array $r): array
     {
-        unset($r['fileName'], $r['signature']);
+        unset($r['fileName'], $r['signature'], $r['fullFileName'], $r['fullSha256']);
+        $r['hasFull'] = ($r['fullSize'] ?? null) !== null;
 
         return $r + ['isPublished' => (bool) $r['published']];
     }

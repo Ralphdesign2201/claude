@@ -249,7 +249,8 @@
     return '<div class="card doc"><div class="doc-row"><div class="doc-main"><b>' + esc(l.productName) + '</b> ' + pill(LSTATUS, l.status) +
       '<div class="sub">Domain: <b class="mono">' + esc(l.domain) + '</b>' + (l.subdomains ? ' (inkl. Subdomains)' : '') + (until ? ' · ' + until : '') + '</div>' +
       (l.status === 'ACTIVE' ? '<div class="sub">' + (l.plan ? 'Paket ' + esc(l.plan) + ' · ' : '') + 'Support ' + (l.supportUntil ? 'bis ' + fdate(l.supportUntil) : 'unbegrenzt') + (l.supportActive ? '' : ' <span class="pill bad">abgelaufen</span>') + ' · Updates ' + (l.updatesUntil ? 'für Versionen bis ' + fdate(l.updatesUntil) : 'unbegrenzt') + (l.updatesActive ? '' : ' <span class="pill warn">abgelaufen</span>') + '</div>' : '') + '</div>' +
-      (l.status !== 'REVOKED' ? '<div class="doc-actions"><button class="btn sm" data-act="lic-domain" data-id="' + esc(l.id) + '">Domain ändern</button></div>' : '') + '</div>' + shown + '</div>';
+      (l.status !== 'REVOKED' ? '<div class="doc-actions">' + (l.download ? '<button class="btn sm primary" data-act="pdf" data-url="/api/portal/licenses/' + esc(l.id) + '/download">Software herunterladen</button>' : '') + '<button class="btn sm" data-act="lic-domain" data-id="' + esc(l.id) + '">Domain ändern</button></div>' : '') + '</div>' + shown +
+      (l.download ? '<div class="sub" style="line-height:1.6"><b>Version ' + esc(l.download.version) + '</b> (' + (l.download.size / 1048576).toFixed(1).replace('.', ',') + ' MB). So geht es weiter: ZIP entpacken, den Inhalt auf Ihren Webspace hochladen, <span class="mono">install.php</span> im Browser öffnen und dort den Lizenzschlüssel eintragen.</div>' : '') + '</div>';
   }
   function licensesHtml() {
     return state.licenses.map(licenseCard).join('') + '<div class="card"><b>So binden Sie die Lizenz ein</b><div class="sub" style="line-height:1.6">Tragen Sie den Lizenzschlüssel in der Einstellung Ihrer Software ein (bzw. wie in deren Anleitung beschrieben). Die Software prüft ihn gelegentlich bei uns. Sie benötigt dafür eine Internetverbindung; kurze Ausfälle überbrückt sie automatisch. Die Lizenz gilt für die genannte Domain; Entwicklungs-Adressen wie <span class="mono">localhost</span> sind erlaubt.</div></div>';
@@ -396,7 +397,7 @@
   function downloadPdf(btn, url) {
     btn.disabled = true;
     fetch(url, { headers: { 'X-Portal-Token': token || '' } }).then(function (res) {
-      if (!res.ok) throw new Error('Das PDF konnte nicht geladen werden');
+      if (!res.ok) throw new Error('Der Download hat nicht geklappt');
       var name = (/filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '') || [])[1] || 'Dokument.pdf';
       return res.blob().then(function (blob) { return { blob: blob, name: name }; });
     }).then(function (r) {

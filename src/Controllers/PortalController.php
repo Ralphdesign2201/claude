@@ -236,6 +236,26 @@ final class PortalController
         return Response::json(array_map([self::class, 'publicLicense'], $rows));
     }
 
+    /** Software-Download (Vollpaket) – nur für den Inhaber einer freigeschalteten Lizenz. */
+    public static function licenseDownload(Request $r): Response
+    {
+        $client = PortalService::authenticate($r);
+        $license = Db::require('License', $r->param('id'), 'Lizenz nicht gefunden');
+        if ($license['clientId'] !== $client['id']) {
+            throw ApiError::notFound('Lizenz nicht gefunden');
+        }
+        if (LicenseService::effectiveStatus($license) !== 'ACTIVE') {
+            throw ApiError::forbidden('Der Download ist erst bei aktiver Lizenz möglich (nach Zahlung).');
+        }
+        $release = \App\Services\ReleaseService::fullFor($license) ?? throw ApiError::notFound('Für diese Lizenz ist noch kein Download bereitgestellt.');
+        Db::run('UPDATE "Release" SET "downloads" = "downloads" + 1 WHERE "id" = ?', [$release['id']]);
+
+        return Response::file(\App\Services\ReleaseService::fullPath($release), [
+            'Content-Type' => 'application/zip', 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store',
+            'Content-Disposition' => 'attachment; filename="' . preg_replace('/[^A-Za-z0-9._-]/', '_', $release['product'] . '-' . $release['version']) . '.zip"',
+        ]);
+    }
+
     public static function changeLicenseDomain(Request $r): Response
     {
         $client = PortalService::authenticate($r);
@@ -254,6 +274,7 @@ final class PortalController
     {
         return [
             'id' => $l['id'],
+            'download' => $l['status'] === 'ACTIVE' && ($rel = \App\Services\ReleaseService::fullFor($l)) !== null ? ['version' => $rel['version'], 'size' => (int) $rel['fullSize']] : null,
             'productName' => $l['productName'],
             'licenseKey' => $l['status'] === 'PENDING' ? null : $l['licenseKey'],
             'domain' => $l['domain'],

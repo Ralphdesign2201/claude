@@ -175,6 +175,103 @@ final class ReleaseService
         return ['latest' => $latest, 'target' => $target, 'changes' => array_slice($changes, -30), 'blocked' => $latest !== null && $target === null];
     }
 
+    /**
+     * Hängt das Vollpaket (Erstinstallation, wie von build-product.php gebaut) an eine Version.
+     * Das ZIP darf die Dateien direkt oder in einem einzigen Oberordner enthalten.
+     *
+     * @return array<string,mixed>
+     */
+    public static function attachFull(string $id, string $tmpFile): array
+    {
+        $release = Db::require('Release', $id, 'Release nicht gefunden');
+        $size = (int) filesize($tmpFile);
+        if ($size < 200 || $size > self::MAX_BYTES) {
+            throw ApiError::badRequest('Das Vollpaket muss zwischen 200 Byte und 50 MB groß sein.');
+        }
+        $zip = new ZipArchive();
+        if (!class_exists(ZipArchive::class) || $zip->open($tmpFile, ZipArchive::RDONLY) !== true) {
+            throw ApiError::badRequest('Das ist kein gültiges ZIP-Paket.');
+        }
+        $names = [];
+        for ($i = 0; $i < $zip->numFiles && $i < 5000; $i++) {
+            $n = (string) $zip->getNameIndex($i);
+            if ($n === '' || str_contains($n, '..') || $n[0] === '/' || str_contains($n, '\\')) {
+                $zip->close();
+                throw ApiError::badRequest('Das Paket enthält unzulässige Dateipfade.');
+            }
+            $names[] = $n;
+        }
+        $prefix = null;
+        foreach (['', ...array_unique(array_filter(array_map(static fn ($n) => str_contains($n, '/') ? explode('/', $n)[0] . '/' : null, $names)))] as $cand) {
+            if (in_array($cand . 'manifest.json', $names, true)) {
+                $prefix = $cand;
+                break;
+            }
+        }
+        $m = $prefix === null ? null : json_decode((string) $zip->getFromName($prefix . 'manifest.json'), true);
+        $zip->close();
+        if (!is_array($m) || ($m['product'] ?? null) !== $release['product'] || ($m['version'] ?? null) !== $release['version']) {
+            throw ApiError::badRequest('Das Vollpaket gehört nicht zu Version ' . $release['version'] . ' von „' . $release['product'] . '“ (manifest.json prüfen – gleiche VERSION bauen).');
+        }
+        foreach (['public/install.php', 'product.json'] as $need) {
+            if (!in_array($prefix . $need, $names, true)) {
+                throw ApiError::badRequest("Im Vollpaket fehlt $need – bitte mit build-product.php bauen.");
+            }
+        }
+        if (!is_dir(self::dir()) && !@mkdir(self::dir(), 0775, true) && !is_dir(self::dir())) {
+            throw new ApiError(500, 'Ordner für Releases nicht beschreibbar.');
+        }
+        $stored = 'full-' . bin2hex(random_bytes(12)) . '.zip';
+        if (!(is_uploaded_file($tmpFile) ? move_uploaded_file($tmpFile, self::dir() . '/' . $stored) : copy($tmpFile, self::dir() . '/' . $stored))) {
+            throw new ApiError(500, 'Paket konnte nicht gespeichert werden.');
+        }
+        self::removeFull($release);
+        Db::update('Release', $id, ['fullFileName' => $stored, 'fullSize' => $size, 'fullSha256' => hash_file('sha256', self::dir() . '/' . $stored)]);
+
+        return Db::require('Release', $id, 'Release nicht gefunden');
+    }
+
+    /** @param array<string,mixed> $release */
+    private static function removeFull(array $release): void
+    {
+        $f = (string) ($release['fullFileName'] ?? '');
+        if (preg_match('/^full-[a-f0-9]{24}\.zip$/', $f) && is_file(self::dir() . '/' . $f)) {
+            @unlink(self::dir() . '/' . $f);
+        }
+    }
+
+    /** @param array<string,mixed> $release */
+    public static function fullPath(array $release): string
+    {
+        $f = (string) ($release['fullFileName'] ?? '');
+        $path = self::dir() . '/' . $f;
+        if (!preg_match('/^full-[a-f0-9]{24}\.zip$/', $f) || !is_file($path)) {
+            throw ApiError::notFound('Das Vollpaket fehlt auf dem Server.');
+        }
+
+        return $path;
+    }
+
+    /**
+     * Das Vollpaket, das eine Lizenz herunterladen darf: die neueste stabile Version mit Vollpaket, für die noch Update-Anspruch besteht
+     * (gibt es keine stabile, dann die neueste Beta).
+     *
+     * @param array<string,mixed> $license
+     * @return array<string,mixed>|null
+     */
+    public static function fullFor(array $license): ?array
+    {
+        $rows = Db::all('SELECT * FROM "Release" WHERE "product" = ? AND "published" = 1 AND "fullFileName" IS NOT NULL', [$license['slug']]);
+        usort($rows, static fn ($a, $b) => (($a['channel'] === 'stable') !== ($b['channel'] === 'stable') ? ($a['channel'] === 'stable' ? -1 : 1) : version_compare($b['version'], $a['version'])));
+        foreach ($rows as $r) {
+            if (Entitlements::updatesActive($license, $r['releasedAt'])) {
+                return $r;
+            }
+        }
+
+        return null;
+    }
+
     /** Kurzlebiges Download-Token, gebunden an Lizenz und Version. */
     public static function token(string $licenseId, string $releaseId): array // $licenseId = '-' für öffentliche Releases
     {
@@ -211,6 +308,7 @@ final class ReleaseService
     {
         $r = Db::require('Release', $id, 'Release nicht gefunden');
         Db::delete('Release', $id);
+        self::removeFull($r);
         $path = self::dir() . '/' . $r['fileName'];
         if (preg_match('/^release-[a-f0-9]{24}\.zip$/', $r['fileName']) && is_file($path)) {
             @unlink($path);

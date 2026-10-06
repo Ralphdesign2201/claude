@@ -547,6 +547,41 @@ $hopEnv = array_merge($pubEnv, ['DATABASE_PATH' => "$tmp/hop.db", 'SETTINGS_FILE
 cli($hopDir, 'migrate.php', [], $hopEnv);
 [$code, $out] = cli($hopDir, 'update.php', ['--install'], $hopEnv);
 check('Version mit Mindestversion: erst Zwischenstand 9.9.2, dann automatisch 9.9.3 (zwei Schritte in einem Aufruf)', $code === 0 && substr_count($out, 'eingespielt') === 2 && str_contains($out, '0.1.0-beta → 9.9.2') && str_contains($out, '9.9.2 → 9.9.3') && trim((string) file_get_contents("$hopDir/VERSION")) === '9.9.3', $out);
+// Software-Download im Kundenportal (Vollpaket)
+$r5 = $upX('9.9.5', ['access' => 'licensed', 'published' => 'true']);
+$fullZip = static function (string $version, bool $installer = true, string $prefix = 'crm/') use ($tmp): string {
+    $f = "$tmp/full-" . bin2hex(random_bytes(3)) . '.zip';
+    $z = new ZipArchive();
+    $z->open($f, ZipArchive::CREATE);
+    $z->addFromString($prefix . 'manifest.json', json_encode(['product' => 'crm', 'version' => $version, 'files' => []]));
+    $z->addFromString($prefix . 'product.json', '{"product":"crm"}');
+    if ($installer) {
+        $z->addFromString($prefix . 'public/install.php', '<?php // installer ' . str_repeat('x', 1500));
+    }
+    $z->close();
+    return (string) file_get_contents($f);
+};
+$attach = static function (string $id, string $bytes) use ($vp, $A): array {
+    [$body, $ct] = multipart([], ['file' => ['full.zip', $bytes]]);
+    return call($vp, 'POST', "/api/releases/$id/full", $body, $A, [$ct]);
+};
+$licRow = static fn (string $id): array => array_values(array_filter(call($vp, 'GET', '/api/portal/licenses', null, null, $PH)[1], static fn ($x) => $x['id'] === $id))[0];
+check('Portal: ohne bereitgestelltes Vollpaket kein Download-Knopf, Abruf → 404', $licRow($okSup['id'])['download'] === null && call($vp, 'GET', '/api/portal/licenses/' . $okSup['id'] . '/download', null, null, $PH)[0] === 404);
+expect('Vollpaket mit falscher Version → 400', $attach($r5[1]['id'], $fullZip('1.2.3')), 400);
+expect('Vollpaket ohne install.php → 400', $attach($r5[1]['id'], $fullZip('9.9.5', false)), 400);
+$good = $fullZip('9.9.5');
+$res = $attach($r5[1]['id'], $good);
+check('Vollpaket (in Oberordner) wird angenommen; Liste zeigt es, Dateiname nie', $res[0] === 200 && $res[1]['hasFull'] === true && !isset($res[1]['fullFileName']), $res[2]);
+$row = $licRow($okSup['id']);
+check('Portal: Lizenz mit Vollpaket zeigt Version und Größe', ($row['download']['version'] ?? '') === '9.9.5' && $row['download']['size'] === strlen($good), $row);
+$dl = call($vp, 'GET', '/api/portal/licenses/' . $okSup['id'] . '/download', null, null, $PH);
+check('Portal-Download liefert das ZIP unverändert', $dl[0] === 200 && $dl[2] === $good && ($dl[3]['content-type'] ?? '') === 'application/zip', $dl[0]);
+expect('Download ohne Portal-Anmeldung → 401', call($vp, 'GET', '/api/portal/licenses/' . $okSup['id'] . '/download'), 401);
+call($vp, 'PATCH', '/api/licenses/' . $okSup['id'], ['updatesUntil' => gmdate('Y-m-d\TH:i:s.000\Z', time() - 86400)], $A);
+expect('Update-Anspruch vor Erscheinen der Version abgelaufen → 404', call($vp, 'GET', '/api/portal/licenses/' . $okSup['id'] . '/download', null, null, $PH), 404);
+call($vp, 'PATCH', '/api/licenses/' . $okSup['id'], ['status' => 'REVOKED'], $A);
+expect('Gesperrte Lizenz → 403', call($vp, 'GET', '/api/portal/licenses/' . $okSup['id'] . '/download', null, null, $PH), 403);
+call($vp, 'DELETE', '/api/releases/' . $r5[1]['id'], null, $A);
 foreach ([$r1, $r2, $r3, $licOnly] as $rr) {
     call($vp, 'DELETE', '/api/releases/' . $rr[1]['id'], null, $A);
 }
