@@ -14,6 +14,22 @@ function invoice_items(int $id): array {
     return $st->fetchAll();
 }
 
+function invoice_customer(int $id): array {
+    $st = db()->prepare('SELECT * FROM customers WHERE id = ?'); $st->execute([$id]);
+    return $st->fetch();
+}
+
+/** ZUGFeRD/Factur-X-XML separat herunterladen (z. B. für Steuerberater-Software). */
+function invoices_xml(): void {
+    require_once APP_ROOT . '/zugferd.php';
+    $id = (int)($_GET['id'] ?? 0); $inv = invoice_load($id);
+    if ($inv['status'] === 'cancelled') { flash('Für stornierte Rechnungen wird keine E-Rechnung erzeugt.', 'err'); redirect('invoice_show', ['id' => $id]); }
+    $xml = zugferd_xml($inv, invoice_items($id), invoice_customer((int)$inv['customer_id']));
+    header('Content-Type: application/xml; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9_.-]/', '_', $inv['invoice_number']) . '_factur-x.xml"');
+    echo $xml;
+}
+
 function invoices_index(): void {
     $status = (string)($_GET['status'] ?? ''); $q = trim((string)($_GET['q'] ?? '')); $year = (string)($_GET['year'] ?? '');
     $w = []; $p = [];
@@ -117,7 +133,7 @@ function invoices_show(): void {
 function invoices_pdf(): void {
     $id = (int)($_GET['id'] ?? 0);
     $inv = invoice_load($id);
-    $pdf = invoice_pdf($inv, invoice_items($id));
+    $pdf = invoice_pdf($inv, invoice_items($id), invoice_customer((int)$inv['customer_id']));
     $name = preg_replace('/[^A-Za-z0-9_.-]/', '_', 'Rechnung_' . $inv['invoice_number']) . '.pdf';
     header('Content-Type: application/pdf');
     header('Content-Disposition: ' . (isset($_GET['download']) ? 'attachment' : 'inline') . '; filename="' . $name . '"');

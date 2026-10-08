@@ -19,6 +19,7 @@
 </div>
 <h2>Rechnungen</h2>
 <div class="grid">
+<label class="span2 check"><input type="checkbox" name="zugferd" value="1"<?= $s['zugferd'] === '1' ? ' checked' : '' ?>> E-Rechnungsdaten (ZUGFeRD/Factur-X, EN 16931) in jedes PDF einbetten</label>
 <label>Nummern-Präfix<input name="invoice_prefix" value="<?= e($s['invoice_prefix']) ?>"><small class="muted">Ergebnis z. B. <?= e($s['invoice_prefix']) ?><?= e(date('Y')) ?>-0001</small></label>
 <label>Zahlungsziel (Tage)<input type="number" min="0" max="365" name="payment_days" value="<?= e($s['payment_days']) ?>"></label>
 <label class="span2">Standard-Einleitung<textarea name="default_intro" rows="2"><?= e($s['default_intro']) ?></textarea></label>

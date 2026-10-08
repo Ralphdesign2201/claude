@@ -6,6 +6,7 @@ const SETTING_FIELDS = ['company', 'owner', 'street', 'zip', 'city', 'phone', 'e
 function settings_index(): void {
     $s = []; foreach (SETTING_FIELDS as $f) $s[$f] = setting($f);
     $s['small_business'] = setting('small_business');
+    $s['zugferd'] = setting('zugferd', '1');
     render('settings', ['s' => $s, 'hasLogo' => is_file(APP_STORAGE . '/logo.jpg'), 'gd' => extension_loaded('gd')], 'Einstellungen');
 }
 
@@ -19,6 +20,7 @@ function settings_save(): void {
         set_setting($f, $v);
     }
     set_setting('small_business', isset($_POST['small_business']) ? '1' : '0');
+    set_setting('zugferd', isset($_POST['zugferd']) ? '1' : '0');
 
     if (isset($_POST['remove_logo'])) @unlink(APP_STORAGE . '/logo.jpg');
     if (!empty($_FILES['logo']['tmp_name']) && is_uploaded_file($_FILES['logo']['tmp_name'])) {

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/pdf.php';
 
-function invoice_pdf(array $inv, array $items): string
+function invoice_pdf(array $inv, array $items, ?array $customer = null): string
 {
     $pdf = new Pdf();
     $grey = [110, 110, 110]; $accent = [30, 64, 110]; $lightBg = [238, 242, 247];
@@ -131,5 +131,11 @@ function invoice_pdf(array $inv, array $items): string
         $y += 2.5;
     }
 
-    return $pdf->output('Rechnung ' . $inv['invoice_number']);
+    $title = 'Rechnung ' . $inv['invoice_number'];
+    if ($customer && $inv['status'] !== 'cancelled' && setting('zugferd', '1') === '1') {
+        require_once __DIR__ . '/zugferd.php';
+        $pdf->attach('factur-x.xml', zugferd_xml($inv, $items, $customer), 'text/xml', 'Factur-X/ZUGFeRD Rechnungsdaten');
+        $pdf->setXmp(zugferd_xmp($title));
+    }
+    return $pdf->output($title);
 }

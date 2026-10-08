@@ -18,7 +18,7 @@ $routes = [
     'dashboard' => ['dashboard', 'index'],
     'customers' => ['customers', 'index'], 'customer_edit' => ['customers', 'edit'], 'customer_save' => ['customers', 'save'], 'customer_delete' => ['customers', 'delete'],
     'invoices' => ['invoices', 'index'], 'invoice_new' => ['invoices', 'edit'], 'invoice_edit' => ['invoices', 'edit'], 'invoice_save' => ['invoices', 'save'],
-    'invoice_show' => ['invoices', 'show'], 'invoice_pdf' => ['invoices', 'pdf'], 'invoice_status' => ['invoices', 'status'], 'invoice_copy' => ['invoices', 'copy'],
+    'invoice_show' => ['invoices', 'show'], 'invoice_pdf' => ['invoices', 'pdf'], 'invoice_xml' => ['invoices', 'xml'], 'invoice_status' => ['invoices', 'status'], 'invoice_copy' => ['invoices', 'copy'],
     'settings' => ['settings', 'index'], 'settings_save' => ['settings', 'save'], 'password_save' => ['settings', 'password'], 'backup' => ['settings', 'backup'], 'logo' => ['settings', 'logo'],
 ];
 $route = $_GET['r'] ?? 'dashboard';
