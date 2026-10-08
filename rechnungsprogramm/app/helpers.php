@@ -15,7 +15,7 @@ function asset_url(string $f): string {
 function url(string $route = 'dashboard', array $params = []): string {
     return base_url() . '/index.php?' . http_build_query(['r' => $route] + $params);
 }
-function redirect(string $route, array $params = []): never {
+function redirect(string $route, array $params = []) {
     header('Location: ' . url($route, $params));
     exit;
 }

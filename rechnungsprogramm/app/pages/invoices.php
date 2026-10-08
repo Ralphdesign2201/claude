@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once APP_ROOT . '/invoice_pdf.php';
 
 function invoice_load(int $id): array {
-    $st = db()->prepare('SELECT i.*, c.company, c.firstname, c.lastname FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.id = ?');
+    $st = db()->prepare('SELECT i.*, c.company, c.firstname, c.lastname, c.leitweg_id FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.id = ?');
     $st->execute([$id]);
     $inv = $st->fetch();
     if (!$inv) { flash('Rechnung nicht gefunden.', 'err'); redirect('invoices'); }
@@ -23,10 +23,13 @@ function invoice_customer(int $id): array {
 function invoices_xml(): void {
     require_once APP_ROOT . '/zugferd.php';
     $id = (int)($_GET['id'] ?? 0); $inv = invoice_load($id);
+    $xr = isset($_GET['xr']);
     if ($inv['status'] === 'cancelled') { flash('Für stornierte Rechnungen wird keine E-Rechnung erzeugt.', 'err'); redirect('invoice_show', ['id' => $id]); }
-    $xml = zugferd_xml($inv, invoice_items($id), invoice_customer((int)$inv['customer_id']));
+    $cust = invoice_customer((int)$inv['customer_id']);
+    if ($xr && ($miss = xrechnung_missing($cust))) { flash('Für die XRechnung fehlen: ' . implode(', ', $miss) . '.', 'err'); redirect('invoice_show', ['id' => $id]); }
+    $xml = zugferd_xml($inv, invoice_items($id), $cust, $xr);
     header('Content-Type: application/xml; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9_.-]/', '_', $inv['invoice_number']) . '_factur-x.xml"');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9_.-]/', '_', $inv['invoice_number']) . ($xr ? '_xrechnung.xml' : '_factur-x.xml') . '"');
     echo $xml;
 }
 

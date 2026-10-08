@@ -13,7 +13,8 @@ function zf_unit(string $u): string {
     return $m[rtrim(mb_strtolower(trim($u)), '.')] ?? 'C62';
 }
 
-function zugferd_xml(array $inv, array $items, array $customer): string
+/** $xrechnung: XRechnung 3.0 (Behörden); BuyerReference = Leitweg-ID. */
+function zugferd_xml(array $inv, array $items, array $customer, bool $xrechnung = false): string
 {
     $small = (bool)$inv['small_business'];
     $cat = fn(float $rate): string => $small ? 'E' : ($rate > 0 ? 'S' : 'Z');
@@ -68,11 +69,11 @@ function zugferd_xml(array $inv, array $items, array $customer): string
 
     return '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
     . '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100" xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">' . "\n"
-    . '<rsm:ExchangedDocumentContext><ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>urn:cen.eu:en16931:2017</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter></rsm:ExchangedDocumentContext>' . "\n"
+    . '<rsm:ExchangedDocumentContext><ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>' . ($xrechnung ? 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0' : 'urn:cen.eu:en16931:2017') . '</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter></rsm:ExchangedDocumentContext>' . "\n"
     . '<rsm:ExchangedDocument><ram:ID>' . zf_x($inv['invoice_number']) . '</ram:ID><ram:TypeCode>380</ram:TypeCode><ram:IssueDateTime><udt:DateTimeString format="102">' . zf_date($inv['invoice_date']) . '</udt:DateTimeString></ram:IssueDateTime>'
     . ($inv['notes'] !== '' ? '<ram:IncludedNote><ram:Content>' . zf_x($inv['notes']) . '</ram:Content></ram:IncludedNote>' : '') . "</rsm:ExchangedDocument>\n"
     . "<rsm:SupplyChainTradeTransaction>\n" . $lines
-    . '<ram:ApplicableHeaderTradeAgreement><ram:BuyerReference>' . zf_x($inv['subject'] !== '' ? mb_substr($inv['subject'], 0, 100) : (string)$inv['customer_id']) . '</ram:BuyerReference>'
+    . '<ram:ApplicableHeaderTradeAgreement><ram:BuyerReference>' . zf_x($xrechnung && ($customer['leitweg_id'] ?? '') !== '' ? $customer['leitweg_id'] : ($inv['subject'] !== '' ? mb_substr($inv['subject'], 0, 100) : (string)$inv['customer_id'])) . '</ram:BuyerReference>'
     . '<ram:SellerTradeParty>' . $party(setting('company') ?: setting('owner'), setting('street'), setting('zip'), setting('city'), $contact, $legal) . $sellerEmail . $taxReg . '</ram:SellerTradeParty>'
     . '<ram:BuyerTradeParty>' . $party($buyerName, $customer['street'], $customer['zip'], $customer['city']) . $buyerEmail . '</ram:BuyerTradeParty></ram:ApplicableHeaderTradeAgreement>' . "\n"
     . '<ram:ApplicableHeaderTradeDelivery><ram:ActualDeliverySupplyChainEvent><ram:OccurrenceDateTime><udt:DateTimeString format="102">' . zf_date($inv['invoice_date']) . '</udt:DateTimeString></ram:OccurrenceDateTime></ram:ActualDeliverySupplyChainEvent></ram:ApplicableHeaderTradeDelivery>' . "\n"
@@ -103,4 +104,18 @@ function zugferd_xmp(string $title): string
     . '</rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>'
     . '<rdf:Description rdf:about="" xmlns:fx="urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#"><fx:DocumentType>INVOICE</fx:DocumentType><fx:DocumentFileName>factur-x.xml</fx:DocumentFileName><fx:Version>1.0</fx:Version><fx:ConformanceLevel>EN 16931</fx:ConformanceLevel></rdf:Description>'
     . '</rdf:RDF></x:xmpmeta>' . "\n" . '<?xpacket end="w"?>';
+}
+
+/** Fehlende Pflichtangaben für XRechnung (BR-DE-Regeln) als Liste. */
+function xrechnung_missing(array $customer): array {
+    $m = [];
+    if (($customer['leitweg_id'] ?? '') === '') $m[] = 'Leitweg-ID des Kunden';
+    if (setting('company') === '' && setting('owner') === '') $m[] = 'Firmenname';
+    if (setting('street') === '' || setting('zip') === '' || setting('city') === '') $m[] = 'Firmenanschrift';
+    if (setting('phone') === '') $m[] = 'Telefon (Firmendaten)';
+    if (setting('email') === '') $m[] = 'E-Mail (Firmendaten)';
+    if (setting('vat_id') === '' && setting('tax_number') === '') $m[] = 'USt-IdNr. oder Steuernummer';
+    if (preg_replace('/\s+/', '', setting('iban')) === '') $m[] = 'IBAN';
+    if (($customer['email'] ?? '') === '') $m[] = 'E-Mail des Kunden (elektronische Adresse)';
+    return $m;
 }

@@ -4,6 +4,7 @@ require_once APP_ROOT . '/mail.php';
 require_once APP_ROOT . '/pages/invoices.php';
 require_once APP_ROOT . '/pages/offers.php';
 require_once APP_ROOT . '/pages/reminders.php';
+require_once APP_ROOT . '/pages/delivery.php';
 
 function mail_signature(): string {
     if (setting('mail_signature') !== '') return setting('mail_signature');
@@ -34,6 +35,12 @@ function mail_document(string $type, int $id): array {
         $body = $sal($c) . "\n\nanbei erhalten Sie unsere " . REMINDER_LEVELS[$r['level']] . ' zur Rechnung ' . $r['invoice_number'] . '. Der offene Gesamtbetrag von ' . money($total) . ' ist bis zum ' . date_de($r['new_due_date']) . " zu überweisen.\n\nSollten Sie bereits gezahlt haben, betrachten Sie dieses Schreiben bitte als gegenstandslos.\n\nMit freundlichen Grüßen\n\n" . mail_signature();
         return ['to' => $c['email'], 'subject' => REMINDER_LEVELS[$r['level']] . ' zu Rechnung ' . $r['invoice_number'], 'body' => $body,
             'file' => 'Mahnung_' . $r['invoice_number'] . '_Stufe' . $r['level'] . '.pdf', 'pdf' => fn() => reminder_pdf($r), 'back' => ['invoice_show', ['id' => $r['inv_id']]]];
+    }
+    if ($type === 'delivery') {
+        $dn = delivery_load($id); $c = $cust((int)$dn['customer_id']);
+        $body = $sal($c) . "\n\nanbei erhalten Sie den Lieferschein " . $dn['note_number'] . " vom " . date_de($dn['note_date']) . ".\n\nMit freundlichen Grüßen\n\n" . mail_signature();
+        return ['to' => $c['email'], 'subject' => 'Lieferschein ' . $dn['note_number'] . (setting('company') !== '' ? ' – ' . setting('company') : ''), 'body' => $body,
+            'file' => 'Lieferschein_' . $dn['note_number'] . '.pdf', 'pdf' => fn() => delivery_pdf_string($dn), 'back' => ['delivery_show', ['id' => $id]]];
     }
     flash('Unbekannter Dokumenttyp.', 'err'); redirect('dashboard');
 }

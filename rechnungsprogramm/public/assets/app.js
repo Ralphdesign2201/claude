@@ -13,10 +13,11 @@
     document.getElementById('remfee').value = this.value === '2' ? f.getAttribute('data-fee2') : this.value === '3' ? f.getAttribute('data-fee3') : '0,00';
   });
 
-  var form = document.getElementById('invform');
+  var form = document.getElementById('invform') || document.getElementById('delform');
   if (!form) return;
   var body = document.querySelector('#items tbody');
   var small = form.getAttribute('data-small') === '1';
+  var hasPrice = !!form.querySelector('.price');
 
   function num(s) {
     s = String(s || '').replace(/[€\s]/g, '');
@@ -29,6 +30,7 @@
   function grow(t) { t.style.height = 'auto'; t.style.height = Math.max(36, t.scrollHeight) + 'px'; }
 
   function recalc() {
+    if (!hasPrice) return;
     var net = 0, byRate = {};
     body.querySelectorAll('tr.item').forEach(function (tr) {
       var q = num(tr.querySelector('.qty').value), p = Math.round(num(tr.querySelector('.price').value) * 100);
@@ -52,8 +54,8 @@
   });
   document.getElementById('addrow').addEventListener('click', function () {
     var rows = body.querySelectorAll('tr.item'), tr = rows[rows.length - 1].cloneNode(true);
-    tr.querySelectorAll('textarea').forEach(function (t) { t.value = ''; });
-    tr.querySelector('.qty').value = '1'; tr.querySelector('.price').value = '0,00';
+    tr.querySelectorAll('textarea').forEach(function (t) { t.value = ''; t.style.height = ''; });
+    tr.querySelector('.qty').value = '1'; if (hasPrice) tr.querySelector('.price').value = '0,00';
     body.appendChild(tr); tr.querySelector('textarea').focus(); recalc();
   });
   body.querySelectorAll('textarea').forEach(grow);

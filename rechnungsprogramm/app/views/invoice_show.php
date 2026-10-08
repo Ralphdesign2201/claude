@@ -3,8 +3,10 @@
 <div class="actions">
 <a class="btn primary" href="<?= e(url('invoice_pdf', ['id' => $inv['id']])) ?>" target="_blank" rel="noopener">PDF ansehen</a>
 <a class="btn" href="<?= e(url('invoice_pdf', ['id' => $inv['id'], 'download' => 1])) ?>">PDF herunterladen</a>
-<?php if ($inv['status'] !== 'cancelled'): ?><a class="btn" href="<?= e(url('invoice_xml', ['id' => $inv['id']])) ?>" title="ZUGFeRD / Factur-X (EN 16931)">E-Rechnung (XML)</a><?php endif; ?>
+<?php if ($inv['status'] !== 'cancelled'): ?><a class="btn" href="<?= e(url('invoice_xml', ['id' => $inv['id']])) ?>" title="ZUGFeRD / Factur-X (EN 16931)">E-Rechnung (XML)</a>
+<?php if (!empty($inv['leitweg_id'])): ?><a class="btn" href="<?= e(url('invoice_xml', ['id' => $inv['id'], 'xr' => 1])) ?>" title="XRechnung 3.0 für Behörden">XRechnung (XML)</a><?php endif; ?><?php endif; ?>
 <?php if ($inv['status'] === 'open'): ?><a class="btn" href="<?= e(url('invoice_edit', ['id' => $inv['id']])) ?>">Bearbeiten</a><?php endif; ?>
+<a class="btn" href="<?= e(url('delivery_new', ['from_invoice' => $inv['id']])) ?>">Lieferschein erstellen</a>
 <?php if ($inv['status'] !== 'cancelled'): ?><a class="btn" href="<?= e(url('mail_new', ['type' => 'invoice', 'id' => $inv['id']])) ?>">Per E-Mail senden</a><?php endif; ?>
 <form method="post" action="<?= e(url('invoice_copy')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><button class="btn">Kopieren</button></form>
 </div></div>

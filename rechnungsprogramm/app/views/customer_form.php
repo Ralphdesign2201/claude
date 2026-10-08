@@ -12,6 +12,7 @@
 <label>Ort<input name="city" value="<?= e($c['city']) ?>"></label>
 <label>Telefon<input type="tel" name="phone" value="<?= e($c['phone']) ?>"></label>
 <label>E-Mail<input type="email" name="email" value="<?= e($c['email']) ?>"></label>
+<label class="span2">Leitweg-ID (nur für Behörden / XRechnung)<input name="leitweg_id" value="<?= e($c['leitweg_id'] ?? '') ?>" placeholder="z. B. 991-12345-67"></label>
 <label class="span2">Notizen<textarea name="notes" rows="3"><?= e($c['notes']) ?></textarea></label>
 </div>
 <p class="muted">Firma <em>oder</em> Nachname ist erforderlich.</p>

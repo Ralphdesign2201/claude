@@ -122,6 +122,29 @@ function migrate(PDO $pdo): void {
     )");
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mail_doc ON mail_log(doc_type, doc_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_rem_inv ON reminders(invoice_id)');
+    $cols = array_column($pdo->query('PRAGMA table_info(customers)')->fetchAll(), 'name');
+    if (!in_array('leitweg_id', $cols, true)) $pdo->exec("ALTER TABLE customers ADD COLUMN leitweg_id TEXT NOT NULL DEFAULT ''");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS delivery_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_number TEXT NOT NULL UNIQUE,
+        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+        customer_address TEXT NOT NULL DEFAULT '',
+        note_date TEXT NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        intro TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS delivery_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL REFERENCES delivery_notes(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL DEFAULT 0,
+        description TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 1,
+        unit TEXT NOT NULL DEFAULT ''
+    )");
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_deliv_items ON delivery_items(note_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_customer ON invoices(customer_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_status ON invoices(status, due_date)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_items_inv ON invoice_items(invoice_id)');
@@ -152,6 +175,9 @@ function next_invoice_number(PDO $pdo, string $date): string {
 }
 function next_offer_number(PDO $pdo, string $date): string {
     return next_number($pdo, 'offers', 'offer_number', setting('offer_prefix', 'AN-'), $date);
+}
+function next_delivery_number(PDO $pdo, string $date): string {
+    return next_number($pdo, 'delivery_notes', 'note_number', setting('delivery_prefix', 'LS-'), $date);
 }
 function next_number(PDO $pdo, string $table, string $col, string $prefix, string $date): string {
     $year = substr($date, 0, 4);

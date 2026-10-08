@@ -22,6 +22,7 @@
 <label class="span2 check"><input type="checkbox" name="zugferd" value="1"<?= $s['zugferd'] === '1' ? ' checked' : '' ?>> E-Rechnungsdaten (ZUGFeRD/Factur-X, EN 16931) in jedes PDF einbetten</label>
 <label>Nummern-Präfix<input name="invoice_prefix" value="<?= e($s['invoice_prefix']) ?>"><small class="muted">Ergebnis z. B. <?= e($s['invoice_prefix']) ?><?= e(date('Y')) ?>-0001</small></label>
 <label>Angebots-Präfix<input name="offer_prefix" value="<?= e($s['offer_prefix']) ?>"></label>
+<label>Lieferschein-Präfix<input name="delivery_prefix" value="<?= e($s['delivery_prefix']) ?>"></label>
 <label>Zahlungsziel (Tage)<input type="number" min="0" max="365" name="payment_days" value="<?= e($s['payment_days']) ?>"></label>
 <label class="span2">Standard-Einleitung<textarea name="default_intro" rows="2"><?= e($s['default_intro']) ?></textarea></label>
 <label class="span2">Fußtext auf der Rechnung<textarea name="footer_text" rows="2"><?= e($s['footer_text']) ?></textarea></label>

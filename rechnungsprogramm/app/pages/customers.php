@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const CUSTOMER_FIELDS = ['company', 'contact_person', 'firstname', 'lastname', 'street', 'zip', 'city', 'phone', 'email', 'notes'];
+const CUSTOMER_FIELDS = ['company', 'contact_person', 'firstname', 'lastname', 'street', 'zip', 'city', 'phone', 'email', 'leitweg_id', 'notes'];
 
 function customers_index(): void {
     $q = trim((string)($_GET['q'] ?? ''));

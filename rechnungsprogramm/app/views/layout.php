@@ -15,7 +15,9 @@
     <a href="<?= e(url('dashboard')) ?>" class="<?= $cur === 'dashboard' ? 'on' : '' ?>">Übersicht</a>
     <a href="<?= e(url('offers')) ?>" class="<?= str_starts_with($cur, 'offer') ? 'on' : '' ?>">Angebote</a>
     <a href="<?= e(url('invoices')) ?>" class="<?= str_starts_with($cur, 'invoice') || str_starts_with($cur, 'reminder') ? 'on' : '' ?>">Rechnungen</a>
+    <a href="<?= e(url('deliveries')) ?>" class="<?= str_starts_with($cur, 'deliver') ? 'on' : '' ?>">Lieferscheine</a>
     <a href="<?= e(url('customers')) ?>" class="<?= str_starts_with($cur, 'customer') ? 'on' : '' ?>">Kunden</a>
+    <a href="<?= e(url('datev')) ?>" class="<?= str_starts_with($cur, 'datev') ? 'on' : '' ?>">Export</a>
     <a href="<?= e(url('settings')) ?>" class="<?= str_starts_with($cur, 'settings') ? 'on' : '' ?>">Einstellungen</a>
     <a href="<?= e(url('logout')) ?>">Abmelden</a>
   </nav>
