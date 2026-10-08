@@ -1,4 +1,4 @@
-<div class="head"><h1>Angebote</h1><a class="btn primary" href="<?= e(url('offer_new')) ?>">+ Neues Angebot</a></div>
+<div class="head"><h1>Angebote</h1><?php if (can('offers', 'w')): ?><a class="btn primary" href="<?= e(url('offer_new')) ?>">+ Neues Angebot</a><?php endif; ?></div>
 <form method="get" class="filter"><input type="hidden" name="r" value="offers">
 <select name="status"><?php foreach (['' => 'Alle Status', 'open' => 'Offen', 'accepted' => 'Angenommen', 'declined' => 'Abgelehnt'] as $k => $l): ?><option value="<?= e($k) ?>"<?= $status === (string)$k ? ' selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select>
 <input type="search" name="q" value="<?= e($q) ?>" placeholder="Nummer, Kunde, Betreff"><button class="btn">Filtern</button></form>

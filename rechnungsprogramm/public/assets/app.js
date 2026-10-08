@@ -13,6 +13,11 @@
     document.getElementById('remfee').value = this.value === '2' ? f.getAttribute('data-fee2') : this.value === '3' ? f.getAttribute('data-fee3') : '0,00';
   });
 
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button[data-confirm]');
+    if (b && !window.confirm(b.getAttribute('data-confirm'))) e.preventDefault();
+  });
+
   var form = document.getElementById('invform') || document.getElementById('delform');
   if (!form) return;
   var body = document.querySelector('#items tbody');

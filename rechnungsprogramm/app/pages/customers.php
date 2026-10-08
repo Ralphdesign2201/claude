@@ -11,7 +11,7 @@ function customers_index(): void {
         $sql .= ' WHERE company LIKE :q OR firstname LIKE :q OR lastname LIKE :q OR city LIKE :q OR email LIKE :q OR phone LIKE :q';
         $p[':q'] = '%' . $q . '%';
     }
-    $st = db()->prepare($sql . ' ORDER BY COALESCE(NULLIF(company, \'\'), lastname) COLLATE NOCASE');
+    $st = db()->prepare($sql . ' ORDER BY ' . CUSTOMER_ORDER);
     $st->execute($p);
     render('customers', ['customers' => $st->fetchAll(), 'q' => $q], 'Kunden');
 }

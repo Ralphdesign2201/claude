@@ -9,25 +9,42 @@ Rechnungen mit Positionen, Mengen, Einheiten, 19/7/0 % USt, automatischer Nummer
 PDF nach DIN-5008-Aufbau mit Logo, Bankdaten und Fußzeile · Status offen/bezahlt/storniert (Storno-Stempel, Nummer bleibt belegt) ·
 Rechnung kopieren · **Lieferscheine** (mit Unterschriftsfeld, aus Rechnung vorbefüllbar, per E-Mail) · **DATEV-Export** (Buchungsstapel EXTF mit Rechnungen, Stornos und Zahlungseingängen, frei einstellbare Konten) und Rechnungsliste als CSV · **XRechnung 3.0** (Leitweg-ID beim Kunden, für Behörden) · **E-Rechnung (ZUGFeRD/Factur-X, Profil EN 16931)**: jedes PDF ist ein PDF/A-3 mit eingebettetem XML, zusätzlich XML-Download ·
 **Angebote** (eigener Nummernkreis, Gültigkeit, Status, mit einem Klick in Rechnung umwandeln) ·
-**Mahnwesen** (Zahlungserinnerung, 1. und 2. Mahnung als PDF, Mahngebühren, optional Verzugszinsen) · **E-Mail-Versand** von Rechnung, Angebot und Mahnung mit PDF-Anhang (SMTP mit SSL/STARTTLS oder PHP `mail()`, Versandprotokoll, Kopie an sich selbst) · Kleinunternehmer-Modus (§ 19 UStG) · Passwortschutz · Datenbank-Backup per Klick.
+**Mahnwesen** (Zahlungserinnerung, 1. und 2. Mahnung als PDF, Mahngebühren, optional Verzugszinsen) · **E-Mail-Versand** von Rechnung, Angebot und Mahnung mit PDF-Anhang (SMTP mit SSL/STARTTLS oder PHP `mail()`, Versandprotokoll, Kopie an sich selbst) · Kleinunternehmer-Modus (§ 19 UStG) · Anmeldung mit **Benutzern und frei definierbaren Rollen** (Rechte je Bereich: kein Zugriff / lesen / ändern) · **Backups** (manuell, automatisch per Cronjob täglich/wöchentlich/monatlich mit Höchstzahl, Download, Upload, Wiederherstellung) · **Umstellung SQLite ⇄ MySQL/MariaDB** in beide Richtungen.
 Anschrift und Beträge werden pro Rechnung festgehalten; Kunden mit Rechnungen sind nicht löschbar.
 
 ## Installation auf dem Webspace
 1. Ordner `rechnungsprogramm/` per FTP hochladen.
 2. Ordner `storage/` beschreibbar machen (`chmod 775`, ggf. 777).
-3. Im Browser aufrufen, Passwort festlegen, unter *Einstellungen* Firmendaten, IBAN und Logo eintragen.
+3. Im Browser aufrufen, den ersten Zugang (Administrator) anlegen, unter *Verwaltung → Einstellungen* Firmendaten, IBAN und Logo eintragen.
 
 **Besser:** Document-Root der Domain auf `public/` stellen. Zeigt der Webspace auf den Projektordner, funktioniert es auch
 (Wurzel-`index.php`); `app/` und `storage/` sind dann per `.htaccess` gesperrt (Apache/LiteSpeed).
 **Bei nginx** (keine .htaccess) `app/` und `storage/` in der Serverkonfiguration sperren – oder Document-Root auf `public/` setzen.
 
-Voraussetzungen: PHP ≥ 8.0 mit `pdo_sqlite` (Standard) und `mbstring`; `gd` empfohlen (PNG-Logos werden automatisch in JPG gewandelt).
+Voraussetzungen: PHP ≥ 8.0 mit `pdo_sqlite` (Standard) oder `pdo_mysql`, und `mbstring`; `zlib` für komprimierte Backups; `gd` empfohlen (PNG-Logos werden automatisch in JPG gewandelt).
+
+## Benutzer und Rollen
+*Verwaltung → Benutzer / Rollen*. Mitgeliefert: **Administrator** (fest, darf alles), **Büro** (alles außer Benutzer und System) und **Lesezugriff**. Eigene Rollen lassen sich anlegen, ändern und löschen
+(eine Rolle mit zugeordneten Benutzern nicht). Der letzte aktive Administrator kann weder gelöscht noch gesperrt werden. Jeder Benutzer ändert sein Passwort unter *Mein Konto*.
+Anmeldeversuche werden pro IP gebremst (5 Fehlversuche → Wartezeit).
+
+## Backups und Cronjob
+*Verwaltung → Datenbank & Backups*: Backup erstellen, herunterladen, hochladen, wiederherstellen (mit Passwortabfrage; vorher entsteht automatisch eine Sicherheitskopie).
+Ein Backup ist eine einzelne komprimierte Datei mit allen Daten und dem Logo und passt in SQLite **und** MySQL.
+Automatisch: Intervall und *maximale Anzahl* aufbewahrter Backups einstellen und beim Hoster einen Cronjob anlegen, z. B. täglich 02:00 Uhr:
+`php /pfad/zum/projekt/public/cron.php` oder als Webcron die auf der Seite angezeigte URL mit Token. Ohne Cronjob-Möglichkeit gibt es die Option „beim Seitenaufruf prüfen“.
+Die Backup-Dateien liegen in `storage/backups/` – bitte zusätzlich regelmäßig extern sichern.
+
+## Datenbank umstellen
+Standard ist SQLite (nichts einzurichten). Für MySQL/MariaDB beim Hoster eine leere Datenbank samt Benutzer anlegen, die Zugangsdaten unter *Datenbank & Backups* eintragen, „Verbindung testen“, dann umstellen.
+Alle Daten werden kopiert und zeilenweise gezählt, erst dann wird umgeschaltet; die alte Datenbank bleibt als Rückfall unverändert. Zurück auf SQLite geht ebenso.
+Die Zugangsdaten stehen in `storage/config.php` (von außen nicht lesbar). Notfall: dort `'driver' => 'sqlite'` setzen.
 
 ## Lokal testen
 `php -S localhost:8000 -t public`
 
 ## Aufbau
-`public/` (index.php, CSS/JS) · `app/` (bootstrap, helpers, db, pdf, pages, views) · `storage/` (SQLite-Datenbank, Logo, Sessions)
+`public/` (index.php, cron.php, CSS/JS) · `app/` (bootstrap, helpers, db, dbtools, auth, pdf, pages, views) · `storage/` (SQLite-Datenbank, config.php, backups, Logo, Sessions)
 · Tabellen: `customers`, `invoices`, `invoice_items`, `settings`. Beträge werden als Cent-Ganzzahlen gespeichert.
 
 ## E-Rechnung
@@ -45,4 +62,4 @@ Beim Kunden die Leitweg-ID eintragen; an der Rechnung erscheint dann „XRechnun
 Die Übermittlung an das Behördenportal (z. B. ZRE/OZG-RE) erfolgt weiterhin durch Sie.
 
 ## Noch nicht enthalten
-Eingang/Prüfung fremder E-Rechnungen, Mehrbenutzer/Rechteverwaltung, Skonto, Abschlags- und Schlussrechnungen.
+Eingang/Prüfung fremder E-Rechnungen, Skonto, Abschlags- und Schlussrechnungen.

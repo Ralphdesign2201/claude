@@ -62,33 +62,6 @@ function save_logo(string $tmp): ?string {
     return move_uploaded_file($tmp, $dest) ? null : 'Logo konnte nicht gespeichert werden.';
 }
 
-function settings_password(): void {
-    csrf_check();
-    $new = (string)($_POST['new'] ?? '');
-    if (!password_verify((string)($_POST['current'] ?? ''), setting('password_hash'))) flash('Das aktuelle Passwort ist falsch.', 'err');
-    elseif (strlen($new) < 8) flash('Das neue Passwort muss mindestens 8 Zeichen lang sein.', 'err');
-    elseif ($new !== (string)($_POST['new2'] ?? '')) flash('Die neuen Passwörter stimmen nicht überein.', 'err');
-    else { set_setting('password_hash', password_hash($new, PASSWORD_DEFAULT)); flash('Passwort geändert.'); }
-    redirect('settings');
-}
-
-/** Download einer konsistenten Kopie der Datenbank. */
-function settings_backup(): void {
-    csrf_check();
-    $tmp = APP_STORAGE . '/backup_' . bin2hex(random_bytes(6)) . '.sqlite';
-    try {
-        db()->exec("VACUUM INTO '" . str_replace("'", "''", $tmp) . "'");
-    } catch (Throwable $e) { // ältere SQLite-Version
-        db()->exec('PRAGMA wal_checkpoint(TRUNCATE)');
-        copy(APP_STORAGE . '/rechnung.sqlite', $tmp);
-    }
-    header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="rechnungen_' . date('Y-m-d') . '.sqlite"');
-    header('Content-Length: ' . filesize($tmp));
-    readfile($tmp);
-    @unlink($tmp);
-}
-
 function settings_logo(): void {
     $f = APP_STORAGE . '/logo.jpg';
     if (!is_file($f)) { http_response_code(404); exit; }

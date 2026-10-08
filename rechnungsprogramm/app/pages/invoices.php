@@ -49,7 +49,7 @@ function invoices_index(): void {
 
 function invoices_edit(): void {
     $id = (int)($_GET['id'] ?? 0);
-    $customers = db()->query("SELECT * FROM customers ORDER BY COALESCE(NULLIF(company,''), lastname) COLLATE NOCASE")->fetchAll();
+    $customers = db()->query("SELECT * FROM customers ORDER BY " . CUSTOMER_ORDER)->fetchAll();
     if (!$customers) { flash('Bitte zuerst einen Kunden anlegen.', 'err'); redirect('customer_edit'); }
     if ($id) {
         $inv = invoice_load($id);

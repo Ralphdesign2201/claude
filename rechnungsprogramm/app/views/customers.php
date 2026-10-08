@@ -1,4 +1,4 @@
-<div class="head"><h1>Kunden</h1><a class="btn primary" href="<?= e(url('customer_edit')) ?>">+ Neuer Kunde</a></div>
+<div class="head"><h1>Kunden</h1><?php if (can('customers', 'w')): ?><a class="btn primary" href="<?= e(url('customer_edit')) ?>">+ Neuer Kunde</a><?php endif; ?></div>
 <form method="get" class="filter"><input type="hidden" name="r" value="customers">
 <input type="search" name="q" value="<?= e($q) ?>" placeholder="Suchen (Name, Ort, E-Mail, Telefon)"><button class="btn">Suchen</button></form>
 <?php if (!$customers): ?><p class="muted">Keine Kunden gefunden.</p><?php else: ?>

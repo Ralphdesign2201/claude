@@ -24,7 +24,7 @@ function delivery_index(): void {
 
 function delivery_edit(): void {
     $id = (int)($_GET['id'] ?? 0);
-    $customers = db()->query("SELECT * FROM customers ORDER BY COALESCE(NULLIF(company,''), lastname) COLLATE NOCASE")->fetchAll();
+    $customers = db()->query("SELECT * FROM customers ORDER BY " . CUSTOMER_ORDER)->fetchAll();
     if (!$customers) { flash('Bitte zuerst einen Kunden anlegen.', 'err'); redirect('customer_edit'); }
     if ($id) { $d = delivery_load($id); $items = delivery_items($id); }
     else {

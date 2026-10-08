@@ -5,10 +5,10 @@
 <a class="btn" href="<?= e(url('invoice_pdf', ['id' => $inv['id'], 'download' => 1])) ?>">PDF herunterladen</a>
 <?php if ($inv['status'] !== 'cancelled'): ?><a class="btn" href="<?= e(url('invoice_xml', ['id' => $inv['id']])) ?>" title="ZUGFeRD / Factur-X (EN 16931)">E-Rechnung (XML)</a>
 <?php if (!empty($inv['leitweg_id'])): ?><a class="btn" href="<?= e(url('invoice_xml', ['id' => $inv['id'], 'xr' => 1])) ?>" title="XRechnung 3.0 für Behörden">XRechnung (XML)</a><?php endif; ?><?php endif; ?>
-<?php if ($inv['status'] === 'open'): ?><a class="btn" href="<?= e(url('invoice_edit', ['id' => $inv['id']])) ?>">Bearbeiten</a><?php endif; ?>
-<a class="btn" href="<?= e(url('delivery_new', ['from_invoice' => $inv['id']])) ?>">Lieferschein erstellen</a>
+<?php if ($inv['status'] === 'open' && can('invoices', 'w')): ?><a class="btn" href="<?= e(url('invoice_edit', ['id' => $inv['id']])) ?>">Bearbeiten</a><?php endif; ?>
+<?php if (can('deliveries', 'w')): ?><a class="btn" href="<?= e(url('delivery_new', ['from_invoice' => $inv['id']])) ?>">Lieferschein erstellen</a><?php endif; ?>
 <?php if ($inv['status'] !== 'cancelled'): ?><a class="btn" href="<?= e(url('mail_new', ['type' => 'invoice', 'id' => $inv['id']])) ?>">Per E-Mail senden</a><?php endif; ?>
-<form method="post" action="<?= e(url('invoice_copy')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><button class="btn">Kopieren</button></form>
+<?php if (can('invoices', 'w')): ?><form method="post" action="<?= e(url('invoice_copy')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><button class="btn">Kopieren</button></form><?php endif; ?>
 </div></div>
 
 <div class="card cols">
@@ -27,7 +27,7 @@
 </tbody></table></div>
 <div class="totals"><div>Netto <strong><?= e(money((int)$inv['net_amount'])) ?></strong></div><?php if (!$inv['small_business']): ?><div>Umsatzsteuer <strong><?= e(money((int)$inv['vat_amount'])) ?></strong></div><?php endif; ?><div class="big">Gesamt <strong><?= e(money((int)$inv['gross_amount'])) ?></strong></div></div>
 
-<?php if ($inv['status'] !== 'cancelled'): ?>
+<?php if ($inv['status'] !== 'cancelled' && can('invoices', 'w')): ?>
 <div class="card"><h3>Zahlungsstatus</h3><div class="actions">
 <?php if ($inv['status'] === 'open'): ?>
 <form method="post" action="<?= e(url('invoice_status')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><input type="hidden" name="action" value="paid">
@@ -40,7 +40,7 @@
 </div></div>
 <?php endif; ?>
 
-<?php if ($reminders || $inv['status'] === 'open'): ?>
+<?php if ($reminders || ($inv['status'] === 'open' && can('invoices', 'w'))): ?>
 <div class="card"><h3>Mahnwesen</h3>
 <?php if ($reminders): ?>
 <table><thead><tr><th>Stufe</th><th>Datum</th><th>Neue Frist</th><th class="r">Gesamt</th><th></th></tr></thead><tbody>
@@ -50,7 +50,7 @@
 <form method="post" action="<?= e(url('reminder_delete')) ?>" class="inline" data-confirm="Mahnung löschen?"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn ghost">Löschen</button></form></td></tr><?php endforeach; ?>
 </tbody></table>
 <?php endif; ?>
-<?php if ($inv['status'] === 'open'):
+<?php if ($inv['status'] === 'open' && can('invoices', 'w')):
   $next = $reminders ? min(3, (int)max(array_column($reminders, 'level')) + 1) : 1; ?>
 <form method="post" action="<?= e(url('reminder_save')) ?>" class="grid" id="remform" data-fee2="<?= e(setting('reminder_fee_2', '0,00') ?: '0,00') ?>" data-fee3="<?= e(setting('reminder_fee_3', '0,00') ?: '0,00') ?>">
 <?= csrf_field() ?><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>">

@@ -1,4 +1,4 @@
-<div class="head"><h1>Rechnungen</h1><a class="btn primary" href="<?= e(url('invoice_new')) ?>">+ Neue Rechnung</a></div>
+<div class="head"><h1>Rechnungen</h1><?php if (can('invoices', 'w')): ?><a class="btn primary" href="<?= e(url('invoice_new')) ?>">+ Neue Rechnung</a><?php endif; ?></div>
 <form method="get" class="filter"><input type="hidden" name="r" value="invoices">
 <select name="status"><?php foreach (['' => 'Alle Status', 'open' => 'Offen', 'overdue' => 'Überfällig', 'paid' => 'Bezahlt', 'cancelled' => 'Storniert'] as $k => $l): ?><option value="<?= e($k) ?>"<?= $status === (string)$k ? ' selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select>
 <select name="year"><option value="">Alle Jahre</option><?php foreach ($years as $y): ?><option<?= $year === $y ? ' selected' : '' ?>><?= e($y) ?></option><?php endforeach; ?></select>

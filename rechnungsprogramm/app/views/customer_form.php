@@ -16,8 +16,8 @@
 <label class="span2">Notizen<textarea name="notes" rows="3"><?= e($c['notes']) ?></textarea></label>
 </div>
 <p class="muted">Firma <em>oder</em> Nachname ist erforderlich.</p>
-<div class="actions"><button class="btn primary">Speichern</button>
-<?php if (!$c['id']): ?><button class="btn" name="then_invoice" value="1">Speichern &amp; Rechnung erstellen</button><?php endif; ?>
+<div class="actions"><?php if (can('customers', 'w')): ?><button class="btn primary">Speichern</button>
+<?php if (!$c['id']): ?><button class="btn" name="then_invoice" value="1">Speichern &amp; Rechnung erstellen</button><?php endif; ?><?php endif; ?>
 <a class="btn ghost" href="<?= e(url('customers')) ?>">Abbrechen</a></div>
 </form>
 <?php if ($c['id']): ?>

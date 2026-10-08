@@ -27,7 +27,7 @@ function offers_index(): void {
 
 function offers_edit(): void {
     $id = (int)($_GET['id'] ?? 0);
-    $customers = db()->query("SELECT * FROM customers ORDER BY COALESCE(NULLIF(company,''), lastname) COLLATE NOCASE")->fetchAll();
+    $customers = db()->query("SELECT * FROM customers ORDER BY " . CUSTOMER_ORDER)->fetchAll();
     if (!$customers) { flash('Bitte zuerst einen Kunden anlegen.', 'err'); redirect('customer_edit'); }
     if ($id) {
         $o = offer_load($id);
@@ -123,6 +123,7 @@ function offers_status(): void {
 /** Angebot in eine Rechnung übernehmen (Positionen werden kopiert, Angebot gilt als angenommen). */
 function offers_to_invoice(): void {
     csrf_check();
+    require_can('invoices', 'w');
     $id = (int)($_POST['id'] ?? 0); $o = offer_load($id); $pdo = db();
     if ($o['invoice_id']) redirect('invoice_show', ['id' => $o['invoice_id']]);
     $cs = $pdo->prepare('SELECT * FROM customers WHERE id = ?'); $cs->execute([$o['customer_id']]); $cust = $cs->fetch();

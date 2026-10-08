@@ -81,12 +81,12 @@ function setting(string $key, string $default = ''): string {
     static $cache = null;
     if ($cache === null) {
         $cache = [];
-        foreach (db()->query('SELECT key, value FROM settings') as $r) $cache[$r['key']] = (string)$r['value'];
+        foreach (db()->query('SELECT name, value FROM settings') as $r) $cache[$r['name']] = (string)$r['value'];
     }
     return $cache[$key] ?? $default;
 }
 function set_setting(string $key, string $value): void {
-    db()->prepare('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')->execute([$key, $value]);
+    db_set(db(), $key, $value);
 }
 
 // ---- Rechnungsberechnung ----
@@ -117,16 +117,12 @@ function is_overdue(array $inv): bool {
     return $inv['status'] === 'open' && $inv['due_date'] < date('Y-m-d');
 }
 
-// ---- Auth ----
-function logged_in(): bool { return !empty($_SESSION['uid']); }
-function require_login(): void { if (!logged_in()) redirect('login'); }
-
 function render(string $view, array $vars = [], string $title = ''): void {
     extract($vars);
     ob_start();
     require APP_ROOT . '/views/' . $view . '.php';
     $content = ob_get_clean();
-    require APP_ROOT . '/views/layout.php';
+    require APP_ROOT . '/views/' . (in_array($view, ['login', 'setup'], true) ? 'layout_auth' : 'layout') . '.php';
 }
 
 const REMINDER_LEVELS = [1 => 'Zahlungserinnerung', 2 => '1. Mahnung', 3 => '2. Mahnung (letzte Mahnung)'];

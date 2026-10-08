@@ -1,154 +1,161 @@
 <?php
 declare(strict_types=1);
 
-function db(): PDO {
-    static $pdo = null;
-    if ($pdo) return $pdo;
-    if (!extension_loaded('pdo_sqlite')) {
-        http_response_code(500);
-        exit('PHP-Erweiterung pdo_sqlite fehlt. Bitte beim Hoster aktivieren.');
+const SCHEMA_VERSION = '3';
+
+// ---------------------------------------------------------------------------------------------
+// Konfiguration (storage/config.php): Treiber sqlite|mysql
+// ---------------------------------------------------------------------------------------------
+function app_config(bool $reload = false): array {
+    static $cfg = null;
+    if ($cfg === null || $reload) {
+        $cfg = ['driver' => 'sqlite', 'mysql' => ['host' => 'localhost', 'port' => 3306, 'name' => '', 'user' => '', 'pass' => '']];
+        $f = APP_STORAGE . '/config.php';
+        if (is_file($f)) { $c = include $f; if (is_array($c)) $cfg = array_replace_recursive($cfg, $c); }
     }
+    return $cfg;
+}
+function save_config(array $cfg): void {
+    $f = APP_STORAGE . '/config.php';
+    $code = "<?php\n// automatisch erzeugt – nicht von Hand ändern\nreturn " . var_export($cfg, true) . ";\n";
+    $tmp = $f . '.tmp' . bin2hex(random_bytes(3));
+    if (file_put_contents($tmp, $code, LOCK_EX) === false || !rename($tmp, $f)) throw new RuntimeException('config.php konnte nicht geschrieben werden.');
+    @chmod($f, 0600);
+    if (function_exists('opcache_invalidate')) @opcache_invalidate($f, true);
+    app_config(true);
+}
+
+function db_driver(?PDO $pdo = null): string { return ($pdo ?? db())->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'mysql' : 'sqlite'; }
+
+/** Öffnet eine Verbindung (ohne Schema-Prüfung). $cfg: ['driver' => ..., 'mysql' => [...]] */
+function db_connect(array $cfg): PDO {
+    $opts = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC];
+    if (($cfg['driver'] ?? 'sqlite') === 'mysql') {
+        if (!extension_loaded('pdo_mysql')) throw new RuntimeException('PHP-Erweiterung pdo_mysql fehlt. Bitte beim Hoster aktivieren.');
+        $m = $cfg['mysql'];
+        $pdo = new PDO('mysql:host=' . $m['host'] . ';port=' . (int)$m['port'] . ';dbname=' . $m['name'] . ';charset=utf8mb4', $m['user'], $m['pass'], $opts + [PDO::ATTR_TIMEOUT => 8]);
+        $pdo->exec("SET NAMES utf8mb4");
+        $pdo->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION'");
+        return $pdo;
+    }
+    if (!extension_loaded('pdo_sqlite')) throw new RuntimeException('PHP-Erweiterung pdo_sqlite fehlt. Bitte beim Hoster aktivieren.');
     if (!is_dir(APP_STORAGE)) @mkdir(APP_STORAGE, 0755, true);
-    if (!is_writable(APP_STORAGE)) {
-        http_response_code(500);
-        exit('Der Ordner storage/ ist nicht beschreibbar. Bitte Schreibrechte (chmod 775) setzen.');
-    }
-    $pdo = new PDO('sqlite:' . APP_STORAGE . '/rechnung.sqlite', null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
+    if (!is_writable(APP_STORAGE)) throw new RuntimeException('Der Ordner storage/ ist nicht beschreibbar. Bitte Schreibrechte (chmod 775) setzen.');
+    $pdo = new PDO('sqlite:' . APP_STORAGE . '/rechnung.sqlite', null, null, $opts);
     $pdo->exec('PRAGMA foreign_keys = ON');
     $pdo->exec('PRAGMA busy_timeout = 5000');
-    migrate($pdo);
     return $pdo;
 }
 
-function migrate(PDO $pdo): void {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS customers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        company TEXT NOT NULL DEFAULT '',
-        contact_person TEXT NOT NULL DEFAULT '',
-        firstname TEXT NOT NULL DEFAULT '',
-        lastname TEXT NOT NULL DEFAULT '',
-        street TEXT NOT NULL DEFAULT '',
-        zip TEXT NOT NULL DEFAULT '',
-        city TEXT NOT NULL DEFAULT '',
-        phone TEXT NOT NULL DEFAULT '',
-        email TEXT NOT NULL DEFAULT '',
-        notes TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS invoices (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        invoice_number TEXT NOT NULL UNIQUE,
-        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
-        customer_address TEXT NOT NULL DEFAULT '',
-        invoice_date TEXT NOT NULL,
-        due_date TEXT NOT NULL,
-        service_date TEXT NOT NULL DEFAULT '',
-        subject TEXT NOT NULL DEFAULT '',
-        intro TEXT NOT NULL DEFAULT '',
-        notes TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid','cancelled')),
-        paid_date TEXT,
-        cancelled_at TEXT,
-        cancel_reason TEXT NOT NULL DEFAULT '',
-        net_amount INTEGER NOT NULL DEFAULT 0,
-        vat_amount INTEGER NOT NULL DEFAULT 0,
-        gross_amount INTEGER NOT NULL DEFAULT 0,
-        small_business INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS invoice_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-        position INTEGER NOT NULL DEFAULT 0,
-        description TEXT NOT NULL,
-        quantity REAL NOT NULL DEFAULT 1,
-        unit TEXT NOT NULL DEFAULT '',
-        unit_price INTEGER NOT NULL DEFAULT 0,
-        vat_rate REAL NOT NULL DEFAULT 19,
-        total INTEGER NOT NULL DEFAULT 0
-    )");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS reminders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-        level INTEGER NOT NULL CHECK (level BETWEEN 1 AND 3),
-        reminder_date TEXT NOT NULL,
-        new_due_date TEXT NOT NULL,
-        open_amount INTEGER NOT NULL,
-        fee INTEGER NOT NULL DEFAULT 0,
-        interest INTEGER NOT NULL DEFAULT 0,
-        text TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS offers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        offer_number TEXT NOT NULL UNIQUE,
-        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
-        customer_address TEXT NOT NULL DEFAULT '',
-        offer_date TEXT NOT NULL,
-        valid_until TEXT NOT NULL,
-        subject TEXT NOT NULL DEFAULT '',
-        intro TEXT NOT NULL DEFAULT '',
-        notes TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','accepted','declined')),
-        invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
-        net_amount INTEGER NOT NULL DEFAULT 0,
-        vat_amount INTEGER NOT NULL DEFAULT 0,
-        gross_amount INTEGER NOT NULL DEFAULT 0,
-        small_business INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS offer_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        offer_id INTEGER NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
-        position INTEGER NOT NULL DEFAULT 0,
-        description TEXT NOT NULL,
-        quantity REAL NOT NULL DEFAULT 1,
-        unit TEXT NOT NULL DEFAULT '',
-        unit_price INTEGER NOT NULL DEFAULT 0,
-        vat_rate REAL NOT NULL DEFAULT 19,
-        total INTEGER NOT NULL DEFAULT 0
-    )");
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_offer_items ON offer_items(offer_id)');
-    $pdo->exec("CREATE TABLE IF NOT EXISTS mail_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        doc_type TEXT NOT NULL, doc_id INTEGER NOT NULL,
-        recipient TEXT NOT NULL, subject TEXT NOT NULL,
-        ok INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '',
-        sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )");
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mail_doc ON mail_log(doc_type, doc_id)');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_rem_inv ON reminders(invoice_id)');
-    $cols = array_column($pdo->query('PRAGMA table_info(customers)')->fetchAll(), 'name');
-    if (!in_array('leitweg_id', $cols, true)) $pdo->exec("ALTER TABLE customers ADD COLUMN leitweg_id TEXT NOT NULL DEFAULT ''");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS delivery_notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        note_number TEXT NOT NULL UNIQUE,
-        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
-        customer_address TEXT NOT NULL DEFAULT '',
-        note_date TEXT NOT NULL,
-        subject TEXT NOT NULL DEFAULT '',
-        intro TEXT NOT NULL DEFAULT '',
-        notes TEXT NOT NULL DEFAULT '',
-        invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS delivery_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        note_id INTEGER NOT NULL REFERENCES delivery_notes(id) ON DELETE CASCADE,
-        position INTEGER NOT NULL DEFAULT 0,
-        description TEXT NOT NULL,
-        quantity REAL NOT NULL DEFAULT 1,
-        unit TEXT NOT NULL DEFAULT ''
-    )");
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_deliv_items ON delivery_items(note_id)');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_customer ON invoices(customer_id)');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_status ON invoices(status, due_date)');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_items_inv ON invoice_items(invoice_id)');
+function db(): PDO {
+    static $pdo = null;
+    if ($pdo) return $pdo;
+    try {
+        $pdo = db_connect(app_config());
+        $ready = false;
+        try { $st = $pdo->query("SELECT value FROM settings WHERE name = 'schema_version'"); $ready = $st && $st->fetchColumn() === SCHEMA_VERSION; } catch (Throwable $e) {}
+        if (!$ready) migrate($pdo);
+    } catch (Throwable $e) {
+        error_log('DB: ' . $e->getMessage());
+        http_response_code(500);
+        exit('Datenbankfehler: ' . htmlspecialchars($e->getMessage()) . (app_config()['driver'] === 'mysql' ? '<br>Zugangsdaten stehen in storage/config.php (zurück auf SQLite: Zeile „driver“ auf sqlite setzen).' : ''));
+    }
+    return $pdo;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Schema (für beide Treiber). Typen: pk, int, real, ts, date, str:N (mit Default ''), sdate (nullable date)
+// ---------------------------------------------------------------------------------------------
+function db_schema(): array {
+    $addr = 'str:600'; $txt = 'str:2000';
+    return [
+        'settings' => ['pk' => 'name', 'cols' => ['name' => 'str:64', 'value' => 'str:4000']],
+        'roles' => ['cols' => ['id' => 'pk', 'name' => 'str:60!', 'permissions' => 'str:2000', 'is_system' => 'int']],
+        'users' => ['cols' => ['id' => 'pk', 'username' => 'str:60!', 'display_name' => 'str:120', 'email' => 'str:190', 'password_hash' => 'str:255',
+            'role_id' => 'int>roles:RESTRICT', 'active' => 'int', 'created_at' => 'ts', 'last_login' => 'ts?']],
+        'customers' => ['cols' => ['id' => 'pk', 'company' => 'str:190', 'contact_person' => 'str:190', 'firstname' => 'str:120', 'lastname' => 'str:120', 'street' => 'str:190',
+            'zip' => 'str:20', 'city' => 'str:120', 'phone' => 'str:60', 'email' => 'str:190', 'leitweg_id' => 'str:60', 'notes' => $txt, 'created_at' => 'ts']],
+        'invoices' => ['cols' => ['id' => 'pk', 'invoice_number' => 'str:50!', 'customer_id' => 'int>customers:RESTRICT', 'customer_address' => $addr,
+            'invoice_date' => 'date', 'due_date' => 'date', 'service_date' => 'str:100', 'subject' => 'str:255', 'intro' => $txt, 'notes' => $txt,
+            'status' => 'str:12', 'paid_date' => 'date?', 'cancelled_at' => 'date?', 'cancel_reason' => 'str:255',
+            'net_amount' => 'int', 'vat_amount' => 'int', 'gross_amount' => 'int', 'small_business' => 'int', 'created_at' => 'ts'],
+            'index' => [['customer_id'], ['status', 'due_date']]],
+        'invoice_items' => ['cols' => ['id' => 'pk', 'invoice_id' => 'int>invoices:CASCADE', 'position' => 'int', 'description' => $txt, 'quantity' => 'real', 'unit' => 'str:30',
+            'unit_price' => 'int', 'vat_rate' => 'real', 'total' => 'int']],
+        'reminders' => ['cols' => ['id' => 'pk', 'invoice_id' => 'int>invoices:CASCADE', 'level' => 'int', 'reminder_date' => 'date', 'new_due_date' => 'date',
+            'open_amount' => 'int', 'fee' => 'int', 'interest' => 'int', 'text' => $txt, 'created_at' => 'ts']],
+        'offers' => ['cols' => ['id' => 'pk', 'offer_number' => 'str:50!', 'customer_id' => 'int>customers:RESTRICT', 'customer_address' => $addr, 'offer_date' => 'date', 'valid_until' => 'date',
+            'subject' => 'str:255', 'intro' => $txt, 'notes' => $txt, 'status' => 'str:12', 'invoice_id' => 'int?>invoices:SET NULL',
+            'net_amount' => 'int', 'vat_amount' => 'int', 'gross_amount' => 'int', 'small_business' => 'int', 'created_at' => 'ts']],
+        'offer_items' => ['cols' => ['id' => 'pk', 'offer_id' => 'int>offers:CASCADE', 'position' => 'int', 'description' => $txt, 'quantity' => 'real', 'unit' => 'str:30',
+            'unit_price' => 'int', 'vat_rate' => 'real', 'total' => 'int']],
+        'delivery_notes' => ['cols' => ['id' => 'pk', 'note_number' => 'str:50!', 'customer_id' => 'int>customers:RESTRICT', 'customer_address' => $addr, 'note_date' => 'date',
+            'subject' => 'str:255', 'intro' => $txt, 'notes' => $txt, 'invoice_id' => 'int?>invoices:SET NULL', 'created_at' => 'ts']],
+        'delivery_items' => ['cols' => ['id' => 'pk', 'note_id' => 'int>delivery_notes:CASCADE', 'position' => 'int', 'description' => $txt, 'quantity' => 'real', 'unit' => 'str:30']],
+        'mail_log' => ['cols' => ['id' => 'pk', 'doc_type' => 'str:20', 'doc_id' => 'int', 'recipient' => 'str:190', 'subject' => 'str:255', 'ok' => 'int', 'error' => 'str:500', 'sent_at' => 'ts'],
+            'index' => [['doc_type', 'doc_id']]],
+    ];
+}
+/** Tabellen in einer Reihenfolge, in der Eltern vor Kindern stehen. */
+function db_tables(): array { return array_keys(db_schema()); }
+
+function migrate(PDO $pdo): void {
+    $my = db_driver($pdo) === 'mysql';
+    foreach (db_schema() as $table => $def) {
+        $cols = []; $fks = []; $idx = [];
+        foreach ($def['cols'] as $name => $type) {
+            $null = false; $ref = null;
+            if (str_contains($type, '>')) { [$type, $ref] = explode('>', $type, 2); }
+            if (str_ends_with($type, '?')) { $null = true; $type = rtrim($type, '?'); }
+            $unique = false; if (str_ends_with($type, '!')) { $unique = true; $type = rtrim($type, '!'); }
+            $isPk = ($type === 'pk') || (($def['pk'] ?? '') === $name);
+            if ($type === 'pk') $sql = $my ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
+            else {
+                if (str_starts_with($type, 'str:')) { $n = (int)substr($type, 4); $t = $my ? "VARCHAR($n)" : 'TEXT'; $d = " NOT NULL DEFAULT ''"; }
+                elseif ($type === 'int') { $t = $my ? 'BIGINT' : 'INTEGER'; $d = ' NOT NULL DEFAULT 0'; }
+                elseif ($type === 'real') { $t = $my ? 'DOUBLE' : 'REAL'; $d = ' NOT NULL DEFAULT 0'; }
+                elseif ($type === 'date') { $t = $my ? 'VARCHAR(10)' : 'TEXT'; $d = ' NOT NULL'; }
+                elseif ($type === 'ts') { $t = $my ? 'DATETIME' : 'TEXT'; $d = ' NOT NULL DEFAULT CURRENT_TIMESTAMP'; }
+                else throw new LogicException("Typ $type");
+                if ($name === 'status') $d = " NOT NULL DEFAULT 'open'";
+                if ($null) $d = ' NULL';
+                if ($ref !== null && $my && $type === 'int') $t = 'INT'; // gleicher Typ wie Primärschlüssel
+                $sql = $t . $d . ($unique ? ' UNIQUE' : '') . ($isPk ? ' PRIMARY KEY' : '');
+                if ($ref !== null) {
+                    [$rt, $act] = explode(':', $ref);
+                    if ($my) $fks[] = "FOREIGN KEY ($name) REFERENCES $rt(id) ON DELETE $act";
+                    else $sql .= " REFERENCES $rt(id) ON DELETE $act";
+                }
+            }
+            $cols[] = "$name $sql";
+        }
+        if ($table === 'invoices') $cols[] = "CHECK (status IN ('open','paid','cancelled'))";
+        if ($table === 'offers') $cols[] = "CHECK (status IN ('open','accepted','declined'))";
+        if ($table === 'reminders') $cols[] = 'CHECK (level BETWEEN 1 AND 3)';
+        foreach ($def['index'] ?? [] as $i) $idx[] = $i;
+        foreach (['customer_id', 'invoice_id', 'offer_id', 'note_id', 'role_id'] as $fk) if (isset($def['cols'][$fk]) && !in_array([$fk], $idx, true)) $idx[] = [$fk];
+        $ddl = "CREATE TABLE IF NOT EXISTS $table (\n  " . implode(",\n  ", array_merge($cols, $my ? $fks : [])) . "\n)" . ($my ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' : '');
+        $pdo->exec($ddl);
+        if (!$my) foreach ($idx as $i) $pdo->exec('CREATE INDEX IF NOT EXISTS idx_' . $table . '_' . implode('_', $i) . " ON $table(" . implode(', ', $i) . ')');
+    }
+    if ($my) { // Zusatzindizes (MySQL hat kein IF NOT EXISTS für Indizes)
+        foreach (['invoices' => [['status', 'due_date']], 'mail_log' => [['doc_type', 'doc_id']]] as $t => $list) foreach ($list as $i) {
+            $name = 'idx_' . $t . '_' . implode('_', $i);
+            $st = $pdo->prepare('SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?');
+            $st->execute([$t, $name]);
+            if (!(int)$st->fetchColumn()) $pdo->exec("CREATE INDEX $name ON $t(" . implode(', ', $i) . ')');
+        }
+    }
+    db_set($pdo, 'schema_version', SCHEMA_VERSION);
+}
+
+/** Einstellung schreiben (portabler Upsert). */
+function db_set(PDO $pdo, string $key, string $value): void {
+    if (db_driver($pdo) === 'mysql') $pdo->prepare('INSERT INTO settings(name, value) VALUES(?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)')->execute([$key, $value]);
+    else $pdo->prepare('INSERT INTO settings(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value')->execute([$key, $value]);
+}
+/** Sortierausdruck „Firma, sonst Nachname“ ohne Groß-/Kleinschreibung (portabel). */
+const CUSTOMER_ORDER = "LOWER(COALESCE(NULLIF(company, ''), lastname))";
 
 function customer_name(array $c): string {
     if ($c['company'] !== '') return $c['company'];

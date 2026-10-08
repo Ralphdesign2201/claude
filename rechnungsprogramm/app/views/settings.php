@@ -1,3 +1,4 @@
+<?php $adminTab = 'settings'; require __DIR__ . '/_admin_tabs.php'; ?>
 <div class="head"><h1>Einstellungen</h1></div>
 <form method="post" action="<?= e(url('settings_save')) ?>" enctype="multipart/form-data" class="card">
 <?= csrf_field() ?>
@@ -52,15 +53,5 @@
 <div class="actions"><button class="btn primary">Speichern</button></div>
 </form>
 
-<div class="card"><h2>Passwort ändern</h2>
-<form method="post" action="<?= e(url('password_save')) ?>" class="grid"><?= csrf_field() ?>
-<label>Aktuelles Passwort<input type="password" name="current" required autocomplete="current-password"></label><span></span>
-<label>Neues Passwort<input type="password" name="new" required minlength="8" autocomplete="new-password"></label>
-<label>Wiederholen<input type="password" name="new2" required minlength="8" autocomplete="new-password"></label>
-<div><button class="btn">Passwort ändern</button></div></form></div>
-
 <div class="card"><h2>E-Mail testen</h2><p class="muted">Sendet eine Testnachricht an die Absender-Adresse (erst Einstellungen speichern).</p>
 <form method="post" action="<?= e(url('mail_test')) ?>"><?= csrf_field() ?><button class="btn">Testmail senden</button></form></div>
-
-<div class="card"><h2>Datensicherung</h2><p class="muted">Lädt die komplette Datenbank (Kunden, Rechnungen, Einstellungen) herunter. Bitte regelmäßig sichern.</p>
-<form method="post" action="<?= e(url('backup')) ?>"><?= csrf_field() ?><button class="btn">Datenbank herunterladen</button></form></div>
