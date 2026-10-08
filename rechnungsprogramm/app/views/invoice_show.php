@@ -1,0 +1,37 @@
+<?php $od = is_overdue($inv); $name = $inv['company'] !== '' ? $inv['company'] : trim($inv['firstname'] . ' ' . $inv['lastname']); ?>
+<div class="head"><h1>Rechnung <?= e($inv['invoice_number']) ?> <span class="badge <?= $inv['status'] ?><?= $od ? ' overdue' : '' ?>"><?= e(status_label($inv['status'], $od)) ?></span></h1>
+<div class="actions">
+<a class="btn primary" href="<?= e(url('invoice_pdf', ['id' => $inv['id']])) ?>" target="_blank" rel="noopener">PDF ansehen</a>
+<a class="btn" href="<?= e(url('invoice_pdf', ['id' => $inv['id'], 'download' => 1])) ?>">PDF herunterladen</a>
+<?php if ($inv['status'] === 'open'): ?><a class="btn" href="<?= e(url('invoice_edit', ['id' => $inv['id']])) ?>">Bearbeiten</a><?php endif; ?>
+<form method="post" action="<?= e(url('invoice_copy')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><button class="btn">Kopieren</button></form>
+</div></div>
+
+<div class="card cols">
+<div><h3>Kunde</h3><p><a href="<?= e(url('customer_edit', ['id' => $inv['customer_id']])) ?>"><?= e($name) ?></a></p><pre><?= e($inv['customer_address']) ?></pre></div>
+<div><h3>Daten</h3><dl>
+<dt>Rechnungsdatum</dt><dd><?= e(date_de($inv['invoice_date'])) ?></dd>
+<dt>Zahlbar bis</dt><dd><?= e(date_de($inv['due_date'])) ?></dd>
+<?php if ($inv['service_date'] !== ''): ?><dt>Leistung</dt><dd><?= e($inv['service_date']) ?></dd><?php endif; ?>
+<?php if ($inv['paid_date']): ?><dt>Bezahlt am</dt><dd><?= e(date_de($inv['paid_date'])) ?></dd><?php endif; ?>
+<?php if ($inv['cancelled_at']): ?><dt>Storniert am</dt><dd><?= e(date_de($inv['cancelled_at'])) ?><?= $inv['cancel_reason'] !== '' ? ' – ' . e($inv['cancel_reason']) : '' ?></dd><?php endif; ?>
+</dl></div></div>
+
+<?php if ($inv['subject'] !== ''): ?><p><strong><?= e($inv['subject']) ?></strong></p><?php endif; ?>
+<div class="tablewrap"><table><thead><tr><th>Pos.</th><th>Beschreibung</th><th class="r">Menge</th><th>Einheit</th><th class="r">Einzelpreis</th><?php if (!$inv['small_business']): ?><th class="r">USt</th><?php endif; ?><th class="r">Netto</th></tr></thead><tbody>
+<?php foreach ($items as $n => $it): ?><tr><td><?= $n + 1 ?></td><td class="pre"><?= e($it['description']) ?></td><td class="r"><?= e(qty_fmt((float)$it['quantity'])) ?></td><td><?= e($it['unit']) ?></td><td class="r"><?= e(money((int)$it['unit_price'])) ?></td><?php if (!$inv['small_business']): ?><td class="r"><?= e(qty_fmt((float)$it['vat_rate'])) ?> %</td><?php endif; ?><td class="r"><?= e(money((int)$it['total'])) ?></td></tr><?php endforeach; ?>
+</tbody></table></div>
+<div class="totals"><div>Netto <strong><?= e(money((int)$inv['net_amount'])) ?></strong></div><?php if (!$inv['small_business']): ?><div>Umsatzsteuer <strong><?= e(money((int)$inv['vat_amount'])) ?></strong></div><?php endif; ?><div class="big">Gesamt <strong><?= e(money((int)$inv['gross_amount'])) ?></strong></div></div>
+
+<?php if ($inv['status'] !== 'cancelled'): ?>
+<div class="card"><h3>Zahlungsstatus</h3><div class="actions">
+<?php if ($inv['status'] === 'open'): ?>
+<form method="post" action="<?= e(url('invoice_status')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><input type="hidden" name="action" value="paid">
+<label class="inline">Bezahlt am <input type="date" name="paid_date" value="<?= e(date('Y-m-d')) ?>"></label><button class="btn primary">Als bezahlt markieren</button></form>
+<?php else: ?>
+<form method="post" action="<?= e(url('invoice_status')) ?>" class="inline" data-confirm="Rechnung wieder auf „offen“ setzen?"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><input type="hidden" name="action" value="reopen"><button class="btn">Wieder auf offen setzen</button></form>
+<?php endif; ?>
+<form method="post" action="<?= e(url('invoice_status')) ?>" class="inline" data-confirm="Rechnung wirklich stornieren? Das kann nicht rückgängig gemacht werden."><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><input type="hidden" name="action" value="cancel">
+<input name="reason" placeholder="Stornogrund (optional)"><button class="btn danger">Stornieren</button></form>
+</div></div>
+<?php endif; ?>
