@@ -1,13 +1,15 @@
 <?php
 declare(strict_types=1);
 
-const SETTING_FIELDS = ['company', 'owner', 'street', 'zip', 'city', 'phone', 'email', 'website', 'tax_number', 'vat_id', 'bank', 'iban', 'bic', 'invoice_prefix', 'offer_prefix', 'payment_days', 'default_intro', 'footer_text', 'reminder_fee_2', 'reminder_fee_3', 'interest_rate'];
+const SETTING_FIELDS = ['company', 'owner', 'street', 'zip', 'city', 'phone', 'email', 'website', 'tax_number', 'vat_id', 'bank', 'iban', 'bic', 'invoice_prefix', 'offer_prefix', 'payment_days', 'default_intro', 'footer_text', 'reminder_fee_2', 'reminder_fee_3', 'interest_rate', 'mail_mode', 'mail_from', 'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'mail_signature'];
 
 function settings_index(): void {
     $s = []; foreach (SETTING_FIELDS as $f) $s[$f] = setting($f);
     $s['offer_prefix'] = setting('offer_prefix', 'AN-');
     $s['small_business'] = setting('small_business');
     $s['zugferd'] = setting('zugferd', '1');
+    $s['mail_mode'] = setting('mail_mode', 'mail'); $s['smtp_secure'] = setting('smtp_secure', 'tls'); $s['smtp_port'] = setting('smtp_port', '587');
+    $s['mail_copy'] = setting('mail_copy', '1'); $s['has_smtp_pass'] = setting('smtp_pass') !== '';
     render('settings', ['s' => $s, 'hasLogo' => is_file(APP_STORAGE . '/logo.jpg'), 'gd' => extension_loaded('gd')], 'Einstellungen');
 }
 
@@ -19,9 +21,14 @@ function settings_save(): void {
         if (in_array($f, ['reminder_fee_2', 'reminder_fee_3', 'interest_rate'], true)) $v = $v === '' ? '' : number_format(max(0, parse_decimal($v)), 2, ',', '');
         if ($f === 'payment_days') $v = (string)max(0, min(365, (int)$v));
         if ($f === 'invoice_prefix' || $f === 'offer_prefix') $v = preg_replace('/[^A-Za-z0-9\-_\/]/', '', $v);
+        if ($f === 'mail_mode' && !in_array($v, ['mail', 'smtp'], true)) $v = 'mail';
+        if ($f === 'smtp_secure' && !in_array($v, ['tls', 'ssl', 'none'], true)) $v = 'tls';
         set_setting($f, $v);
     }
     set_setting('small_business', isset($_POST['small_business']) ? '1' : '0');
+    if (post('smtp_pass') !== '') set_setting('smtp_pass', post('smtp_pass'));
+    if (isset($_POST['clear_smtp_pass'])) set_setting('smtp_pass', '');
+    set_setting('mail_copy', isset($_POST['mail_copy']) ? '1' : '0');
     set_setting('zugferd', isset($_POST['zugferd']) ? '1' : '0');
 
     if (isset($_POST['remove_logo'])) @unlink(APP_STORAGE . '/logo.jpg');

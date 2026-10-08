@@ -90,13 +90,18 @@ function offers_save(): void {
 
 function offers_show(): void {
     $id = (int)($_GET['id'] ?? 0); $o = offer_load($id);
-    render('offer_show', ['o' => $o, 'items' => offer_items($id)], 'Angebot ' . $o['offer_number']);
+    require_once APP_ROOT . '/pages/mails.php';
+    render('offer_show', ['o' => $o, 'items' => offer_items($id), 'mailLog' => mail_log_for('offer', $id)], 'Angebot ' . $o['offer_number']);
+}
+
+function offer_pdf_string(array $o): string {
+    $adapter = ['invoice_number' => $o['offer_number'], 'invoice_date' => $o['offer_date'], 'due_date' => $o['valid_until'], 'service_date' => '', 'status' => 'open', 'paid_date' => null] + $o;
+    return invoice_pdf($adapter, offer_items((int)$o['id']), null, 'offer');
 }
 
 function offers_pdf(): void {
     $id = (int)($_GET['id'] ?? 0); $o = offer_load($id);
-    $adapter = ['invoice_number' => $o['offer_number'], 'invoice_date' => $o['offer_date'], 'due_date' => $o['valid_until'], 'service_date' => '', 'status' => 'open', 'paid_date' => null] + $o;
-    $pdf = invoice_pdf($adapter, offer_items($id), null, 'offer');
+    $pdf = offer_pdf_string($o);
     header('Content-Type: application/pdf');
     header('Content-Disposition: ' . (isset($_GET['download']) ? 'attachment' : 'inline') . '; filename="' . preg_replace('/[^A-Za-z0-9_.-]/', '_', 'Angebot_' . $o['offer_number']) . '.pdf"');
     header('Content-Length: ' . strlen($pdf));

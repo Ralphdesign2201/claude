@@ -3,6 +3,7 @@
 <div class="actions">
 <a class="btn primary" href="<?= e(url('offer_pdf', ['id' => $o['id']])) ?>" target="_blank" rel="noopener">PDF ansehen</a>
 <a class="btn" href="<?= e(url('offer_pdf', ['id' => $o['id'], 'download' => 1])) ?>">PDF herunterladen</a>
+<a class="btn" href="<?= e(url('mail_new', ['type' => 'offer', 'id' => $o['id']])) ?>">Per E-Mail senden</a>
 <?php if (!$locked): ?><a class="btn" href="<?= e(url('offer_edit', ['id' => $o['id']])) ?>">Bearbeiten</a><?php endif; ?>
 </div></div>
 <div class="card cols">
@@ -25,3 +26,4 @@
 <form method="post" action="<?= e(url('offer_delete')) ?>" class="inline" data-confirm="Angebot wirklich löschen?"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$o['id'] ?>"><button class="btn danger">Löschen</button></form>
 <?php else: ?><a class="btn" href="<?= e(url('invoice_show', ['id' => $o['invoice_id']])) ?>">Zur Rechnung</a><?php endif; ?>
 </div></div>
+<?php require __DIR__ . '/_maillog.php'; ?>

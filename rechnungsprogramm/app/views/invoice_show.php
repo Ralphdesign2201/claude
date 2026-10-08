@@ -5,6 +5,7 @@
 <a class="btn" href="<?= e(url('invoice_pdf', ['id' => $inv['id'], 'download' => 1])) ?>">PDF herunterladen</a>
 <?php if ($inv['status'] !== 'cancelled'): ?><a class="btn" href="<?= e(url('invoice_xml', ['id' => $inv['id']])) ?>" title="ZUGFeRD / Factur-X (EN 16931)">E-Rechnung (XML)</a><?php endif; ?>
 <?php if ($inv['status'] === 'open'): ?><a class="btn" href="<?= e(url('invoice_edit', ['id' => $inv['id']])) ?>">Bearbeiten</a><?php endif; ?>
+<?php if ($inv['status'] !== 'cancelled'): ?><a class="btn" href="<?= e(url('mail_new', ['type' => 'invoice', 'id' => $inv['id']])) ?>">Per E-Mail senden</a><?php endif; ?>
 <form method="post" action="<?= e(url('invoice_copy')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$inv['id'] ?>"><button class="btn">Kopieren</button></form>
 </div></div>
 
@@ -43,7 +44,7 @@
 <table><thead><tr><th>Stufe</th><th>Datum</th><th>Neue Frist</th><th class="r">Gesamt</th><th></th></tr></thead><tbody>
 <?php foreach ($reminders as $r): ?><tr><td><?= e(REMINDER_LEVELS[$r['level']]) ?></td><td><?= e(date_de($r['reminder_date'])) ?></td><td><?= e(date_de($r['new_due_date'])) ?></td>
 <td class="r"><?= e(money((int)$r['open_amount'] + (int)$r['fee'] + (int)$r['interest'])) ?></td>
-<td class="r"><a href="<?= e(url('reminder_pdf', ['id' => $r['id']])) ?>" target="_blank" rel="noopener">PDF</a>
+<td class="r"><a href="<?= e(url('reminder_pdf', ['id' => $r['id']])) ?>" target="_blank" rel="noopener">PDF</a> · <a href="<?= e(url('mail_new', ['type' => 'reminder', 'id' => $r['id']])) ?>">E-Mail</a>
 <form method="post" action="<?= e(url('reminder_delete')) ?>" class="inline" data-confirm="Mahnung löschen?"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn ghost">Löschen</button></form></td></tr><?php endforeach; ?>
 </tbody></table>
 <?php endif; ?>
@@ -60,3 +61,4 @@
 </form>
 <?php endif; ?></div>
 <?php endif; ?>
+<?php require __DIR__ . '/_maillog.php'; ?>

@@ -21,6 +21,7 @@ $routes = [
     'invoice_show' => ['invoices', 'show'], 'invoice_pdf' => ['invoices', 'pdf'], 'invoice_xml' => ['invoices', 'xml'], 'invoice_status' => ['invoices', 'status'], 'invoice_copy' => ['invoices', 'copy'],
     'offers' => ['offers', 'index'], 'offer_new' => ['offers', 'edit'], 'offer_edit' => ['offers', 'edit'], 'offer_save' => ['offers', 'save'], 'offer_show' => ['offers', 'show'],
     'offer_pdf' => ['offers', 'pdf'], 'offer_status' => ['offers', 'status'], 'offer_to_invoice' => ['offers', 'to_invoice'], 'offer_delete' => ['offers', 'delete'],
+    'mail_new' => ['mails', 'form'], 'mail_send' => ['mails', 'send'], 'mail_test' => ['mails', 'test'],
     'reminder_save' => ['reminders', 'save'], 'reminder_pdf' => ['reminders', 'pdf'], 'reminder_delete' => ['reminders', 'delete'],
     'settings' => ['settings', 'index'], 'settings_save' => ['settings', 'save'], 'password_save' => ['settings', 'password'], 'backup' => ['settings', 'backup'], 'logo' => ['settings', 'logo'],
 ];

@@ -113,6 +113,14 @@ function migrate(PDO $pdo): void {
         total INTEGER NOT NULL DEFAULT 0
     )");
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_offer_items ON offer_items(offer_id)');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS mail_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_type TEXT NOT NULL, doc_id INTEGER NOT NULL,
+        recipient TEXT NOT NULL, subject TEXT NOT NULL,
+        ok INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '',
+        sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )");
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mail_doc ON mail_log(doc_type, doc_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_rem_inv ON reminders(invoice_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_customer ON invoices(customer_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_status ON invoices(status, due_date)');

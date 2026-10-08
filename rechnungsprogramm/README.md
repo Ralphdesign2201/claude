@@ -9,7 +9,7 @@ Rechnungen mit Positionen, Mengen, Einheiten, 19/7/0 % USt, automatischer Nummer
 PDF nach DIN-5008-Aufbau mit Logo, Bankdaten und Fußzeile · Status offen/bezahlt/storniert (Storno-Stempel, Nummer bleibt belegt) ·
 Rechnung kopieren · **E-Rechnung (ZUGFeRD/Factur-X, Profil EN 16931)**: jedes PDF ist ein PDF/A-3 mit eingebettetem XML, zusätzlich XML-Download ·
 **Angebote** (eigener Nummernkreis, Gültigkeit, Status, mit einem Klick in Rechnung umwandeln) ·
-**Mahnwesen** (Zahlungserinnerung, 1. und 2. Mahnung als PDF, Mahngebühren, optional Verzugszinsen) · Kleinunternehmer-Modus (§ 19 UStG) · Passwortschutz · Datenbank-Backup per Klick.
+**Mahnwesen** (Zahlungserinnerung, 1. und 2. Mahnung als PDF, Mahngebühren, optional Verzugszinsen) · **E-Mail-Versand** von Rechnung, Angebot und Mahnung mit PDF-Anhang (SMTP mit SSL/STARTTLS oder PHP `mail()`, Versandprotokoll, Kopie an sich selbst) · Kleinunternehmer-Modus (§ 19 UStG) · Passwortschutz · Datenbank-Backup per Klick.
 Anschrift und Beträge werden pro Rechnung festgehalten; Kunden mit Rechnungen sind nicht löschbar.
 
 ## Installation auf dem Webspace
@@ -36,4 +36,8 @@ Für die Kennung des Verkäufers (Pflichtangabe) bitte USt-IdNr. oder zumindest 
 Die Schrift Liberation Sans (SIL OFL, `app/fonts/`) wird eingebettet, daher ist ein PDF ca. 400 KB groß.
 
 ## Noch nicht enthalten
-Lieferscheine, DATEV-Export, E-Mail-Versand, Eingang/Prüfung fremder E-Rechnungen, XRechnung (Behörden; Leitweg-ID).
+Lieferscheine, DATEV-Export, Eingang/Prüfung fremder E-Rechnungen, XRechnung (Behörden; Leitweg-ID).
+
+## E-Mail einrichten
+*Einstellungen → E-Mail-Versand*: SMTP-Server, Port, Benutzer und Passwort des Postfachs eintragen, speichern, dann „Testmail senden“.
+SMTP ist zuverlässiger als `mail()` (landet seltener im Spam). Ohne SMTP-Daten wird `mail()` des Webspace genutzt, sofern der Hoster es erlaubt.

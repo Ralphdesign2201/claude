@@ -32,6 +32,19 @@
 <label>Mahngebühr 2. Mahnung (€)<input name="reminder_fee_3" inputmode="decimal" value="<?= e($s['reminder_fee_3']) ?>" placeholder="0,00"></label>
 <label class="span2">Verzugszins (% p.a., optional)<input name="interest_rate" inputmode="decimal" value="<?= e($s['interest_rate']) ?>" placeholder="leer = keine Zinsen"><small class="muted">Gesetzlich: Basiszinssatz + 5 Prozentpunkte (Verbraucher) bzw. + 9 Punkte (Geschäftskunden). Der aktuelle Basiszinssatz steht bei der Bundesbank.</small></label>
 </div>
+<h2>E-Mail-Versand</h2>
+<div class="grid">
+<label>Absender-Adresse<input type="email" name="mail_from" value="<?= e($s['mail_from']) ?>" placeholder="leer = E-Mail der Firmendaten"></label>
+<label>Versandart<select name="mail_mode"><option value="mail"<?= $s['mail_mode'] === 'mail' ? ' selected' : '' ?>>PHP mail() des Webspace</option><option value="smtp"<?= $s['mail_mode'] === 'smtp' ? ' selected' : '' ?>>SMTP-Server (empfohlen)</option></select></label>
+<label>SMTP-Server<input name="smtp_host" value="<?= e($s['smtp_host']) ?>" placeholder="z. B. smtp.example.de"></label>
+<label>Port / Verschlüsselung<span class="inline"><input name="smtp_port" value="<?= e($s['smtp_port']) ?>"><select name="smtp_secure"><option value="tls"<?= $s['smtp_secure'] === 'tls' ? ' selected' : '' ?>>STARTTLS (587)</option><option value="ssl"<?= $s['smtp_secure'] === 'ssl' ? ' selected' : '' ?>>SSL (465)</option><option value="none"<?= $s['smtp_secure'] === 'none' ? ' selected' : '' ?>>keine</option></select></span></label>
+<label>SMTP-Benutzer<input name="smtp_user" value="<?= e($s['smtp_user']) ?>" autocomplete="off"></label>
+<label>SMTP-Passwort<input type="password" name="smtp_pass" autocomplete="new-password" placeholder="<?= $s['has_smtp_pass'] ? '•••••• (gespeichert, leer lassen = behalten)' : '' ?>"></label>
+<?php if ($s['has_smtp_pass']): ?><label class="span2 check"><input type="checkbox" name="clear_smtp_pass" value="1"> Gespeichertes SMTP-Passwort löschen</label><?php endif; ?>
+<label class="span2 check"><input type="checkbox" name="mail_copy" value="1"<?= $s['mail_copy'] === '1' ? ' checked' : '' ?>> Kopie jeder versendeten E-Mail an die Absender-Adresse</label>
+<label class="span2">Signatur<textarea name="mail_signature" rows="3" placeholder="leer = Firmenname und Kontaktdaten"><?= e($s['mail_signature']) ?></textarea></label>
+</div>
+<p class="muted">Das SMTP-Passwort wird in der Datenbank im Klartext gespeichert (geschützt durch den gesperrten Ordner <code>storage/</code>). Am besten ein eigenes Postfach nur für den Versand verwenden.</p>
 <h2>Logo</h2>
 <?php if ($hasLogo): ?><p><img class="logo" src="<?= e(url('logo')) ?>" alt="Logo"><label class="check"><input type="checkbox" name="remove_logo" value="1"> Aktuelles Logo entfernen</label></p><?php endif; ?>
 <label>Logo hochladen (<?= $gd ? 'JPG, PNG, GIF oder WebP' : 'nur JPG' ?>)<input type="file" name="logo" accept="image/*"></label>
@@ -44,6 +57,9 @@
 <label>Neues Passwort<input type="password" name="new" required minlength="8" autocomplete="new-password"></label>
 <label>Wiederholen<input type="password" name="new2" required minlength="8" autocomplete="new-password"></label>
 <div><button class="btn">Passwort ändern</button></div></form></div>
+
+<div class="card"><h2>E-Mail testen</h2><p class="muted">Sendet eine Testnachricht an die Absender-Adresse (erst Einstellungen speichern).</p>
+<form method="post" action="<?= e(url('mail_test')) ?>"><?= csrf_field() ?><button class="btn">Testmail senden</button></form></div>
 
 <div class="card"><h2>Datensicherung</h2><p class="muted">Lädt die komplette Datenbank (Kunden, Rechnungen, Einstellungen) herunter. Bitte regelmäßig sichern.</p>
 <form method="post" action="<?= e(url('backup')) ?>"><?= csrf_field() ?><button class="btn">Datenbank herunterladen</button></form></div>
