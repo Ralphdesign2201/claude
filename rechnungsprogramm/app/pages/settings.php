@@ -10,11 +10,12 @@ function settings_index(): void {
     $s['zugferd'] = setting('zugferd', '1');
     $s['mail_mode'] = setting('mail_mode', 'mail'); $s['smtp_secure'] = setting('smtp_secure', 'tls'); $s['smtp_port'] = setting('smtp_port', '587');
     $s['mail_copy'] = setting('mail_copy', '1'); $s['has_smtp_pass'] = setting('smtp_pass') !== '';
-    render('settings', ['s' => $s, 'hasLogo' => is_file(APP_STORAGE . '/logo.jpg'), 'gd' => extension_loaded('gd')], 'Einstellungen');
+    render('settings', ['s' => $s, 'hasLogo' => is_file(data_dir() . '/logo.jpg'), 'gd' => extension_loaded('gd')], 'Einstellungen');
 }
 
 function settings_save(): void {
     csrf_check();
+    foreach (SETTING_FIELDS as $f) if (mb_strlen(post($f)) > 4000) { flash('Das Feld „' . $f . '“ ist zu lang (höchstens 4000 Zeichen).', 'err'); redirect('settings'); }
     foreach (SETTING_FIELDS as $f) {
         $v = post($f);
         if ($f === 'iban') $v = strtoupper(preg_replace('/\s+/', ' ', $v));
@@ -31,11 +32,12 @@ function settings_save(): void {
     set_setting('mail_copy', isset($_POST['mail_copy']) ? '1' : '0');
     set_setting('zugferd', isset($_POST['zugferd']) ? '1' : '0');
 
-    if (isset($_POST['remove_logo'])) @unlink(APP_STORAGE . '/logo.jpg');
+    if (isset($_POST['remove_logo'])) @unlink(data_dir() . '/logo.jpg');
     if (!empty($_FILES['logo']['tmp_name']) && is_uploaded_file($_FILES['logo']['tmp_name'])) {
         $err = save_logo($_FILES['logo']['tmp_name']);
         if ($err) { flash($err, 'err'); redirect('settings'); }
     }
+    audit('settings_saved', 'Einstellungen geändert');
     flash('Einstellungen gespeichert.');
     redirect('settings');
 }
@@ -44,7 +46,7 @@ function save_logo(string $tmp): ?string {
     $info = @getimagesize($tmp);
     if (!$info) return 'Die Logo-Datei ist kein gültiges Bild.';
     if (filesize($tmp) > 5 * 1024 * 1024) return 'Das Logo ist größer als 5 MB.';
-    $dest = APP_STORAGE . '/logo.jpg';
+    $dest = data_dir() . '/logo.jpg';
     if (extension_loaded('gd')) {
         $data = file_get_contents($tmp);
         $im = @imagecreatefromstring($data);
@@ -63,7 +65,7 @@ function save_logo(string $tmp): ?string {
 }
 
 function settings_logo(): void {
-    $f = APP_STORAGE . '/logo.jpg';
+    $f = data_dir() . '/logo.jpg';
     if (!is_file($f)) { http_response_code(404); exit; }
     header('Content-Type: image/jpeg');
     header('Cache-Control: private, max-age=300');

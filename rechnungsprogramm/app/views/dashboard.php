@@ -3,7 +3,7 @@ $name = fn(array $r) => $r['company'] !== '' ? $r['company'] : trim($r['firstnam
 $row = function (array $i) use ($name) { ?>
 <tr><td><a href="<?= e(url('invoice_show', ['id' => $i['id']])) ?>"><?= e($i['invoice_number']) ?></a></td><td><?= e($name($i)) ?></td>
 <td><?= e(date_de($i['due_date'])) ?></td><td class="r"><?= e(money((int)$i['gross_amount'])) ?></td>
-<td><span class="badge <?= $i['status'] ?><?= is_overdue($i) ? ' overdue' : '' ?>"><?= e(status_label($i['status'], is_overdue($i))) ?></span></td></tr>
+<td><span class="badge <?= e($i['status']) ?><?= is_overdue($i) ? ' overdue' : '' ?>"><?= e(status_label($i['status'], is_overdue($i))) ?></span></td></tr>
 <?php }; ?>
 <div class="head"><h1>Übersicht</h1><?php if (can('invoices', 'w')): ?><a class="btn primary" href="<?= e(url('invoice_new')) ?>">+ Neue Rechnung</a><?php endif; ?></div>
 <?php if ($setupMissing && can('settings', 'w')): ?><div class="msg warn">Bitte zuerst die <a href="<?= e(url('settings')) ?>">Firmendaten</a> eintragen, damit sie auf den Rechnungen erscheinen.</div><?php endif; ?>

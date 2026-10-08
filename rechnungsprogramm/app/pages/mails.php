@@ -56,8 +56,12 @@ function mails_send(): void {
     $type = post('type'); $id = (int)($_POST['id'] ?? 0);
     $d = mail_document($type, $id);
     $to = post('to'); $subject = post('subject'); $body = (string)($_POST['body'] ?? '');
+    if (is_saas() && current_tenant() && !(int)current_tenant()['email_verified']) { flash('Bitte zuerst Ihre E-Mail-Adresse bestätigen (Link in Ihrem Postfach), dann können Sie Mails an Kunden senden.', 'err'); redirect('mail_new', ['type' => $type, 'id' => $id]); }
+    $cnt = fn(int $sec) => (int)(function () use ($sec) { $st = db()->prepare('SELECT COUNT(*) FROM mail_log WHERE sent_at >= ?'); $st->execute([date('Y-m-d H:i:s', time() - $sec)]); return $st->fetchColumn(); })();
+    if ($cnt(3600) >= 30 || $cnt(86400) >= 150) { audit('mail_limit', 'Versandlimit erreicht'); flash('Versandlimit erreicht (30 Mails pro Stunde, 150 pro Tag). Bitte später erneut versuchen.', 'err'); redirect('mail_new', ['type' => $type, 'id' => $id]); }
+    if (strlen($subject) > 200 || strlen($body) > 20000) { flash('Betreff oder Text sind zu lang.', 'err'); redirect('mail_new', ['type' => $type, 'id' => $id]); }
     $err = send_mail($to, $subject, $body, [['name' => preg_replace('/[^A-Za-z0-9_.-]/', '_', $d['file']), 'data' => ($d['pdf'])(), 'mime' => 'application/pdf']], isset($_POST['copy']));
-    db()->prepare('INSERT INTO mail_log(doc_type, doc_id, recipient, subject, ok, error) VALUES (?,?,?,?,?,?)')->execute([$type, $id, $to, $subject, $err === null ? 1 : 0, (string)$err]);
+    db()->prepare('INSERT INTO mail_log(doc_type, doc_id, recipient, subject, ok, error, sent_at) VALUES (?,?,?,?,?,?,?)')->execute([$type, $id, $to, mb_substr($subject, 0, 250), $err === null ? 1 : 0, mb_substr((string)$err, 0, 490), date('Y-m-d H:i:s')]);
     if ($err !== null) { flash('E-Mail nicht gesendet: ' . $err, 'err'); redirect('mail_new', ['type' => $type, 'id' => $id]); }
     flash('E-Mail an ' . $to . ' gesendet.');
     redirect($d['back'][0], $d['back'][1]);

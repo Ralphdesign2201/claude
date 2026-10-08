@@ -23,7 +23,7 @@
 <?php if ($c['id']): ?>
 <div class="head"><h2>Rechnungen dieses Kunden</h2><a class="btn" href="<?= e(url('invoice_new', ['customer_id' => $c['id']])) ?>">+ Rechnung</a></div>
 <?php if ($invoices): ?><div class="tablewrap"><table><thead><tr><th>Nr.</th><th>Datum</th><th class="r">Betrag</th><th>Status</th></tr></thead><tbody>
-<?php foreach ($invoices as $i): ?><tr><td><a href="<?= e(url('invoice_show', ['id' => $i['id']])) ?>"><?= e($i['invoice_number']) ?></a></td><td><?= e(date_de($i['invoice_date'])) ?></td><td class="r"><?= e(money((int)$i['gross_amount'])) ?></td><td><span class="badge <?= $i['status'] ?><?= is_overdue($i) ? ' overdue' : '' ?>"><?= e(status_label($i['status'], is_overdue($i))) ?></span></td></tr><?php endforeach; ?>
+<?php foreach ($invoices as $i): ?><tr><td><a href="<?= e(url('invoice_show', ['id' => $i['id']])) ?>"><?= e($i['invoice_number']) ?></a></td><td><?= e(date_de($i['invoice_date'])) ?></td><td class="r"><?= e(money((int)$i['gross_amount'])) ?></td><td><span class="badge <?= e($i['status']) ?><?= is_overdue($i) ? ' overdue' : '' ?>"><?= e(status_label($i['status'], is_overdue($i))) ?></span></td></tr><?php endforeach; ?>
 </tbody></table></div>
 <?php else: ?>
 <form method="post" action="<?= e(url('customer_delete')) ?>" data-confirm="Kunde wirklich löschen?"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$c['id'] ?>"><button class="btn danger">Kunde löschen</button></form>

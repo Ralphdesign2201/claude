@@ -1,5 +1,5 @@
 <?php $od = is_overdue($inv); $name = $inv['company'] !== '' ? $inv['company'] : trim($inv['firstname'] . ' ' . $inv['lastname']); ?>
-<div class="head"><h1>Rechnung <?= e($inv['invoice_number']) ?> <span class="badge <?= $inv['status'] ?><?= $od ? ' overdue' : '' ?>"><?= e(status_label($inv['status'], $od)) ?></span></h1>
+<div class="head"><h1>Rechnung <?= e($inv['invoice_number']) ?> <span class="badge <?= e($inv['status']) ?><?= $od ? ' overdue' : '' ?>"><?= e(status_label($inv['status'], $od)) ?></span></h1>
 <div class="actions">
 <a class="btn primary" href="<?= e(url('invoice_pdf', ['id' => $inv['id']])) ?>" target="_blank" rel="noopener">PDF ansehen</a>
 <a class="btn" href="<?= e(url('invoice_pdf', ['id' => $inv['id'], 'download' => 1])) ?>">PDF herunterladen</a>
@@ -54,7 +54,7 @@
   $next = $reminders ? min(3, (int)max(array_column($reminders, 'level')) + 1) : 1; ?>
 <form method="post" action="<?= e(url('reminder_save')) ?>" class="grid" id="remform" data-fee2="<?= e(setting('reminder_fee_2', '0,00') ?: '0,00') ?>" data-fee3="<?= e(setting('reminder_fee_3', '0,00') ?: '0,00') ?>">
 <?= csrf_field() ?><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>">
-<label>Stufe<select name="level" id="remlevel"><?php foreach (REMINDER_LEVELS as $k => $l): ?><option value="<?= $k ?>"<?= $k === $next ? ' selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
+<label>Stufe<select name="level" id="remlevel"><?php foreach (REMINDER_LEVELS as $k => $l): ?><option value="<?= e($k) ?>"<?= $k === $next ? ' selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
 <label>Mahndatum<input type="date" name="reminder_date" value="<?= e(date('Y-m-d')) ?>"></label>
 <label>Neue Zahlungsfrist<input type="date" name="new_due_date" value="<?= e(date('Y-m-d', strtotime('+7 days'))) ?>"></label>
 <label>Mahngebühr (€)<input name="fee" id="remfee" inputmode="decimal" value="<?= e($next === 2 ? (setting('reminder_fee_2') ?: '0,00') : ($next === 3 ? (setting('reminder_fee_3') ?: '0,00') : '0,00')) ?>"></label>

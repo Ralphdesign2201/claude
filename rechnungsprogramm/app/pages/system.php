@@ -2,8 +2,7 @@
 declare(strict_types=1);
 
 function system_cron_url(): string {
-    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
-    return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . base_url() . '/cron.php?token=' . setting('cron_token');
+    return app_base_url() . '/cron.php?token=' . setting('cron_token');
 }
 function system_cron_path(): string {
     return is_file(dirname(APP_ROOT) . '/public/cron.php') ? dirname(APP_ROOT) . '/public/cron.php' : dirname(APP_ROOT) . '/cron.php';
@@ -39,7 +38,7 @@ function system_save(): void {
 
 function system_create(): void {
     csrf_check();
-    try { $n = backup_create('manual'); flash('Backup erstellt: ' . $n); }
+    try { $n = backup_create('manual'); audit('backup_created', $n); flash('Backup erstellt: ' . $n); }
     catch (Throwable $e) { flash('Backup fehlgeschlagen: ' . $e->getMessage(), 'err'); }
     redirect('backups');
 }
@@ -48,6 +47,7 @@ function system_download(): void {
     $n = (string)($_GET['name'] ?? '');
     $f = backup_dir() . '/' . $n;
     if (!backup_valid_name($n) || !is_file($f)) { http_response_code(404); exit('Nicht gefunden.'); }
+    audit('backup_downloaded', $n);
     header('Content-Type: application/octet-stream');
     header('Content-Disposition: attachment; filename="' . $n . '"');
     header('Content-Length: ' . filesize($f));
@@ -58,7 +58,7 @@ function system_download(): void {
 function system_delete(): void {
     csrf_check();
     $n = post('name');
-    if (backup_valid_name($n) && is_file(backup_dir() . '/' . $n)) { @unlink(backup_dir() . '/' . $n); flash('Backup gelöscht.'); }
+    if (backup_valid_name($n) && is_file(backup_dir() . '/' . $n)) { @unlink(backup_dir() . '/' . $n); audit('backup_deleted', $n); flash('Backup gelöscht.'); }
     redirect('backups');
 }
 
@@ -74,6 +74,7 @@ function system_upload(): void {
     $name = 'backup_upload_' . date('Ymd_His') . '_' . bin2hex(random_bytes(2)) . '.rgb';
     move_uploaded_file($f['tmp_name'], backup_dir() . '/' . $name);
     @chmod(backup_dir() . '/' . $name, 0600);
+    audit('backup_uploaded', $name);
     flash('Backup hochgeladen. Sie können es jetzt wiederherstellen.');
     redirect('backups');
 }
@@ -82,8 +83,10 @@ function system_restore(): void {
     csrf_check();
     $n = post('name'); $f = backup_dir() . '/' . $n;
     if (!backup_valid_name($n) || !is_file($f)) { flash('Backup nicht gefunden.', 'err'); redirect('backups'); }
-    if (!system_password_ok()) { flash('Passwort falsch – es wurde nichts verändert.', 'err'); redirect('backups'); }
+    if (!rate_hit('confirm_pw', 5, 600, (string)current_user()['id'])) { flash('Zu viele Versuche. Bitte später erneut versuchen.', 'err'); redirect('backups'); }
+    if (!system_password_ok()) { audit('restore_denied', 'Falsches Passwort bei Wiederherstellung'); flash('Passwort falsch – es wurde nichts verändert.', 'err'); redirect('backups'); }
     try {
+        audit('restore_started', $n);
         backup_restore(backup_decode((string)file_get_contents($f)));
     } catch (Throwable $e) { error_log($e->getMessage()); flash('Wiederherstellung fehlgeschlagen: ' . $e->getMessage() . ' (Die Sicherheitskopie vor dem Versuch liegt in der Liste.)', 'err'); redirect('backups'); }
     $_SESSION = []; session_regenerate_id(true);
@@ -108,12 +111,14 @@ function system_db_test(): void {
 
 function system_db_switch(): void {
     csrf_check();
+    if (!rate_hit('confirm_pw', 5, 600, (string)current_user()['id'])) { flash('Zu viele Versuche. Bitte später erneut versuchen.', 'err'); redirect('backups'); }
     if (!system_password_ok()) { flash('Passwort falsch – es wurde nichts verändert.', 'err'); redirect('backups'); }
     $to = post('target');
     try {
         if ($to === 'mysql') { $m = system_mysql_from_post(); $res = db_switch(['driver' => 'mysql', 'mysql' => $m], isset($_POST['overwrite'])); }
         elseif ($to === 'sqlite') $res = db_switch(['driver' => 'sqlite'], isset($_POST['overwrite']));
         else throw new RuntimeException('Unbekanntes Ziel.');
+        audit('db_switched', 'Ziel: ' . $to);
         flash('Umstellung abgeschlossen: ' . ($to === 'mysql' ? 'MySQL/MariaDB' : 'SQLite') . ' ist jetzt aktiv (' . ($res['invoices'] ?? 0) . ' Rechnungen, ' . ($res['customers'] ?? 0) . ' Kunden übernommen). Die alte Datenbank bleibt unverändert als Rückfall erhalten.');
     } catch (Throwable $e) { error_log($e->getMessage()); flash('Umstellung fehlgeschlagen: ' . $e->getMessage(), 'err'); }
     redirect('backups');

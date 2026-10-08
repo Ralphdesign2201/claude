@@ -18,6 +18,17 @@
     if (b && !window.confirm(b.getAttribute('data-confirm'))) e.preventDefault();
   });
 
+  // Firmen-ID aus dem Firmennamen vorschlagen (Registrierung)
+  var suC = document.getElementById('su_company'), suS = document.getElementById('su_slug');
+  if (suC && suS) {
+    var touched = suS.value !== '';
+    suS.addEventListener('input', function () { touched = true; });
+    suC.addEventListener('input', function () {
+      if (touched) return;
+      suS.value = suC.value.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    });
+  }
+
   var form = document.getElementById('invform') || document.getElementById('delform');
   if (!form) return;
   var body = document.querySelector('#items tbody');

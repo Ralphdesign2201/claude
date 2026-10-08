@@ -20,13 +20,14 @@ function users_save(): void {
     $username = post('username'); $role = (int)($_POST['role_id'] ?? 0); $active = isset($_POST['active']) ? 1 : 0; $pw = (string)($_POST['password'] ?? '');
     if (!preg_match('/^[A-Za-z0-9._@-]{3,60}$/', $username)) { flash('Der Benutzername darf 3–60 Zeichen lang sein (Buchstaben, Ziffern, . _ @ -).', 'err'); $back(); }
     $email = post('email');
+    if ($e = field_too_long('users', ['display_name' => post('display_name'), 'email' => $email])) { flash($e, 'err'); $back(); }
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) { flash('Die E-Mail-Adresse ist ungültig.', 'err'); $back(); }
     $r = $pdo->prepare('SELECT * FROM roles WHERE id = ?'); $r->execute([$role]); $roleRow = $r->fetch();
     if (!$roleRow) { flash('Bitte eine Rolle wählen.', 'err'); $back(); }
     $dup = $pdo->prepare('SELECT COUNT(*) FROM users WHERE LOWER(username) = LOWER(?) AND id <> ?'); $dup->execute([$username, $id]);
     if ((int)$dup->fetchColumn()) { flash('Dieser Benutzername ist schon vergeben.', 'err'); $back(); }
-    if (!$id && strlen($pw) < 8) { flash('Das Passwort muss mindestens 8 Zeichen lang sein.', 'err'); $back(); }
-    if ($pw !== '' && strlen($pw) < 8) { flash('Das Passwort muss mindestens 8 Zeichen lang sein.', 'err'); $back(); }
+    if (($pw !== '' || !$id) && ($e = password_error($pw, $username))) { flash($e, 'err'); $back(); }
+    if (!$id && ($e = saas_limit_error('users'))) { flash($e, 'err'); $back(); }
     if ($id) {
         // der letzte aktive Administrator darf weder deaktiviert noch herabgestuft werden
         $cur = $pdo->prepare('SELECT u.*, r.is_system FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?'); $cur->execute([$id]); $c = $cur->fetch();
@@ -37,6 +38,7 @@ function users_save(): void {
     } else {
         $pdo->prepare('INSERT INTO users(username, display_name, email, password_hash, role_id, active) VALUES (?,?,?,?,?,?)')->execute([$username, post('display_name'), $email, password_hash($pw, PASSWORD_DEFAULT), $role, $active]);
     }
+    audit($id ? 'user_updated' : 'user_created', 'Benutzer ' . $username . ' (Rolle ' . $roleRow['name'] . ($active ? '' : ', gesperrt') . ')' . ($pw !== '' && $id ? ', Passwort geändert' : ''));
     flash('Benutzer gespeichert.');
     redirect('users');
 }
@@ -47,6 +49,7 @@ function users_delete(): void {
     if ($id === (int)current_user()['id']) { flash('Sie können sich nicht selbst löschen.', 'err'); redirect('users'); }
     if (active_admin_count($id) === 0) { flash('Es muss mindestens ein aktiver Administrator bleiben.', 'err'); redirect('users'); }
     $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
+    audit('user_deleted', 'Benutzer-ID ' . $id);
     flash('Benutzer gelöscht.');
     redirect('users');
 }
@@ -77,6 +80,7 @@ function users_role_save(): void {
     foreach (array_keys(MODULES) as $m) { $v = (string)($_POST['perm'][$m] ?? ''); if (in_array($v, ['r', 'w'], true)) $perm[$m] = $v; }
     if ($id) $pdo->prepare('UPDATE roles SET name = ?, permissions = ? WHERE id = ?')->execute([$name, json_encode($perm), $id]);
     else $pdo->prepare('INSERT INTO roles(name, permissions, is_system) VALUES (?,?,0)')->execute([$name, json_encode($perm)]);
+    audit($id ? 'role_updated' : 'role_created', 'Rolle ' . $name . ': ' . json_encode($perm));
     flash('Rolle gespeichert.');
     redirect('roles');
 }
@@ -89,7 +93,7 @@ function users_role_delete(): void {
     $cnt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE role_id = ?'); $cnt->execute([$id]);
     if ((int)$r['is_system'] === 1) flash('Die Administrator-Rolle kann nicht gelöscht werden.', 'err');
     elseif ((int)$cnt->fetchColumn() > 0) flash('Die Rolle ist noch Benutzern zugeordnet. Bitte zuerst deren Rolle ändern.', 'err');
-    else { $pdo->prepare('DELETE FROM roles WHERE id = ?')->execute([$id]); flash('Rolle gelöscht.'); }
+    else { $pdo->prepare('DELETE FROM roles WHERE id = ?')->execute([$id]); audit('role_deleted', 'Rolle ' . $r['name']); flash('Rolle gelöscht.'); }
     redirect('roles');
 }
 
@@ -100,15 +104,27 @@ function users_profile_save(): void {
     csrf_check();
     $u = current_user(); $pdo = db();
     $email = post('email');
+    if ($e = field_too_long('users', ['display_name' => post('display_name'), 'email' => $email])) { flash($e, 'err'); redirect('profile'); }
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) { flash('Die E-Mail-Adresse ist ungültig.', 'err'); redirect('profile'); }
     $pdo->prepare('UPDATE users SET display_name = ?, email = ? WHERE id = ?')->execute([post('display_name'), $email, $u['id']]);
     $new = (string)($_POST['new'] ?? '');
     if ($new !== '' || (string)($_POST['current'] ?? '') !== '') {
         if (!password_verify((string)($_POST['current'] ?? ''), $u['password_hash'])) { flash('Das aktuelle Passwort ist falsch.', 'err'); redirect('profile'); }
-        if (strlen($new) < 8) { flash('Das neue Passwort muss mindestens 8 Zeichen lang sein.', 'err'); redirect('profile'); }
+        if ($e = password_error($new, (string)$u['username'])) { flash($e, 'err'); redirect('profile'); }
         if ($new !== (string)($_POST['new2'] ?? '')) { flash('Die neuen Passwörter stimmen nicht überein.', 'err'); redirect('profile'); }
         $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($new, PASSWORD_DEFAULT), $u['id']]);
+        session_regenerate_id(true);
+        audit('password_changed', 'Eigenes Passwort geändert');
     }
     flash('Konto gespeichert.');
     redirect('profile');
+}
+
+function users_twofa(): void { twofa_page('users', current_user(), 'twofa', false); }
+
+function users_audit(): void {
+    $q = trim((string)($_GET['q'] ?? '')); $w = ''; $p = [];
+    if ($q !== '') { $w = ' WHERE username LIKE ? OR action LIKE ? OR detail LIKE ?'; $p = ["%$q%", "%$q%", "%$q%"]; }
+    $st = db()->prepare('SELECT * FROM audit_log' . $w . ' ORDER BY id DESC LIMIT 300'); $st->execute($p);
+    render('audit', ['rows' => $st->fetchAll(), 'q' => $q, 'route' => 'audit', 'central' => false], 'Protokoll');
 }

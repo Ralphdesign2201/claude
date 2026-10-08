@@ -1,0 +1,4 @@
+<div class="head"><h1>Zahlungen</h1><span class="badge paid">Summe (angezeigt): <?= e(money_c((int)$sum, csetting('currency', 'EUR'))) ?></span></div>
+<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Mandant</th><th>Anbieter</th><th>Referenz</th><th>Beschreibung</th><th class="r">Betrag</th></tr></thead><tbody>
+<?php foreach ($rows as $p): ?><tr><td><?= e(date('d.m.Y H:i', strtotime($p['created_at']))) ?></td><td><?= e($p['company']) ?></td><td><?= e($p['provider']) ?></td><td><small><?= e($p['provider_ref']) ?></small></td><td><?= e($p['description']) ?></td><td class="r"><?= e(money_c((int)$p['amount_cents'], $p['currency'])) ?></td></tr><?php endforeach; ?>
+<?php if (!$rows): ?><tr><td colspan="6" class="muted">Noch keine Zahlungen.</td></tr><?php endif; ?></tbody></table></div>

@@ -73,7 +73,8 @@ function datev_export(): void {
 function datev_invoice_csv(string $from, string $to): void {
     $st = db()->prepare('SELECT i.*, c.company, c.firstname, c.lastname FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.invoice_date BETWEEN ? AND ? ORDER BY i.invoice_date, i.id');
     $st->execute([$from, $to]);
-    $q = fn(string $s) => '"' . str_replace('"', '""', $s) . '"';
+    // Excel-Formeln neutralisieren (= + - @ am Zellanfang), damit Kundennamen keine Formeln ausführen
+    $q = fn(string $s) => '"' . str_replace('"', '""', preg_match('/^[=+\-@\t\r]/', $s) ? "'" . $s : $s) . '"';
     $out = "\xEF\xBB\xBF" . "Rechnungsnummer;Datum;Kunde;Netto;USt;Brutto;Status;Zahlbar bis;Bezahlt am\r\n";
     foreach ($st->fetchAll() as $i) {
         $name = $i['company'] !== '' ? $i['company'] : trim($i['firstname'] . ' ' . $i['lastname']);

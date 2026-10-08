@@ -57,12 +57,16 @@ function offers_save(): void {
         $price = parse_cents((string)($_POST['unit_price'][$i] ?? '0'));
         if ($desc === '' && $price === 0) continue;
         if ($desc === '') { flash('Jede Position braucht eine Beschreibung.', 'err'); $back(); }
+        if ($e = amount_error((float)parse_decimal((string)($_POST['quantity'][$i] ?? '1')), $price)) { flash($e, 'err'); $back(); }
+        if ($e = field_too_long('offer_items', ['description' => $desc, 'unit' => trim((string)($_POST['unit'][$i] ?? ''))])) { flash($e, 'err'); $back(); }
         $items[] = ['description' => $desc, 'quantity' => parse_decimal((string)($_POST['quantity'][$i] ?? '1')), 'unit' => trim((string)($_POST['unit'][$i] ?? '')), 'unit_price' => $price,
             'vat_rate' => $small ? 0.0 : max(0.0, min(100.0, parse_decimal((string)($_POST['vat_rate'][$i] ?? '19'))))];
     }
     if (!$items) { flash('Mindestens eine Position ist erforderlich.', 'err'); $back(); }
     $calc = calc_invoice($items);
-    $pdo->beginTransaction();
+    if (abs($calc['gross']) > 900000000000000) { flash('Der Angebotsbetrag ist zu groß.', 'err'); $back(); }
+    if ($e = field_too_long('offers', ['subject' => post('subject'), 'intro' => post('intro'), 'notes' => post('notes')])) { flash($e, 'err'); $back(); }
+    db_begin($pdo);
     try {
         $f = ['customer_id' => $cust['id'], 'offer_date' => $date, 'valid_until' => $until, 'subject' => post('subject'), 'intro' => post('intro'), 'notes' => post('notes'),
               'net_amount' => $calc['net'], 'vat_amount' => $calc['vat'], 'gross_amount' => $calc['gross'], 'customer_address' => customer_address($cust)];
@@ -80,9 +84,9 @@ function offers_save(): void {
         }
         $ins = $pdo->prepare('INSERT INTO offer_items(offer_id, position, description, quantity, unit, unit_price, vat_rate, total) VALUES (?,?,?,?,?,?,?,?)');
         foreach ($items as $n => $it) $ins->execute([$id, $n + 1, $it['description'], $it['quantity'], $it['unit'], $it['unit_price'], $it['vat_rate'], $calc['lines'][$n]]);
-        $pdo->commit();
+        db_commit($pdo);
     } catch (Throwable $e) {
-        $pdo->rollBack(); error_log($e->getMessage()); flash('Speichern fehlgeschlagen.', 'err'); $back();
+        db_rollback($pdo); error_log($e->getMessage()); flash('Speichern fehlgeschlagen.', 'err'); $back();
     }
     flash('Angebot gespeichert.');
     redirect('offer_show', ['id' => $id]);
@@ -124,11 +128,12 @@ function offers_status(): void {
 function offers_to_invoice(): void {
     csrf_check();
     require_can('invoices', 'w');
+    if ($e = saas_limit_error('invoices')) { flash($e, 'err'); redirect('offers'); }
     $id = (int)($_POST['id'] ?? 0); $o = offer_load($id); $pdo = db();
     if ($o['invoice_id']) redirect('invoice_show', ['id' => $o['invoice_id']]);
     $cs = $pdo->prepare('SELECT * FROM customers WHERE id = ?'); $cs->execute([$o['customer_id']]); $cust = $cs->fetch();
     $today = date('Y-m-d');
-    $pdo->beginTransaction();
+    db_begin($pdo);
     try {
         $pdo->prepare('INSERT INTO invoices(invoice_number, customer_id, customer_address, invoice_date, due_date, subject, intro, notes, net_amount, vat_amount, gross_amount, small_business) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
             ->execute([next_invoice_number($pdo, $today), $o['customer_id'], customer_address($cust), $today, date('Y-m-d', strtotime('+' . max(0, (int)setting('payment_days', '14')) . ' days')),
@@ -136,8 +141,8 @@ function offers_to_invoice(): void {
         $new = (int)$pdo->lastInsertId();
         $pdo->prepare('INSERT INTO invoice_items(invoice_id, position, description, quantity, unit, unit_price, vat_rate, total) SELECT ?, position, description, quantity, unit, unit_price, vat_rate, total FROM offer_items WHERE offer_id = ?')->execute([$new, $id]);
         $pdo->prepare("UPDATE offers SET status = 'accepted', invoice_id = ? WHERE id = ?")->execute([$new, $id]);
-        $pdo->commit();
-    } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+        db_commit($pdo);
+    } catch (Throwable $e) { db_rollback($pdo); throw $e; }
     flash('Rechnung aus Angebot erstellt. Bitte Datum und Leistungszeitraum prüfen.');
     redirect('invoice_edit', ['id' => $new]);
 }

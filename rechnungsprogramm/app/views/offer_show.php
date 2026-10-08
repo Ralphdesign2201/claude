@@ -19,7 +19,7 @@
 <?php if (!$o['invoice_id']): ?>
 <form method="post" action="<?= e(url('offer_to_invoice')) ?>" class="inline" data-confirm="Aus diesem Angebot eine Rechnung erstellen?"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$o['id'] ?>"><button class="btn primary">In Rechnung umwandeln</button></form>
 <?php if ($o['status'] === 'open'): foreach (['accept' => 'Als angenommen markieren', 'decline' => 'Als abgelehnt markieren'] as $a => $l): ?>
-<form method="post" action="<?= e(url('offer_status')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$o['id'] ?>"><input type="hidden" name="action" value="<?= $a ?>"><button class="btn"><?= e($l) ?></button></form>
+<form method="post" action="<?= e(url('offer_status')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$o['id'] ?>"><input type="hidden" name="action" value="<?= e($a) ?>"><button class="btn"><?= e($l) ?></button></form>
 <?php endforeach; else: ?>
 <form method="post" action="<?= e(url('offer_status')) ?>" class="inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$o['id'] ?>"><input type="hidden" name="action" value="reopen"><button class="btn">Wieder auf offen setzen</button></form>
 <?php endif; ?>

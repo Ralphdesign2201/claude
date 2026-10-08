@@ -1,4 +1,4 @@
-<div class="head"><h1>Mein Konto</h1></div>
+<div class="head"><h1>Mein Konto</h1><a class="btn" href="<?= e(url('twofa')) ?>">Zwei-Faktor-Anmeldung <?= (int)$u['totp_enabled'] ? '(aktiv)' : '(einrichten)' ?></a></div>
 <form method="post" action="<?= e(url('profile_save')) ?>" class="card">
 <?= csrf_field() ?>
 <p class="muted">Angemeldet als <strong><?= e($u['username']) ?></strong> · Rolle: <?= e($u['role_name']) ?></p>

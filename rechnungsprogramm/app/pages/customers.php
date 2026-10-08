@@ -40,6 +40,7 @@ function customers_save(): void {
         $_SESSION['old'] = $d;
         redirect('customer_edit', $id ? ['id' => $id] : []);
     }
+    if ($e = field_too_long('customers', $d)) { flash($e, 'err'); redirect('customer_edit', $id ? ['id' => $id] : []); }
     if ($d['email'] !== '' && !filter_var($d['email'], FILTER_VALIDATE_EMAIL)) {
         flash('Die E-Mail-Adresse ist ungültig.', 'err');
         redirect('customer_edit', $id ? ['id' => $id] : []);

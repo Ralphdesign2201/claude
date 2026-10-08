@@ -6,16 +6,21 @@ declare(strict_types=1);
 const BACKUP_FORMAT = 'rechnungsprogramm-backup';
 
 function backup_dir(): string {
-    $d = APP_STORAGE . '/backups';
+    $d = data_dir() . '/backups';
     if (!is_dir($d)) { @mkdir($d, 0775, true); @file_put_contents($d . '/index.html', ''); }
     return $d;
 }
 
-function db_export(PDO $pdo): array {
+/** @param bool $withSecrets true nur für die interne Datenbank-Umstellung (gleicher Server, gleicher secret.key); Backups enthalten keine Geheimnisse. */
+function db_export(PDO $pdo, bool $withSecrets = false): array {
     $data = [];
     foreach (db_schema() as $t => $def) {
         $order = isset($def['cols']['id']) ? 'id' : 'name';
-        $data[$t] = $pdo->query("SELECT * FROM $t ORDER BY $order")->fetchAll();
+        $rows = $pdo->query("SELECT * FROM $t ORDER BY $order")->fetchAll();
+        if ($t === 'settings' && !$withSecrets) $rows = array_values(array_filter($rows, fn($r) => !in_array($r['name'], SECRET_SETTINGS, true) && !in_array($r['name'], ['cron_token'], true)));
+        if ($t === 'users' && !$withSecrets) foreach ($rows as &$r) { $r['totp_secret'] = $r['totp_secret'] ?? ''; } unset($r);
+        if ($t === 'password_resets' && !$withSecrets) $rows = [];
+        $data[$t] = $rows;
     }
     return $data;
 }
@@ -65,7 +70,7 @@ function db_has_data(PDO $pdo): bool {
 // Backups
 // ---------------------------------------------------------------------------------------------
 function backup_payload(): array {
-    $logo = APP_STORAGE . '/logo.jpg';
+    $logo = data_dir() . '/logo.jpg';
     return ['format' => BACKUP_FORMAT, 'version' => 1, 'created' => date('c'), 'driver' => db_driver(), 'schema' => SCHEMA_VERSION,
         'tables' => db_export(db()), 'files' => is_file($logo) ? ['logo.jpg' => base64_encode((string)file_get_contents($logo))] : []];
 }
@@ -77,7 +82,7 @@ function backup_encode(array $payload): string {
 function backup_decode(string $raw): array {
     if (strncmp($raw, "\x1f\x8b", 2) === 0) {
         if (!function_exists('gzdecode')) throw new RuntimeException('Auf diesem Server fehlt zlib zum Lesen der Datei.');
-        $raw = @gzdecode($raw);
+        $raw = @gzdecode($raw, 500 * 1024 * 1024);
         if ($raw === false) throw new RuntimeException('Die Datei ist beschädigt.');
     }
     $p = json_decode($raw, true);
@@ -119,7 +124,7 @@ function backup_prune(): int {
 }
 
 function backup_due(): bool {
-    $iv = setting('backup_interval', 'off');
+    $iv = setting('backup_interval', is_saas() ? 'weekly' : 'off');
     if (!in_array($iv, ['daily', 'weekly', 'monthly'], true)) return false;
     $last = 0;
     foreach (backup_list() as $b) if ($b['kind'] === 'auto') { $last = $b['ts']; break; }
@@ -130,7 +135,7 @@ function backup_due(): bool {
 /** @return ?string Dateiname, wenn ein Backup erstellt wurde */
 function backup_run_if_due(): ?string {
     if (!backup_due()) return null;
-    $lock = fopen(APP_STORAGE . '/backup.lock', 'c');
+    $lock = fopen(data_dir() . '/backup.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return null;
     try {
         if (!backup_due()) return null;
@@ -142,8 +147,15 @@ function backup_run_if_due(): ?string {
 /** Spielt ein Backup in die aktuelle Datenbank ein (vorher Sicherheitskopie). */
 function backup_restore(array $payload): void {
     backup_create('safety');
+    $keep = db()->query("SELECT name, value FROM settings WHERE name IN ('" . implode("','", array_merge(SECRET_SETTINGS, ['cron_token'])) . "')")->fetchAll();
     db_import(db(), $payload['tables']);
-    $logo = APP_STORAGE . '/logo.jpg';
+    foreach ($keep as $r) db_set(db(), $r['name'], $r['value']); // Zugangsdaten dieses Servers bleiben erhalten
+    setting('__reset');
+    // Zwei-Faktor-Geheimnisse sind mit dem Schlüssel des Ursprungsservers verschlüsselt: ohne passenden Schlüssel zurücksetzen (sonst Aussperrung)
+    foreach (db()->query("SELECT id, username, totp_secret FROM users WHERE totp_enabled = 1")->fetchAll() as $u) {
+        if (secret_decrypt((string)$u['totp_secret']) === '') { db()->prepare("UPDATE users SET totp_enabled = 0, totp_secret = '', recovery_codes = '' WHERE id = ?")->execute([$u['id']]); audit('2fa_reset_restore', 'Zwei-Faktor nach Wiederherstellung zurückgesetzt (Schlüssel passt nicht)', (string)$u['username']); }
+    }
+    $logo = data_dir() . '/logo.jpg';
     if (!empty($payload['files']['logo.jpg'])) file_put_contents($logo, base64_decode($payload['files']['logo.jpg']));
     else @unlink($logo);
 }
@@ -158,13 +170,13 @@ function db_switch(array $target, bool $overwrite): array {
     $dst = db_connect($target);
     migrate($dst);
     if (db_has_data($dst) && !$overwrite) throw new RuntimeException('In der Ziel-Datenbank sind bereits Daten vorhanden. Zum Überschreiben bitte das Häkchen setzen.');
-    $src = db(); $data = db_export($src);
+    $src = db(); $data = db_export($src, true);
     backup_create('safety'); // Sicherheitskopie vor der Umstellung
     db_import($dst, $data);
     $a = db_counts($src); $b = db_counts($dst);
     foreach ($a as $t => $n) if ($n !== $b[$t]) throw new RuntimeException("Prüfung fehlgeschlagen: Tabelle $t hat $b[$t] statt $n Zeilen. Die Umstellung wurde nicht aktiviert.");
     $cfg = $cur; $cfg['driver'] = $target['driver'];
-    if ($target['driver'] === 'mysql') $cfg['mysql'] = $target['mysql'];
+    if ($target['driver'] === 'mysql') { $cfg['mysql'] = $target['mysql']; $cfg['mysql']['pass'] = secret_encrypt((string)$target['mysql']['pass']); }
     save_config($cfg);
     return $b;
 }

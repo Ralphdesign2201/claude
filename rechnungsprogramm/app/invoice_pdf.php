@@ -112,7 +112,7 @@ function invoice_pdf(array $inv, array $items, ?array $customer = null, string $
 function doc_frame(Pdf $pdf): void
 {
     $L = 20.0; $R = 190.0; $footerTop = 270.0; $grey = [110, 110, 110];
-    $logo = APP_STORAGE . '/logo.jpg'; $company = setting('company');
+    $logo = data_dir() . '/logo.jpg'; $company = setting('company');
     $pdf->addPage();
     if (is_file($logo)) {
         $s = getimagesize($logo);

@@ -26,18 +26,18 @@ $ivl = ['off' => 'Aus', 'daily' => 'Täglich', 'weekly' => 'Wöchentlich', 'mont
 <div class="grid">
 <label>Intervall<select name="backup_interval"><?php foreach ($ivl as $k => $l): ?><option value="<?= e($k) ?>"<?= $interval === $k ? ' selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
 <label>Maximal aufbewahrte automatische Backups<input type="number" min="1" max="365" name="backup_keep" value="<?= e($keep) ?>"></label>
-<label class="span2 check"><input type="checkbox" name="backup_pseudo" value="1"<?= $pseudo ? ' checked' : '' ?>> Zusätzlich beim Seitenaufruf prüfen, ob ein Backup fällig ist (falls kein Cronjob möglich)</label>
+<?php if (!is_saas()): ?><label class="span2 check"><input type="checkbox" name="backup_pseudo" value="1"<?= $pseudo ? ' checked' : '' ?>> Zusätzlich beim Seitenaufruf prüfen, ob ein Backup fällig ist (falls kein Cronjob möglich)</label><?php endif; ?>
 </div>
 <p class="muted">Letztes automatisches Backup: <?= $lastAuto ? e(date('d.m.Y H:i', $lastAuto)) : 'noch keines' ?>. Ältere automatische Backups über dem Limit werden gelöscht; manuelle und hochgeladene Backups bleiben erhalten.</p>
-<h3>Cronjob einrichten</h3>
+<?php if (!is_saas()): ?><h3>Cronjob einrichten</h3>
 <p class="muted">Beim Hoster einen Cronjob anlegen (z. B. täglich um 02:00 Uhr). Das Programm entscheidet selbst, ob nach Ihrem Intervall ein Backup fällig ist.</p>
 <p>Befehl (Shell-Cron): <code class="copy"><?= e($cronCmd) ?></code></p>
 <p>oder URL (Webcron): <code class="copy"><?= e($cronUrl) ?></code></p>
-<label class="check"><input type="checkbox" name="new_token" value="1"> Neues Cron-Token erzeugen (alte URL wird ungültig)</label>
+<label class="check"><input type="checkbox" name="new_token" value="1"> Neues Cron-Token erzeugen (alte URL wird ungültig)</label><?php else: ?><p class="muted">Die automatischen Backups führt die Plattform für Sie aus (täglicher Lauf).</p><?php endif; ?>
 <div class="actions"><button class="btn primary">Speichern</button></div>
 </form>
 
-<div class="card"><h2>Datenbank</h2>
+<?php if (!is_saas()): ?><div class="card"><h2>Datenbank</h2>
 <p>Aktiv: <strong><?= $driver === 'mysql' ? 'MySQL / MariaDB' : 'SQLite (Datei storage/rechnung.sqlite)' ?></strong> · <?= (int)$counts['customers'] ?> Kunden, <?= (int)$counts['invoices'] ?> Rechnungen, <?= (int)$counts['users'] ?> Benutzer</p>
 <p class="muted">Beim Umstellen werden alle Daten in die andere Datenbank kopiert und geprüft; erst danach wird umgeschaltet. Die bisherige Datenbank bleibt unverändert als Rückfall bestehen. Vorher wird automatisch eine Sicherheitskopie angelegt. Die Umstellung geht in beide Richtungen.</p>
 <?php if ($driver === 'sqlite'): ?>
@@ -65,3 +65,4 @@ $ivl = ['off' => 'Aus', 'daily' => 'Täglich', 'weekly' => 'Wöchentlich', 'mont
 <?php endif; ?>
 <?php endif; ?>
 </div>
+<?php endif; ?>

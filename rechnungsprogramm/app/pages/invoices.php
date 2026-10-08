@@ -87,12 +87,17 @@ function invoices_save(): void {
         if ($desc === '' && $price === 0) continue;
         if ($desc === '') { flash('Jede Position braucht eine Beschreibung.', 'err'); $back(); }
         $rate = $small ? 0.0 : max(0.0, min(100.0, parse_decimal((string)($_POST['vat_rate'][$i] ?? '19'))));
+        if ($e = amount_error($qty, $price)) { flash($e, 'err'); $back(); }
+        if ($e = field_too_long('invoice_items', ['description' => $desc, 'unit' => trim((string)($_POST['unit'][$i] ?? ''))])) { flash($e, 'err'); $back(); }
         $items[] = ['description' => $desc, 'quantity' => $qty, 'unit' => trim((string)($_POST['unit'][$i] ?? '')), 'unit_price' => $price, 'vat_rate' => $rate];
     }
     if (!$items) { flash('Mindestens eine Position ist erforderlich.', 'err'); $back(); }
+    if (!$id && ($e = saas_limit_error('invoices'))) { flash($e, 'err'); $back(); }
     $calc = calc_invoice($items);
+    if (abs($calc['gross']) > 900000000000000) { flash('Der Rechnungsbetrag ist zu groß.', 'err'); $back(); }
+    if ($e = field_too_long('invoices', ['subject' => post('subject'), 'intro' => post('intro'), 'notes' => post('notes'), 'service_date' => post('service_date')])) { flash($e, 'err'); $back(); }
 
-    $pdo->beginTransaction();
+    db_begin($pdo);
     try {
         $f = ['customer_id' => $cust['id'], 'invoice_date' => $date, 'due_date' => $due, 'service_date' => post('service_date'),
             'subject' => post('subject'), 'intro' => post('intro'), 'notes' => post('notes'),
@@ -116,9 +121,9 @@ function invoices_save(): void {
         }
         $ins = $pdo->prepare('INSERT INTO invoice_items(invoice_id, position, description, quantity, unit, unit_price, vat_rate, total) VALUES (?,?,?,?,?,?,?,?)');
         foreach ($items as $n => $it) $ins->execute([$id, $n + 1, $it['description'], $it['quantity'], $it['unit'], $it['unit_price'], $it['vat_rate'], $calc['lines'][$n]]);
-        $pdo->commit();
+        db_commit($pdo);
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        db_rollback($pdo);
         error_log($e->getMessage());
         flash('Speichern fehlgeschlagen.', 'err');
         $back();
@@ -168,15 +173,16 @@ function invoices_status(): void {
 
 function invoices_copy(): void {
     csrf_check();
+    if ($e = saas_limit_error('invoices')) { flash($e, 'err'); redirect('invoices'); }
     $id = (int)($_POST['id'] ?? 0); $inv = invoice_load($id); $pdo = db();
     $cs = $pdo->prepare('SELECT * FROM customers WHERE id = ?'); $cs->execute([$inv['customer_id']]); $cust = $cs->fetch();
     $today = date('Y-m-d');
-    $pdo->beginTransaction();
+    db_begin($pdo);
     $pdo->prepare('INSERT INTO invoices(invoice_number, customer_id, customer_address, invoice_date, due_date, service_date, subject, intro, notes, net_amount, vat_amount, gross_amount, small_business) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
         ->execute([next_invoice_number($pdo, $today), $inv['customer_id'], customer_address($cust), $today, date('Y-m-d', strtotime('+' . max(0, (int)setting('payment_days', '14')) . ' days')), '', $inv['subject'], $inv['intro'], $inv['notes'], $inv['net_amount'], $inv['vat_amount'], $inv['gross_amount'], (int)$inv['small_business']]);
     $new = (int)$pdo->lastInsertId();
     $pdo->prepare('INSERT INTO invoice_items(invoice_id, position, description, quantity, unit, unit_price, vat_rate, total) SELECT ?, position, description, quantity, unit, unit_price, vat_rate, total FROM invoice_items WHERE invoice_id = ?')->execute([$new, $id]);
-    $pdo->commit();
+    db_commit($pdo);
     flash('Rechnung kopiert. Bitte Positionen und Daten prüfen.');
     redirect('invoice_edit', ['id' => $new]);
 }

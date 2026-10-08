@@ -22,13 +22,21 @@ function redirect(string $route, array $params = []) {
 
 // ---- Session, CSRF, Flash ----
 function start_session(): void {
-    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
-    session_name('rechnung_sid');
-    session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => $https, 'httponly' => true, 'samesite' => 'Lax']);
+    @ini_set('session.use_strict_mode', '1'); @ini_set('session.use_only_cookies', '1'); @ini_set('session.use_trans_sid', '0'); @ini_set('session.gc_maxlifetime', '86400');
+    session_name('rg_sid');
+    session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => request_is_https(), 'httponly' => true, 'samesite' => 'Lax']);
     $dir = APP_STORAGE . '/sessions';
     if (!is_dir($dir)) @mkdir($dir, 0700, true);
     if (is_dir($dir) && is_writable($dir)) session_save_path($dir);
     session_start();
+    if (mt_rand(1, 100) === 1) foreach (glob($dir . '/sess_*') ?: [] as $f) if (@filemtime($f) < time() - 2 * 86400) @unlink($f);
+    // Leerlauf- und Gesamtdauer, Bindung an den Browser (User-Agent)
+    $now = time(); $ua = hash('sha256', (string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
+    if (isset($_SESSION['_t0']) && ($now - ($_SESSION['_last'] ?? 0) > 8 * 3600 || $now - $_SESSION['_t0'] > 24 * 3600 || ($_SESSION['_ua'] ?? '') !== $ua)) {
+        $_SESSION = []; session_regenerate_id(true);
+    }
+    if (!isset($_SESSION['_t0'])) { $_SESSION['_t0'] = $now; $_SESSION['_ua'] = $ua; }
+    $_SESSION['_last'] = $now;
 }
 function csrf_token(): string {
     if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(16));
@@ -38,6 +46,7 @@ function csrf_field(): string { return '<input type="hidden" name="csrf" value="
 function csrf_check(): void {
     if (!hash_equals($_SESSION['csrf'] ?? '', (string)($_POST['csrf'] ?? ''))) {
         http_response_code(400);
+        header('Content-Type: text/plain; charset=utf-8');
         exit('Ungültiges Formular-Token. Bitte Seite neu laden.');
     }
 }
@@ -49,7 +58,21 @@ function flash(?string $msg = null, string $type = 'ok') {
 }
 
 // ---- Eingaben / Formate ----
-function post(string $k, string $d = ''): string { return trim((string)($_POST[$k] ?? $d)); }
+function post(string $k, string $d = ''): string { $v = $_POST[$k] ?? $d; return is_scalar($v) ? trim((string)$v) : $d; }
+
+/** Entfernt unerwartete Array-Eingaben (verhindert Typfehler/Warnungen durch manipulierte Anfragen). */
+function sanitize_input(): void {
+    $arrayFields = ['description', 'quantity', 'unit', 'unit_price', 'vat_rate', 'perm'];
+    foreach ($_GET as $k => $v) if (!is_string($v)) unset($_GET[$k]);
+    foreach ($_COOKIE as $k => $v) if (!is_string($v)) unset($_COOKIE[$k]);
+    foreach ($_POST as $k => $v) {
+        if (is_array($v)) {
+            if (!in_array(preg_replace('/\[\]$/', '', (string)$k), $arrayFields, true)) { unset($_POST[$k]); continue; }
+            foreach ($v as $i => $x) if (!is_scalar($x)) unset($_POST[$k][$i]);
+        }
+    }
+    foreach ($_FILES as $k => $f) if (!is_array($f) || !is_string($f['name'] ?? null) || !is_string($f['tmp_name'] ?? null)) unset($_FILES[$k]);
+}
 
 function parse_decimal(string $s): float {
     $s = trim(str_replace(['€', ' ', "\xc2\xa0"], '', $s));
@@ -78,15 +101,18 @@ function valid_date(string $s): ?string {
 
 // ---- Einstellungen ----
 function setting(string $key, string $default = ''): string {
-    static $cache = null;
-    if ($cache === null) {
-        $cache = [];
-        foreach (db()->query('SELECT name, value FROM settings') as $r) $cache[$r['name']] = (string)$r['value'];
+    static $cache = [];
+    $ck = data_dir();
+    if ($key === '__reset') { unset($cache[$ck]); return ''; }
+    if (!isset($cache[$ck])) {
+        $cache[$ck] = [];
+        foreach (db()->query('SELECT name, value FROM settings') as $r) $cache[$ck][$r['name']] = in_array($r['name'], SECRET_SETTINGS, true) ? secret_decrypt((string)$r['value']) : (string)$r['value'];
     }
-    return $cache[$key] ?? $default;
+    return $cache[$ck][$key] ?? $default;
 }
 function set_setting(string $key, string $value): void {
-    db_set(db(), $key, $value);
+    db_set(db(), $key, in_array($key, SECRET_SETTINGS, true) ? secret_encrypt($value) : $value);
+    setting('__reset');
 }
 
 // ---- Rechnungsberechnung ----
@@ -122,7 +148,7 @@ function render(string $view, array $vars = [], string $title = ''): void {
     ob_start();
     require APP_ROOT . '/views/' . $view . '.php';
     $content = ob_get_clean();
-    require APP_ROOT . '/views/' . (in_array($view, ['login', 'setup'], true) ? 'layout_auth' : 'layout') . '.php';
+    require APP_ROOT . '/views/' . ($GLOBALS['__layout'] ?? (in_array($view, ['login', 'sa_login', 'login_2fa', 'forgot', 'reset'], true) ? 'layout_auth' : 'layout')) . '.php';
 }
 
 const REMINDER_LEVELS = [1 => 'Zahlungserinnerung', 2 => '1. Mahnung', 3 => '2. Mahnung (letzte Mahnung)'];

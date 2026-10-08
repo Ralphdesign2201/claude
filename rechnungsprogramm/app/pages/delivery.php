@@ -54,10 +54,14 @@ function delivery_save(): void {
     foreach ((array)($_POST['description'] ?? []) as $i => $desc) {
         $desc = trim((string)$desc);
         if ($desc === '') continue;
-        $items[] = [$desc, parse_decimal((string)($_POST['quantity'][$i] ?? '1')), trim((string)($_POST['unit'][$i] ?? ''))];
+        $q = parse_decimal((string)($_POST['quantity'][$i] ?? '1'));
+        if ($e = amount_error($q, 0)) { flash($e, 'err'); $back(); }
+        if ($e = field_too_long('delivery_items', ['description' => $desc, 'unit' => trim((string)($_POST['unit'][$i] ?? ''))])) { flash($e, 'err'); $back(); }
+        $items[] = [$desc, $q, trim((string)($_POST['unit'][$i] ?? ''))];
     }
     if (!$items) { flash('Mindestens eine Position ist erforderlich.', 'err'); $back(); }
-    $pdo->beginTransaction();
+    if ($e = field_too_long('delivery_notes', ['subject' => post('subject'), 'intro' => post('intro'), 'notes' => post('notes')])) { flash($e, 'err'); $back(); }
+    db_begin($pdo);
     try {
         $f = ['customer_id' => $cust['id'], 'note_date' => $date, 'subject' => post('subject'), 'intro' => post('intro'), 'notes' => post('notes'), 'customer_address' => customer_address($cust)];
         if ($id) {
@@ -73,8 +77,8 @@ function delivery_save(): void {
         }
         $ins = $pdo->prepare('INSERT INTO delivery_items(note_id, position, description, quantity, unit) VALUES (?,?,?,?,?)');
         foreach ($items as $n => [$desc, $qty, $unit]) $ins->execute([$id, $n + 1, $desc, $qty, $unit]);
-        $pdo->commit();
-    } catch (Throwable $e) { $pdo->rollBack(); error_log($e->getMessage()); flash('Speichern fehlgeschlagen.', 'err'); $back(); }
+        db_commit($pdo);
+    } catch (Throwable $e) { db_rollback($pdo); error_log($e->getMessage()); flash('Speichern fehlgeschlagen.', 'err'); $back(); }
     flash('Lieferschein gespeichert.');
     redirect('delivery_show', ['id' => $id]);
 }

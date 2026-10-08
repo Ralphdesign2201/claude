@@ -1,3 +1,6 @@
 storage/*
 !storage/.htaccess
 !storage/index.html
+!storage/web.config
+__pycache__/
+*.pyc

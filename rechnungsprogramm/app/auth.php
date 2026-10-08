@@ -24,7 +24,7 @@ function current_user(bool $reload = false): ?array {
     static $u = false;
     if ($u === false || $reload) {
         $u = null;
-        if (!empty($_SESSION['uid'])) {
+        if (!empty($_SESSION['uid']) && !(is_saas() && tenant_slug() === null)) {
             $st = db()->prepare('SELECT u.*, r.name AS role_name, r.permissions, r.is_system FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ? AND u.active = 1');
             $st->execute([(int)$_SESSION['uid']]);
             $row = $st->fetch();
@@ -57,20 +57,31 @@ function active_admin_count(int $exceptId = 0): int {
     return (int)$st->fetchColumn();
 }
 
-// ---- Login-Bremse pro IP (Dateien in storage/throttle) ----
-function throttle_file(): string {
-    $d = APP_STORAGE . '/throttle'; if (!is_dir($d)) @mkdir($d, 0700, true);
-    return $d . '/' . sha1(($_SERVER['REMOTE_ADDR'] ?? 'cli') . '|' . (string)(setting('cron_token') ?: 'x')) . '.json';
+// ---- Konto-Sperre und zweiter Faktor (gemeinsam für Mandanten-Benutzer und Superadmins) ----
+const ACCOUNT_TABLES = ['users', 'superadmins'];
+
+/** Zählt einen Fehlversuch am Konto; sperrt nach 5 Fehlversuchen mit steigender Wartezeit. */
+function account_fail(PDO $pdo, string $table, array $u): void {
+    if (!in_array($table, ACCOUNT_TABLES, true)) return;
+    $n = (int)$u['failed_logins'] + 1;
+    $lock = $n >= 5 ? date('Y-m-d H:i:s', time() + min(3600, 60 * 2 ** ($n - 5))) : null;
+    $pdo->prepare("UPDATE $table SET failed_logins = ?, locked_until = ? WHERE id = ?")->execute([$n, $lock, $u['id']]);
 }
-function throttle_blocked(): int {
-    $f = throttle_file(); $d = is_file($f) ? json_decode((string)file_get_contents($f), true) : null;
-    return max(0, (int)($d['until'] ?? 0) - time());
+function account_ok(PDO $pdo, string $table, array $u): void {
+    if (!in_array($table, ACCOUNT_TABLES, true)) return;
+    $pdo->prepare("UPDATE $table SET failed_logins = 0, locked_until = NULL, last_login = ? WHERE id = ?")->execute([date('Y-m-d H:i:s'), $u['id']]);
 }
-function throttle_fail(): void {
-    $f = throttle_file(); $d = is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: []) : [];
-    if (time() - (int)($d['t'] ?? 0) > 900) $d = ['n' => 0];
-    $d['n'] = (int)($d['n'] ?? 0) + 1; $d['t'] = time();
-    if ($d['n'] >= 5) $d['until'] = time() + min(900, 30 * ($d['n'] - 4));
-    @file_put_contents($f, json_encode($d), LOCK_EX);
+function account_locked(array $u): bool { return !empty($u['locked_until']) && strtotime((string)$u['locked_until']) > time(); }
+
+/** Prüft TOTP-Code oder Wiederherstellungscode; verbraucht ihn. */
+function second_factor_ok(PDO $pdo, string $table, array $u, string $code): bool {
+    if (!in_array($table, ACCOUNT_TABLES, true)) return false;
+    $code = trim($code);
+    $step = totp_verify(secret_decrypt((string)$u['totp_secret']), $code, (int)$u['totp_last']);
+    if ($step !== null) { $pdo->prepare("UPDATE $table SET totp_last = ? WHERE id = ?")->execute([$step, $u['id']]); return true; }
+    $h = hash('sha256', str_replace('-', '', strtolower($code)));
+    $codes = json_decode((string)$u['recovery_codes'], true) ?: [];
+    foreach ($codes as $i => $c) if (hash_equals($c, $h)) { unset($codes[$i]); $pdo->prepare("UPDATE $table SET recovery_codes = ? WHERE id = ?")->execute([json_encode(array_values($codes)), $u['id']]); audit('2fa_recovery_used', 'Wiederherstellungscode verwendet', (string)$u['username'], $table === 'superadmins'); return true; }
+    return false;
 }
-function throttle_clear(): void { @unlink(throttle_file()); }
+

@@ -3,7 +3,9 @@
 <?php if ($err): ?><div class="msg err"><?= e($err) ?></div><?php endif; ?>
 <form method="post" action="<?= e(url('login')) ?>">
 <?= csrf_field() ?>
-<label>Benutzername<input name="username" value="<?= e($user) ?>" required autofocus autocomplete="username"></label>
+<?php if ($saas && !$hostTenant): ?><label>Firmen-ID<input name="tenant" value="<?= e($tenantInput) ?>" required autocapitalize="none" autocomplete="organization" placeholder="z. B. mueller-sanitaer"></label><?php endif; ?>
+<label>Benutzername<input name="username" value="<?= e($user) ?>" required <?= ($saas && !$hostTenant && $tenantInput === '') ? '' : 'autofocus' ?> autocomplete="username"></label>
 <label>Passwort<input type="password" name="password" required autocomplete="current-password"></label>
 <button class="btn primary wide">Anmelden</button>
 </form>
+<p class="center small"><a href="<?= e(url('forgot')) ?>">Passwort vergessen?</a><?php if ($saas && csetting('signup_open', '1') === '1'): ?> · <a href="<?= e(url('signup')) ?>">Kostenlos testen</a><?php endif; ?></p>

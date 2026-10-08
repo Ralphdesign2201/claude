@@ -1,14 +1,14 @@
-# Wenn der Webspace auf diesen Ordner zeigt: interne Ordner sperren
+# Wenn der Webspace auf diesen Ordner zeigt: interne Ordner und Dateien sperren
 Options -Indexes
 <IfModule mod_authz_core.c>
-  <FilesMatch "\.(sqlite|db|md)$">
+  <FilesMatch "\.(sqlite|sqlite-wal|sqlite-shm|db|md|rgb|rgu|key|log|lock)$">
     Require all denied
   </FilesMatch>
 </IfModule>
 <IfModule !mod_authz_core.c>
-  <FilesMatch "\.(sqlite|db|md)$">
+  <FilesMatch "\.(sqlite|sqlite-wal|sqlite-shm|db|md|rgb|rgu|key|log|lock)$">
     Order allow,deny
     Deny from all
   </FilesMatch>
 </IfModule>
-RedirectMatch 403 ^/(.*/)?(app|storage)(/|$)
+RedirectMatch 403 ^/(.*/)?(app|storage|tools|tests|updates|dist)(/|$)
