@@ -36,3 +36,27 @@
 <input name="reason" placeholder="Stornogrund (optional)"><button class="btn danger">Stornieren</button></form>
 </div></div>
 <?php endif; ?>
+
+<?php if ($reminders || $inv['status'] === 'open'): ?>
+<div class="card"><h3>Mahnwesen</h3>
+<?php if ($reminders): ?>
+<table><thead><tr><th>Stufe</th><th>Datum</th><th>Neue Frist</th><th class="r">Gesamt</th><th></th></tr></thead><tbody>
+<?php foreach ($reminders as $r): ?><tr><td><?= e(REMINDER_LEVELS[$r['level']]) ?></td><td><?= e(date_de($r['reminder_date'])) ?></td><td><?= e(date_de($r['new_due_date'])) ?></td>
+<td class="r"><?= e(money((int)$r['open_amount'] + (int)$r['fee'] + (int)$r['interest'])) ?></td>
+<td class="r"><a href="<?= e(url('reminder_pdf', ['id' => $r['id']])) ?>" target="_blank" rel="noopener">PDF</a>
+<form method="post" action="<?= e(url('reminder_delete')) ?>" class="inline" data-confirm="Mahnung löschen?"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn ghost">Löschen</button></form></td></tr><?php endforeach; ?>
+</tbody></table>
+<?php endif; ?>
+<?php if ($inv['status'] === 'open'):
+  $next = $reminders ? min(3, (int)max(array_column($reminders, 'level')) + 1) : 1; ?>
+<form method="post" action="<?= e(url('reminder_save')) ?>" class="grid" id="remform" data-fee2="<?= e(setting('reminder_fee_2', '0,00') ?: '0,00') ?>" data-fee3="<?= e(setting('reminder_fee_3', '0,00') ?: '0,00') ?>">
+<?= csrf_field() ?><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>">
+<label>Stufe<select name="level" id="remlevel"><?php foreach (REMINDER_LEVELS as $k => $l): ?><option value="<?= $k ?>"<?= $k === $next ? ' selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
+<label>Mahndatum<input type="date" name="reminder_date" value="<?= e(date('Y-m-d')) ?>"></label>
+<label>Neue Zahlungsfrist<input type="date" name="new_due_date" value="<?= e(date('Y-m-d', strtotime('+7 days'))) ?>"></label>
+<label>Mahngebühr (€)<input name="fee" id="remfee" inputmode="decimal" value="<?= e($next === 2 ? (setting('reminder_fee_2') ?: '0,00') : ($next === 3 ? (setting('reminder_fee_3') ?: '0,00') : '0,00')) ?>"></label>
+<label class="span2">Text (leer = Standardtext der Stufe)<textarea name="text" rows="3"></textarea></label>
+<div><button class="btn"><?= $od ? 'Mahnung erstellen' : 'Erinnerung/Mahnung erstellen (noch nicht überfällig)' ?></button></div>
+</form>
+<?php endif; ?></div>
+<?php endif; ?>

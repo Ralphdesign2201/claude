@@ -71,6 +71,49 @@ function migrate(PDO $pdo): void {
         vat_rate REAL NOT NULL DEFAULT 19,
         total INTEGER NOT NULL DEFAULT 0
     )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+        level INTEGER NOT NULL CHECK (level BETWEEN 1 AND 3),
+        reminder_date TEXT NOT NULL,
+        new_due_date TEXT NOT NULL,
+        open_amount INTEGER NOT NULL,
+        fee INTEGER NOT NULL DEFAULT 0,
+        interest INTEGER NOT NULL DEFAULT 0,
+        text TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS offers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_number TEXT NOT NULL UNIQUE,
+        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+        customer_address TEXT NOT NULL DEFAULT '',
+        offer_date TEXT NOT NULL,
+        valid_until TEXT NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        intro TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','accepted','declined')),
+        invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+        net_amount INTEGER NOT NULL DEFAULT 0,
+        vat_amount INTEGER NOT NULL DEFAULT 0,
+        gross_amount INTEGER NOT NULL DEFAULT 0,
+        small_business INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS offer_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id INTEGER NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL DEFAULT 0,
+        description TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 1,
+        unit TEXT NOT NULL DEFAULT '',
+        unit_price INTEGER NOT NULL DEFAULT 0,
+        vat_rate REAL NOT NULL DEFAULT 19,
+        total INTEGER NOT NULL DEFAULT 0
+    )");
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_offer_items ON offer_items(offer_id)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_rem_inv ON reminders(invoice_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_customer ON invoices(customer_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_inv_status ON invoices(status, due_date)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_items_inv ON invoice_items(invoice_id)');
@@ -97,9 +140,15 @@ function customer_address(array $c): string {
 }
 
 function next_invoice_number(PDO $pdo, string $date): string {
+    return next_number($pdo, 'invoices', 'invoice_number', setting('invoice_prefix', 'RE-'), $date);
+}
+function next_offer_number(PDO $pdo, string $date): string {
+    return next_number($pdo, 'offers', 'offer_number', setting('offer_prefix', 'AN-'), $date);
+}
+function next_number(PDO $pdo, string $table, string $col, string $prefix, string $date): string {
     $year = substr($date, 0, 4);
-    $prefix = setting('invoice_prefix', 'RE-') . $year . '-';
-    $st = $pdo->prepare('SELECT invoice_number FROM invoices WHERE substr(invoice_number, 1, ?) = ? ORDER BY LENGTH(invoice_number) DESC, invoice_number DESC LIMIT 1');
+    $prefix .= $year . '-';
+    $st = $pdo->prepare("SELECT $col FROM $table WHERE substr($col, 1, ?) = ? ORDER BY LENGTH($col) DESC, $col DESC LIMIT 1");
     $st->execute([strlen($prefix), $prefix]);
     $last = $st->fetchColumn();
     $n = $last ? (int)substr((string)$last, strlen($prefix)) + 1 : 1;

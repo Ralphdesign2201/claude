@@ -6,6 +6,13 @@
     if (m && !window.confirm(m)) e.preventDefault();
   });
 
+  // Mahngebühr je nach Stufe vorbelegen
+  var lv = document.getElementById('remlevel');
+  if (lv) lv.addEventListener('change', function () {
+    var f = document.getElementById('remform');
+    document.getElementById('remfee').value = this.value === '2' ? f.getAttribute('data-fee2') : this.value === '3' ? f.getAttribute('data-fee3') : '0,00';
+  });
+
   var form = document.getElementById('invform');
   if (!form) return;
   var body = document.querySelector('#items tbody');

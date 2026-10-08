@@ -128,3 +128,18 @@ function render(string $view, array $vars = [], string $title = ''): void {
     $content = ob_get_clean();
     require APP_ROOT . '/views/layout.php';
 }
+
+const REMINDER_LEVELS = [1 => 'Zahlungserinnerung', 2 => '1. Mahnung', 3 => '2. Mahnung (letzte Mahnung)'];
+function reminder_default_text(int $level, array $inv): string {
+    $nr = $inv['invoice_number']; $d = date_de($inv['invoice_date']);
+    return [
+        1 => "sicherlich ist es Ihrer Aufmerksamkeit entgangen, dass unsere Rechnung $nr vom $d noch nicht beglichen wurde. Wir bitten Sie, den offenen Betrag bis zum unten genannten Datum zu überweisen. Sollten Sie bereits gezahlt haben, betrachten Sie dieses Schreiben bitte als gegenstandslos.",
+        2 => "trotz unserer Zahlungserinnerung konnten wir für die Rechnung $nr vom $d keinen Zahlungseingang feststellen. Wir bitten Sie dringend, den offenen Betrag zuzüglich der aufgeführten Kosten bis zum unten genannten Datum zu überweisen.",
+        3 => "die Rechnung $nr vom $d ist trotz Mahnung weiterhin offen. Wir fordern Sie letztmalig auf, den Gesamtbetrag bis zum unten genannten Datum zu begleichen. Danach behalten wir uns vor, ohne weitere Ankündigung rechtliche Schritte einzuleiten; dadurch entstehende Kosten gehen zu Ihren Lasten.",
+    ][$level];
+}
+
+function offer_status_label(string $s, bool $expired = false): string {
+    if ($s === 'open') return $expired ? 'Abgelaufen' : 'Offen';
+    return ['accepted' => 'Angenommen', 'declined' => 'Abgelehnt'][$s] ?? $s;
+}

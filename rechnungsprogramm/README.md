@@ -7,7 +7,9 @@ Die PDF-Erzeugung ist eingebaut (kein Fremdcode, keine Bibliothek nötig).
 Dashboard (offen, überfällig, Zahlungseingang, Jahresumsatz) · Kundenverwaltung (Firma, Ansprechpartner, Telefon, E-Mail, Suche) ·
 Rechnungen mit Positionen, Mengen, Einheiten, 19/7/0 % USt, automatischer Nummer (`RE-2026-0001`, je Jahr fortlaufend) ·
 PDF nach DIN-5008-Aufbau mit Logo, Bankdaten und Fußzeile · Status offen/bezahlt/storniert (Storno-Stempel, Nummer bleibt belegt) ·
-Rechnung kopieren · Kleinunternehmer-Modus (§ 19 UStG) · Passwortschutz · Datenbank-Backup per Klick.
+Rechnung kopieren · **E-Rechnung (ZUGFeRD/Factur-X, Profil EN 16931)**: jedes PDF ist ein PDF/A-3 mit eingebettetem XML, zusätzlich XML-Download ·
+**Angebote** (eigener Nummernkreis, Gültigkeit, Status, mit einem Klick in Rechnung umwandeln) ·
+**Mahnwesen** (Zahlungserinnerung, 1. und 2. Mahnung als PDF, Mahngebühren, optional Verzugszinsen) · Kleinunternehmer-Modus (§ 19 UStG) · Passwortschutz · Datenbank-Backup per Klick.
 Anschrift und Beträge werden pro Rechnung festgehalten; Kunden mit Rechnungen sind nicht löschbar.
 
 ## Installation auf dem Webspace
@@ -28,6 +30,10 @@ Voraussetzungen: PHP ≥ 8.0 mit `pdo_sqlite` (Standard) und `mbstring`; `gd` em
 `public/` (index.php, CSS/JS) · `app/` (bootstrap, helpers, db, pdf, pages, views) · `storage/` (SQLite-Datenbank, Logo, Sessions)
 · Tabellen: `customers`, `invoices`, `invoice_items`, `settings`. Beträge werden als Cent-Ganzzahlen gespeichert.
 
-## Noch nicht enthalten (Erweiterungen laut Konzept)
-Angebote, Lieferscheine, Mahnungen, DATEV-Export, ZUGFeRD/E-Rechnung, E-Mail-Versand.
-Hinweis: In Deutschland gilt für Rechnungen zwischen Unternehmen schrittweise die E-Rechnungspflicht – ZUGFeRD sollte daher die erste Erweiterung sein.
+## E-Rechnung
+Die eingebettete XML-Datei wurde mit dem Open-Source-Validator Mustang (Schema, EN-16931-Schematron, PDF/A-3 über veraPDF) geprüft: gültig.
+Für die Kennung des Verkäufers (Pflichtangabe) bitte USt-IdNr. oder zumindest die Steuernummer in den Einstellungen eintragen.
+Die Schrift Liberation Sans (SIL OFL, `app/fonts/`) wird eingebettet, daher ist ein PDF ca. 400 KB groß.
+
+## Noch nicht enthalten
+Lieferscheine, DATEV-Export, E-Mail-Versand, Eingang/Prüfung fremder E-Rechnungen, XRechnung (Behörden; Leitweg-ID).

@@ -13,7 +13,8 @@
   <a class="brand" href="<?= e(url('dashboard')) ?>"><?= e(setting('company') ?: 'Rechnungsprogramm') ?></a>
   <nav>
     <a href="<?= e(url('dashboard')) ?>" class="<?= $cur === 'dashboard' ? 'on' : '' ?>">Übersicht</a>
-    <a href="<?= e(url('invoices')) ?>" class="<?= str_starts_with($cur, 'invoice') ? 'on' : '' ?>">Rechnungen</a>
+    <a href="<?= e(url('offers')) ?>" class="<?= str_starts_with($cur, 'offer') ? 'on' : '' ?>">Angebote</a>
+    <a href="<?= e(url('invoices')) ?>" class="<?= str_starts_with($cur, 'invoice') || str_starts_with($cur, 'reminder') ? 'on' : '' ?>">Rechnungen</a>
     <a href="<?= e(url('customers')) ?>" class="<?= str_starts_with($cur, 'customer') ? 'on' : '' ?>">Kunden</a>
     <a href="<?= e(url('settings')) ?>" class="<?= str_starts_with($cur, 'settings') ? 'on' : '' ?>">Einstellungen</a>
     <a href="<?= e(url('logout')) ?>">Abmelden</a>

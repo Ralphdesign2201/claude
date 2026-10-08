@@ -127,7 +127,8 @@ function invoices_save(): void {
 function invoices_show(): void {
     $id = (int)($_GET['id'] ?? 0);
     $inv = invoice_load($id);
-    render('invoice_show', ['inv' => $inv, 'items' => invoice_items($id)], 'Rechnung ' . $inv['invoice_number']);
+    $rs = db()->prepare('SELECT * FROM reminders WHERE invoice_id = ? ORDER BY reminder_date, id'); $rs->execute([$id]);
+    render('invoice_show', ['inv' => $inv, 'items' => invoice_items($id), 'reminders' => $rs->fetchAll()], 'Rechnung ' . $inv['invoice_number']);
 }
 
 function invoices_pdf(): void {
