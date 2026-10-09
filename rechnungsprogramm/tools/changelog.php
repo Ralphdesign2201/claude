@@ -27,4 +27,7 @@ return [
         'Behoben: Die Übernahme aus dem Katalog in Rechnungen, Angebote und Lieferscheine funktionierte nicht zuverlässig',
         'Behoben: Das Feld „Einzelpreis“ in Rechnungen und Angeboten wurde in der SaaS-Version zu groß dargestellt',
     ]],
+    '1.5' => ['date' => '2026-10-10', 'notes' => [
+        'Behoben: Nach einem Update zeigte der Browser teils noch das alte Skript aus dem Zwischenspeicher (z. B. keine Katalog-Auswahl im Beschreibungsfeld) – Skripte und Styles werden jetzt bei jeder Änderung automatisch neu geladen',
+    ]],
 ];

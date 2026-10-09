@@ -1,6 +1,9 @@
 # Änderungsprotokoll
 
-Aktuelle Update-Datei: `update-1.4.rgu` (kumulativ ab Version 1.0).
+Aktuelle Update-Datei: `update-1.5.rgu` (kumulativ ab Version 1.0).
+
+## Version 1.5 (2026-10-10)
+- Behoben: Nach einem Update zeigte der Browser teils noch das alte Skript aus dem Zwischenspeicher (z. B. keine Katalog-Auswahl im Beschreibungsfeld) – Skripte und Styles werden jetzt bei jeder Änderung automatisch neu geladen
 
 ## Version 1.4 (2026-10-10)
 - Geändert: Leistungen und Artikel werden jetzt direkt im Beschreibungsfeld ausgewählt – Nummer oder Text tippen, passende Einträge erscheinen zur Auswahl (Maus oder Pfeiltasten + Enter)

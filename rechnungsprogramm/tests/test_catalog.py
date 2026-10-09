@@ -97,7 +97,7 @@ def upgrade(t, kind='single'):
             t.check('Version 1.0' in a.req('updates').text, 'Ausgangsstand ist 1.0'); t.eq(a.req('catalog').code in (302, 404), True, 'Katalog gibt es in 1.0 noch nicht')
             r = a.post('update_upload', {}, page='updates', files={'file': ('u.rgu', pkg)}); tk = re.search(r'token=([0-9a-f]{32})', r.loc); t.check(bool(tk), 'Update 1.1 akzeptiert')
             prev = a.req('updates', {'token': tk.group(1)}).text; t.check('Version 1.1' in prev and 'Leistungen' in prev and '<h3>Version 1.0' not in prev, 'Vorschau zeigt nur neue Versionen')
-            r = a.post('update_install', {'token': tk.group(1)}, page='updates'); a.req('update_finish'); t.check(f"'{CUR}'" in open(root + '/app/version.php').read(), 'neue Version installiert')
+            r = a.post('update_install', {'token': tk.group(1)}, page='updates'); a.req('update_finish'); t.check(f"'{CUR}'" in open(root + '/app/version.php').read(), 'neue Version installiert'); t.check('catdrop' in open(root + '/public/assets/app.js').read() and re.search(r'app\.js\?v=\d+', a.req('dashboard').text) is not None, 'neues Skript installiert und mit Versionsstempel eingebunden (kein veralteter Browser-Cache)')
             a2 = Client(f'http://127.0.0.1:{port}'); a2.post('login', {'username': 'admin', 'password': PW}, page='login')
             t.eq(a2.req('catalog').code, 200, 'Katalog nach Update vorhanden'); t.check('Altkunde AG' in a2.req('customers').text and 'RE-2026-0001' in a2.req('invoices').text, 'alte Daten unverändert')
             a2.post('catalog_save', {'id': 0, 'kind': 'service', 'name': 'Nach Update', 'price': '5'}, page='catalog_edit'); t.check('Nach Update' in a2.req('catalog').text, 'Neuer Katalog funktioniert')
