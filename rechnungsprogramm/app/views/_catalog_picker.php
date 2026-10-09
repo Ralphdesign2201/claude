@@ -1,8 +1,7 @@
-<?php /* Auswahl aus dem Katalog: $catalog (Liste), $withPrice (bool) */ if (!empty($catalog)): ?>
-<div class="catalog-pick" id="catpick" data-price="<?= !empty($withPrice) ? '1' : '0' ?>">
-<label>Leistung oder Artikel aus dem Katalog einfügen<input type="search" id="catsearch" list="catlist" placeholder="Tippen zum Suchen, dann auswählen …" autocomplete="off"></label>
-<button type="button" class="btn" id="catadd">Einfügen</button>
-<datalist id="catlist"><?php foreach ($catalog as $c): $label = trim(($c['number'] !== '' ? $c['number'] . ' · ' : '') . $c['name']) . (!empty($withPrice) ? ' (' . money_plain((int)$c['price_cents']) . ' €/' . ($c['unit'] ?: 'Einh.') . ')' : ''); ?>
-<option value="<?= e($label) ?>" data-name="<?= e($c['name']) ?>" data-desc="<?= e($c['description']) ?>" data-unit="<?= e($c['unit']) ?>" data-price="<?= e(money_plain((int)$c['price_cents'])) ?>" data-vat="<?= e(qty_fmt((float)$c['vat_rate'])) ?>"></option><?php endforeach; ?></datalist>
-</div>
+<?php /* Katalogdaten für die Auswahl im Beschreibungsfeld: $catalog (Liste), $withPrice (bool). Keine Ausgabe ohne Recht/Einträge. */
+if (!empty($catalog)):
+    $cat = []; foreach ($catalog as $c) $cat[] = ['k' => $c['kind'] === 'article' ? 'Artikel' : 'Leistung', 'n' => (string)$c['number'], 'name' => (string)$c['name'], 'd' => (string)$c['description'], 'u' => (string)$c['unit'], 'p' => money_plain((int)$c['price_cents']), 'v' => qty_fmt((float)$c['vat_rate'])];
+?>
+<div id="catdata" hidden data-price="<?= !empty($withPrice) ? '1' : '0' ?>" data-catalog="<?= e(json_encode($cat, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>"></div>
+<p class="muted small">Tipp: Nummer oder Text in die Beschreibung tippen – passende Leistungen und Artikel erscheinen zur Auswahl.</p>
 <?php endif; ?>

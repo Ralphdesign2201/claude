@@ -15,7 +15,7 @@
 <h2>Tarif wählen</h2>
 <div class="pgrid"><?php foreach ($plans as $p): $cur_p = (int)$p['id'] === (int)$t['plan_id']; ?>
 <div class="pcard<?= $cur_p ? ' on' : '' ?>"><h3><?= e($p['name']) ?><?= $cur_p ? ' <span class="badge paid">aktuell</span>' : '' ?></h3><p class="muted"><?= e($p['description']) ?></p>
-<div class="price"><?= e(money_c((int)$p['price_cents'], $p['currency'])) ?><small> / <?= $p['interval_unit'] === 'year' ? 'Jahr' : 'Monat' ?></small></div>
+<div class="pprice"><?= e(money_c((int)$p['price_cents'], $p['currency'])) ?><small> / <?= $p['interval_unit'] === 'year' ? 'Jahr' : 'Monat' ?></small></div>
 <ul class="plist"><li><?= (int)$p['max_users'] > 0 ? e((int)$p['max_users']) . ' Benutzer' : 'Unbegrenzt Benutzer' ?></li><li><?= (int)$p['max_invoices'] > 0 ? 'bis ' . e((int)$p['max_invoices']) . ' Rechnungen / Monat' : 'Unbegrenzt Rechnungen' ?></li></ul>
 <?php if (($ready['stripe'] || $ready['paypal']) && !($paid && $cur_p && $t['status'] === 'active')): ?>
 <form method="post" action="<?= e(url('billing_checkout')) ?>" class="paybtns"><?= csrf_field() ?><input type="hidden" name="plan_id" value="<?= (int)$p['id'] ?>">

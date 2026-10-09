@@ -1,6 +1,11 @@
 # Änderungsprotokoll
 
-Aktuelle Update-Datei: `update-1.3.rgu` (kumulativ ab Version 1.0).
+Aktuelle Update-Datei: `update-1.4.rgu` (kumulativ ab Version 1.0).
+
+## Version 1.4 (2026-10-10)
+- Geändert: Leistungen und Artikel werden jetzt direkt im Beschreibungsfeld ausgewählt – Nummer oder Text tippen, passende Einträge erscheinen zur Auswahl (Maus oder Pfeiltasten + Enter)
+- Behoben: Die Übernahme aus dem Katalog in Rechnungen, Angebote und Lieferscheine funktionierte nicht zuverlässig
+- Behoben: Das Feld „Einzelpreis“ in Rechnungen und Angeboten wurde in der SaaS-Version zu groß dargestellt
 
 ## Version 1.3 (2026-10-10)
 - Neu: Der Superadmin kann sich über die normale Anmeldeseite anmelden – Firmen-ID einfach leer lassen (inklusive Zwei-Faktor-Abfrage und Anmeldeschutz)

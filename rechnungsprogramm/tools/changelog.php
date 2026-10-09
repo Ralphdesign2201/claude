@@ -22,4 +22,9 @@ return [
     '1.3' => ['date' => '2026-10-10', 'notes' => [
         'Neu: Der Superadmin kann sich über die normale Anmeldeseite anmelden – Firmen-ID einfach leer lassen (inklusive Zwei-Faktor-Abfrage und Anmeldeschutz)',
     ]],
+    '1.4' => ['date' => '2026-10-10', 'notes' => [
+        'Geändert: Leistungen und Artikel werden jetzt direkt im Beschreibungsfeld ausgewählt – Nummer oder Text tippen, passende Einträge erscheinen zur Auswahl (Maus oder Pfeiltasten + Enter)',
+        'Behoben: Die Übernahme aus dem Katalog in Rechnungen, Angebote und Lieferscheine funktionierte nicht zuverlässig',
+        'Behoben: Das Feld „Einzelpreis“ in Rechnungen und Angeboten wurde in der SaaS-Version zu groß dargestellt',
+    ]],
 ];

@@ -21,8 +21,8 @@ def run(t, inst, admin):
     r = admin.post('catalog_save', {'id': 0, 'kind': 'evil', 'name': 'Falsche Art'}, page='catalog_edit'); t.eq(inst.sql('rechnung.sqlite', "select kind from catalog_items where name='Falsche Art'")[0]['kind'], 'service', 'unbekannte Art wird zu Leistung')
     # Picker in den Formularen
     for rt, pa, withprice in [('invoice_new', None, True), ('offer_new', None, True), ('delivery_new', None, False)]:
-        h = admin.req(rt, pa).text; t.check('id="catsearch"' in h and 'Arbeitsstunde Geselle' in h, f'{rt}: Katalogauswahl vorhanden')
-        t.check('Inaktiver Artikel' not in h, f'{rt}: inaktive Einträge nicht auswählbar'); t.check(('data-price="65,00"' in h) == True, f'{rt}: Preisdaten für das Einfügen'); t.check('data-vat="19"' in h, f'{rt}: USt-Satz im Eintrag')
+        h = admin.req(rt, pa).text; t.check('id="catdata"' in h and 'Arbeitsstunde Geselle' in h, f'{rt}: Katalogdaten für die Auswahl vorhanden')
+        t.check('Inaktiver Artikel' not in h, f'{rt}: inaktive Einträge nicht auswählbar'); t.check(('&quot;p&quot;:&quot;65,00&quot;' in h) == True, f'{rt}: Preisdaten für das Einfügen'); t.check('&quot;v&quot;:&quot;19&quot;' in h, f'{rt}: USt-Satz im Eintrag')
     t.check('catalog' in admin.req('dashboard').text, 'Menüpunkt Leistungen & Artikel')
     # Katalogdaten in Rechnung verwenden (wie das Formular sie liefert)
     r = admin.post('invoice_save', {'id': 0, 'customer_id': 1, 'invoice_date': '2026-10-08', 'due_date': '2026-10-22', 'description[]': ['Arbeitsstunde Geselle\ninkl. Kleinmaterial', 'Kupferrohr 15 mm'], 'quantity[]': ['3', '12,5'], 'unit[]': ['Std.', 'm'], 'unit_price[]': ['65,00', '8,90'], 'vat_rate[]': ['19', '19']}, page='invoice_new'); t.eq(r.route(), 'invoice_show', 'Rechnung aus Katalogpositionen')

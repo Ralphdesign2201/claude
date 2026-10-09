@@ -2,7 +2,7 @@ import sys, os, time
 sys.path.insert(0, os.path.dirname(__file__))
 from harness import *
 from tlib import T, guard
-import test_single, test_single2, test_extra, test_saas, test_catalog
+import test_single, test_single2, test_extra, test_saas, test_catalog, test_browser
 
 def main(which):
     t = T(); insts = []
@@ -33,6 +33,7 @@ def main(which):
     if 'dbswitch' in which: guard(t, test_extra.dbswitch, t)
     if 'upgrade' in which:
         guard(t, test_catalog.upgrade, t, 'single'); guard(t, test_catalog.upgrade, t, 'saas')
+    if 'browser' in which: guard(t, test_browser.run, t)
     if 'update' in which: guard(t, test_extra.updates, t)
     return t.summary()
 if __name__ == '__main__': sys.exit(main(sys.argv[1:] or ['single']))

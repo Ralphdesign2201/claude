@@ -21,5 +21,5 @@ Siehe `SECURITY.md` (Maßnahmen und Checkliste).
 
 
 ## Neu in 1.1
-- **Leistungen & Artikel**: Menü *Leistungen & Artikel* (Katalog, CSV-Import/-Export). In Angeboten, Rechnungen und Lieferscheinen über das Suchfeld „Leistung/Artikel aus Katalog“ übernehmen.
+- **Leistungen & Artikel**: Menü *Leistungen & Artikel* (Katalog, CSV-Import/-Export). In Angeboten, Rechnungen und Lieferscheinen direkt im Beschreibungsfeld auswählen (Nummer oder Text tippen, Treffer anklicken).
 - **Ansicht**: Einstellungen → Darstellung bzw. Profil → Ansicht: obere Leiste oder Seitenleiste.

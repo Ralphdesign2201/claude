@@ -11,7 +11,7 @@ PHP 8 + SQLite/MySQL, keine Abhängigkeiten, läuft auf jedem normalen Webspace.
 Fertige Pakete: `dist/` (per `php tools/build_release.php` erzeugt). Sicherheit: `SECURITY.md`.
 
 ## Funktionen
-Kunden · Leistungen & Artikel (Katalog mit CSV-Import/-Export, in Angebot/Rechnung/Lieferschein per Klick übernehmen) · Angebote (→ Rechnung) · Rechnungen mit PDF (Zahlungsstatus, Storno, Kopie, Kleinunternehmer) · Lieferscheine · Mahnwesen (Erinnerung, 1./2. Mahnung, Gebühren, Zinsen) ·
+Kunden · Leistungen & Artikel (Katalog mit CSV-Import/-Export, in Angebot/Rechnung/Lieferschein beim Tippen in der Beschreibung auswählen) · Angebote (→ Rechnung) · Rechnungen mit PDF (Zahlungsstatus, Storno, Kopie, Kleinunternehmer) · Lieferscheine · Mahnwesen (Erinnerung, 1./2. Mahnung, Gebühren, Zinsen) ·
 E-Rechnung ZUGFeRD/Factur-X (PDF/A-3, EN 16931) und XRechnung · DATEV-Buchungsstapel und CSV · E-Mail-Versand mit PDF (SMTP/mail()) ·
 Benutzer & frei definierbare Rollen · Zwei-Faktor-Anmeldung · Passwort-Reset · Sicherheitsprotokoll · Backups (manuell, Cron, Download/Upload/Restore) ·
 Umstellung SQLite ⇄ MySQL (Einzelinstallation) · Update-System mit signierten, kumulativen Update-Dateien.

@@ -30,7 +30,7 @@ $feat = [
 <p class="center muted">Alle Tarife mit <?= e($trial) ?> Tagen Testphase. Monatlich kündbar.</p>
 <div class="pgrid"><?php foreach ($plans as $p): ?>
 <div class="pcard"><h3><?= e($p['name']) ?></h3><p class="muted"><?= e($p['description']) ?></p>
-<div class="price"><?= e(money_c((int)$p['price_cents'], $p['currency'])) ?><small> / <?= $p['interval_unit'] === 'year' ? 'Jahr' : 'Monat' ?></small></div>
+<div class="pprice"><?= e(money_c((int)$p['price_cents'], $p['currency'])) ?><small> / <?= $p['interval_unit'] === 'year' ? 'Jahr' : 'Monat' ?></small></div>
 <ul class="plist"><li><?= (int)$p['max_users'] > 0 ? e((int)$p['max_users']) . ' Benutzer' : 'Unbegrenzt Benutzer' ?></li><li><?= (int)$p['max_invoices'] > 0 ? 'bis ' . e((int)$p['max_invoices']) . ' Rechnungen / Monat' : 'Unbegrenzt Rechnungen' ?></li><li>Angebote, Lieferscheine, Mahnwesen</li><li>E-Rechnung &amp; DATEV-Export</li></ul>
 <?php if ($signup): ?><a class="btn primary" href="<?= e(url('signup')) ?>">Kostenlos testen</a><?php endif; ?></div>
 <?php endforeach; ?></div>
