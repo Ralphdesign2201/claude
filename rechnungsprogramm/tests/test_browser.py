@@ -53,6 +53,12 @@ def run(t):
             pg.goto(base + '/index.php?r=delivery_new'); d = pg.locator('textarea[name="description[]"]').first; d.click(); t.check('€' not in pg.locator('#catdrop').inner_text(), 'Lieferschein: keine Preise in der Auswahl'); pg.locator('.catopt').first.click(); t.check(d.input_value() != '', 'Lieferschein: Auswahl funktioniert')
             # Seitenleisten-Ansicht + schmale Anzeige
             pg.set_viewport_size({'width': 390, 'height': 800}); pg.goto(base + '/index.php?r=invoice_new'); pg.locator('textarea[name="description[]"]').first.click(); t.check(pg.locator('#catdrop').is_visible(), 'Mobil: Auswahl sichtbar'); pg.screenshot(path='/tmp/ui_mobile.png')
+            pg.set_viewport_size({'width': 1200, 'height': 900}); pg.goto(base + '/index.php?r=invoice_new')
+            fs = pg.evaluate("parseFloat(getComputedStyle(document.querySelector('tr.item .price')).fontSize)"); t.check(fs <= 17, f'Einzelpreis-Feld hat normale Schriftgröße ({fs}px)')
+            t.check('Version 1.' in pg.locator('.appver').inner_text(), 'Versionsanzeige unten')
+            s1 = pg.locator('link[rel=stylesheet]').first.get_attribute('href'); open(inst.dir + '/public/assets/app.css', 'a').write('\n/* update */\n'); pg.goto(base + '/index.php?r=invoice_new'); s2 = pg.locator('link[rel=stylesheet]').first.get_attribute('href'); t.check(s1 != s2 and 'r=asset' in s2, 'Nach einer Dateiänderung (Update) wird ohne Strg+F5 die neue Datei angefordert')
+            open(inst.dir + '/public/assets/app.css', 'a').write('.items input.price{font-size:3rem!important}\n'); pg.goto(base + '/index.php?r=invoice_new'); fs2 = pg.evaluate("parseFloat(getComputedStyle(document.querySelector('tr.item .price')).fontSize)"); t.check(fs2 > 40, 'geänderte Datei kommt sofort im Browser an (Gegenprobe)')
+            open(inst.dir + '/public/assets/app.css', 'w').write(open(os.path.join(ROOT, 'public/assets/app.css')).read()); pg.goto(base + '/index.php?r=invoice_new')
             t.eq([e for e in errs if 'favicon' not in e], [], 'keine JavaScript-Fehler im Browser')
             br.close()
         # Ohne Recht keine Daten

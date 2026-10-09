@@ -1,6 +1,11 @@
 # Änderungsprotokoll
 
-Aktuelle Update-Datei: `update-1.5.rgu` (kumulativ ab Version 1.0).
+Aktuelle Update-Datei: `update-1.6.rgu` (kumulativ ab Version 1.0).
+
+## Version 1.6 (2026-10-10)
+- Geändert: Skript und Styles werden jetzt direkt über das Programm ausgeliefert und nie mehr aus einem veralteten Zwischenspeicher des Browsers oder Hosters geladen
+- Neu: Die installierte Version steht unten auf jeder Seite; unter Updates gibt es eine Dateikontrolle
+- Behoben: Einzelpreis-Feld in Rechnungen/Angeboten wird sicher in normaler Schriftgröße dargestellt
 
 ## Version 1.5 (2026-10-10)
 - Behoben: Nach einem Update zeigte der Browser teils noch das alte Skript aus dem Zwischenspeicher (z. B. keine Katalog-Auswahl im Beschreibungsfeld) – Skripte und Styles werden jetzt bei jeder Änderung automatisch neu geladen

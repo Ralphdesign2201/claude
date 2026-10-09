@@ -8,11 +8,10 @@ function base_url(): string {
     return rtrim($dir, '/');
 }
 function asset_url(string $f): string {
-    // Liegt index.php direkt in public/ (Document-Root), sonst im Projektordner (Aufruf über Wurzel-index.php)
-    $inPublic = is_file(dirname($_SERVER['SCRIPT_FILENAME'] ?? '') . '/assets/app.css');
-    $dir = $inPublic ? dirname($_SERVER['SCRIPT_FILENAME'] ?? '') . '/assets' : dirname(APP_ROOT) . '/public/assets';
-    $v = (string)(@filemtime($dir . '/' . $f) ?: APP_VERSION); // ändert sich die Datei (Update), lädt der Browser sie neu statt aus dem Cache
-    return base_url() . ($inPublic ? '' : '/public') . '/assets/' . $f . '?v=' . $v;
+    // Wird über PHP ausgeliefert (index.php?r=asset): immer die Datei aus dem Projektordner, nie ein veralteter Cache; v = Inhalts-Stempel
+    $p = dirname(APP_ROOT) . '/public/assets/' . basename($f);
+    $v = is_file($p) ? substr((string)sha1_file($p), 0, 10) : APP_VERSION;
+    return base_url() . '/index.php?r=asset&f=' . rawurlencode(basename($f)) . '&v=' . $v;
 }
 function url(string $route = 'dashboard', array $params = []): string {
     return base_url() . '/index.php?' . http_build_query(['r' => $route] + $params);

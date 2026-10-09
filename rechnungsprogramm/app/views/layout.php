@@ -56,6 +56,7 @@
 <?php foreach (flash() ?? [] as [$t, $m]): ?><div class="msg <?= e($t) ?>"><?= e($m) ?></div><?php endforeach; ?>
 <?= $content ?>
 </main>
+<?php if ($in): ?><div class="appver"><?= e(APP_NAME) ?> · Version <?= e(app_version()) ?></div><?php endif; ?>
 <?php if ($side): ?></div></div><?php endif; ?>
 <script src="<?= e(asset_url('app.js')) ?>"></script>
 </body>

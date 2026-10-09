@@ -155,3 +155,6 @@ body.layout-side{background:var(--bg)}
 .catopt{display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
 .catopt:last-child{border-bottom:0} .catopt:hover,.catopt.on{background:var(--hover)}
 .catopt .cat-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .catopt .cat-m{color:var(--muted);white-space:nowrap;font-size:.9rem}
+.appver{text-align:center;color:var(--muted);font-size:.78rem;padding:18px 10px 24px}
+.items input.price,.items input.qty,.items input.unit{font-size:inherit;font-weight:400;line-height:normal}
+@media print{.appver{display:none}}

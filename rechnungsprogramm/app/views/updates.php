@@ -1,6 +1,7 @@
 <?php if (!is_saas()) { $adminTab = 'updates'; require __DIR__ . '/_admin_tabs.php'; } $pfx = updates_prefix(); ?>
 <div class="head"><h1>Updates</h1><span class="badge paid">Installiert: Version <?= e(app_version()) ?></span></div>
 
+<p class="muted small">Kontrolle: app.js <?= e(substr((string)@sha1_file(dirname(APP_ROOT) . '/public/assets/app.js'), 0, 8)) ?> · app.css <?= e(substr((string)@sha1_file(dirname(APP_ROOT) . '/public/assets/app.css'), 0, 8)) ?></p>
 <?php if (!$sodium): ?><div class="msg err">Die PHP-Erweiterung „sodium“ fehlt. Ohne sie können Updates nicht geprüft werden. Bitte beim Hoster aktivieren.</div><?php endif; ?>
 
 <?php if ($pending): $pl = $pending['plan']; ?>

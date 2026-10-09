@@ -59,6 +59,14 @@ def run(t, inst, admin):
     r1 = inst.sql('rechnung.sqlite', "select name, permissions from roles order by id"); perm = {x['name']: json.loads(x['permissions']) for x in r1}
     t.eq(perm['Büro'].get('catalog'), 'w', 'Büro darf Katalog ändern'); t.eq(perm['Lesezugriff'].get('catalog'), 'r', 'Lesezugriff darf Katalog sehen')
 
+    t.sec('Auslieferung von Skript und Styles')
+    pg = admin.req('dashboard').text; m = re.search(r'(?:src|href)="([^"]*r=asset&amp;f=app\.js[^"]*)"', pg); t.check(bool(m), 'Seite verlinkt app.js über index.php?r=asset')
+    anon = inst.client(); r = anon.req(path='/index.php?r=asset&f=app.js'); t.eq(r.code, 200, 'app.js ohne Anmeldung abrufbar'); t.check('catdrop' in r.text and 'application/javascript' in r.headers.get('Content-Type', ''), 'Inhalt und Content-Type'); t.check('Set-Cookie' not in r.headers and 'set-cookie' not in {k.lower() for k in r.headers}, 'keine Sitzung/Cookie für Assets')
+    etag = r.headers.get('ETag') or r.headers.get('Etag'); t.check(bool(etag) and 'no-cache' in r.headers.get('Cache-Control', ''), 'ETag und no-cache gesetzt')
+    r2 = anon.req(path='/index.php?r=asset&f=app.js', headers={'If-None-Match': etag}); t.eq(r2.code, 304, 'unveränderte Datei: 304')
+    r = anon.req(path='/index.php?r=asset&f=app.css'); t.check(r.code == 200 and 'text/css' in r.headers.get('Content-Type', '') and '.catdrop' in r.text, 'app.css wird ausgeliefert')
+    for bad in ['../app/init.php', '..%2Fapp%2Finit.php', 'app.php', '', 'app.js%00.php', 'bootstrap.php', '/etc/passwd']: t.eq(anon.req(path='/index.php?r=asset&f=' + bad).code, 404, f'Asset-Name „{bad}“ abgelehnt')
+    t.check('Version 1.' in pg, 'Version im Seitenfuß sichtbar')
     t.sec('Ansicht: obere Leiste / Seitenleiste')
     reset_throttle(inst); h = admin.req('dashboard').text; t.check('layout-top' in h and 'class="sidebar"' not in h, 'Standard: obere Leiste')
     admin.post('settings_save', {'company': 'Test GmbH', 'invoice_prefix': 'RE-', 'payment_days': '14', 'ui_layout': 'side'}, page='settings'); h = admin.req('dashboard').text
@@ -97,7 +105,7 @@ def upgrade(t, kind='single'):
             t.check('Version 1.0' in a.req('updates').text, 'Ausgangsstand ist 1.0'); t.eq(a.req('catalog').code in (302, 404), True, 'Katalog gibt es in 1.0 noch nicht')
             r = a.post('update_upload', {}, page='updates', files={'file': ('u.rgu', pkg)}); tk = re.search(r'token=([0-9a-f]{32})', r.loc); t.check(bool(tk), 'Update 1.1 akzeptiert')
             prev = a.req('updates', {'token': tk.group(1)}).text; t.check('Version 1.1' in prev and 'Leistungen' in prev and '<h3>Version 1.0' not in prev, 'Vorschau zeigt nur neue Versionen')
-            r = a.post('update_install', {'token': tk.group(1)}, page='updates'); a.req('update_finish'); t.check(f"'{CUR}'" in open(root + '/app/version.php').read(), 'neue Version installiert'); t.check('catdrop' in open(root + '/public/assets/app.js').read() and re.search(r'app\.js\?v=\d+', a.req('dashboard').text) is not None, 'neues Skript installiert und mit Versionsstempel eingebunden (kein veralteter Browser-Cache)')
+            r = a.post('update_install', {'token': tk.group(1)}, page='updates'); a.req('update_finish'); t.check(f"'{CUR}'" in open(root + '/app/version.php').read(), 'neue Version installiert'); t.check('catdrop' in open(root + '/public/assets/app.js').read() and re.search(r'r=asset&amp;f=app\.js&amp;v=[0-9a-f]{10}', a.req('dashboard').text) is not None, 'neues Skript installiert und mit Versionsstempel eingebunden (kein veralteter Browser-Cache)')
             a2 = Client(f'http://127.0.0.1:{port}'); a2.post('login', {'username': 'admin', 'password': PW}, page='login')
             t.eq(a2.req('catalog').code, 200, 'Katalog nach Update vorhanden'); t.check('Altkunde AG' in a2.req('customers').text and 'RE-2026-0001' in a2.req('invoices').text, 'alte Daten unverändert')
             a2.post('catalog_save', {'id': 0, 'kind': 'service', 'name': 'Nach Update', 'price': '5'}, page='catalog_edit'); t.check('Nach Update' in a2.req('catalog').text, 'Neuer Katalog funktioniert')

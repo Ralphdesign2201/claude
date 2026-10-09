@@ -22,6 +22,15 @@ elseif ((app_config()['force_https'] ?? false) === true && !in_array(preg_replac
     http_response_code(400); exit('HTTPS erforderlich');
 }
 sanitize_input();
+if (($_GET['r'] ?? '') === 'asset') { // Stylesheet/Skript: immer frisch aus dem Projektordner (kein Cache-Problem nach Updates), ohne Sitzung
+    $f = (string)($_GET['f'] ?? ''); $types = ['app.css' => 'text/css; charset=utf-8', 'app.js' => 'application/javascript; charset=utf-8'];
+    $path = dirname(APP_ROOT) . '/public/assets/' . $f;
+    if (!isset($types[$f]) || !is_file($path)) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); exit('Not found'); }
+    $etag = '"' . sha1_file($path) . '"';
+    header('Content-Type: ' . $types[$f]); header('ETag: ' . $etag); header('Cache-Control: no-cache'); header_remove('Pragma'); header('Content-Security-Policy: default-src \'none\'');
+    if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) { http_response_code(304); exit; }
+    header('Content-Length: ' . (string)filesize($path)); readfile($path); exit;
+}
 start_session();
 
 $routes = [

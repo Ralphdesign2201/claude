@@ -30,4 +30,9 @@ return [
     '1.5' => ['date' => '2026-10-10', 'notes' => [
         'Behoben: Nach einem Update zeigte der Browser teils noch das alte Skript aus dem Zwischenspeicher (z. B. keine Katalog-Auswahl im Beschreibungsfeld) – Skripte und Styles werden jetzt bei jeder Änderung automatisch neu geladen',
     ]],
+    '1.6' => ['date' => '2026-10-10', 'notes' => [
+        'Geändert: Skript und Styles werden jetzt direkt über das Programm ausgeliefert und nie mehr aus einem veralteten Zwischenspeicher des Browsers oder Hosters geladen',
+        'Neu: Die installierte Version steht unten auf jeder Seite; unter Updates gibt es eine Dateikontrolle',
+        'Behoben: Einzelpreis-Feld in Rechnungen/Angeboten wird sicher in normaler Schriftgröße dargestellt',
+    ]],
 ];

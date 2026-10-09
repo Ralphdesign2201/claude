@@ -103,7 +103,7 @@ def updates(t):
         t.check(os.path.exists(X.dir + '/app/version.php') and "'1.0'" in open(X.dir + '/app/version.php').read(), 'Version nach Fehlschlag weiter 1.0')
         # Gültiges kumulatives Update 1.0 → 1.2
         r = upload_install(a, p12); tok = re.search(r'token=([0-9a-f]{32})', r.loc); t.check(bool(tok), 'gültiges Paket akzeptiert')
-        prev = a.req('updates', {'token': tok.group(1)}).text; t.check('Version 1.1' in prev and 'Version 1.2' in prev and 'Version 1.0' not in prev.split('Bisher installiert')[0].replace('Installiert: Version 1.0', ''), 'Vorschau: nur fehlende Schritte 1.1 und 1.2')
+        prev = a.req('updates', {'token': tok.group(1)}).text; t.check('Version 1.1' in prev and 'Version 1.2' in prev and 'Version 1.0' not in prev.split('Bisher installiert')[0].replace('Installiert: Version 1.0', '').replace(' · Version 1.0', ''), 'Vorschau: nur fehlende Schritte 1.1 und 1.2')
         r = a.post('update_install', {'token': tok.group(1)}, page='updates'); t.eq(r.route(), 'update_finish', 'Installation → Abschluss-Request'); r = a.req('update_finish'); t.eq(r.route(), 'updates', 'Abschluss')
         t.check("'1.2'" in open(X.dir + '/app/version.php').read(), 'Version ist jetzt 1.2'); t.check('v1.2' in open(X.dir + '/app/views/error.php').read(), 'Dateien aktualisiert'); t.check(os.path.exists(X.dir + '/app/extra_v12.php') and not os.path.exists(X.dir + '/app/views/obsolete.php'), 'neue Datei da, alte Datei weg')
         t.check(glob.glob(X.dir + '/storage/backups/backup_safety_*') != [], 'Sicherheitskopie vor Update'); t.check(glob.glob(X.dir + '/storage/update_backup/*') != [], 'Datei-Sicherung vor Update')
