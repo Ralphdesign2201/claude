@@ -13,6 +13,13 @@
 <label class="span2">Untertext Startseite (optional)<textarea name="landing_sub" rows="2"><?= e($s['landing_sub']) ?></textarea></label>
 </div>
 
+<h2>Ansicht</h2>
+<div class="grid">
+<label>Menü der Kunden-Konten (Mandanten)<select name="tenant_layout"><option value="top"<?= csetting('tenant_layout', 'top') !== 'side' ? ' selected' : '' ?>>Obere Menüleiste</option><option value="side"<?= csetting('tenant_layout', 'top') === 'side' ? ' selected' : '' ?>>Seitenleiste mit Modulen</option></select></label>
+<label>Menü im Superadmin-Bereich<select name="sa_layout"><option value="top"<?= csetting('sa_layout', 'top') !== 'side' ? ' selected' : '' ?>>Obere Menüleiste</option><option value="side"<?= csetting('sa_layout', 'top') === 'side' ? ' selected' : '' ?>>Seitenleiste</option></select></label>
+<label class="span2 check"><input type="checkbox" name="tenant_layout_lock" value="1"<?= csetting('tenant_layout_lock', '0') === '1' ? ' checked' : '' ?>> Für alle Kunden verbindlich vorgeben (Kunden und deren Benutzer können die Ansicht dann nicht selbst ändern). Ohne Haken ist es nur die Vorgabe, die jeder ändern darf.</label>
+</div>
+
 <h2>Zahlungen: Kreditkarte (Stripe)</h2>
 <div class="grid">
 <label>Geheimer Schlüssel (sk_live_… / sk_test_…)<input type="password" name="stripe_secret" autocomplete="new-password" placeholder="<?= e($sec('stripe_secret')) ?>"></label>

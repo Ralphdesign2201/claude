@@ -1,6 +1,10 @@
 # Änderungsprotokoll
 
-Aktuelle Update-Datei: `update-1.1.rgu` (kumulativ ab Version 1.0).
+Aktuelle Update-Datei: `update-1.2.rgu` (kumulativ ab Version 1.0).
+
+## Version 1.2 (2026-10-10)
+- Neu: Der Superadmin legt fest, ob die Kunden-Konten mit oberer Menüleiste oder mit Seitenleiste arbeiten – als Vorgabe oder verbindlich für alle
+- Neu: Der Superadmin-Bereich selbst kann ebenfalls mit Seitenleiste dargestellt werden
 
 ## Version 1.1 (2026-10-09)
 - Neu: Leistungen & Artikel (Katalog) für Handwerker – mit Nummer, Einheit, Preis, USt, Einkaufspreis/Marge, CSV-Import und -Export

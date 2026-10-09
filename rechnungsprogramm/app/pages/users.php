@@ -106,7 +106,7 @@ function users_profile_save(): void {
     $email = post('email');
     if ($e = field_too_long('users', ['display_name' => post('display_name'), 'email' => $email])) { flash($e, 'err'); redirect('profile'); }
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) { flash('Die E-Mail-Adresse ist ungültig.', 'err'); redirect('profile'); }
-    $lay = in_array(post('ui_layout'), ['top', 'side'], true) ? post('ui_layout') : '';
+    $lay = layout_locked() ? (string)($u['ui_layout'] ?? '') : (in_array(post('ui_layout'), ['top', 'side'], true) ? post('ui_layout') : '');
     $pdo->prepare('UPDATE users SET display_name = ?, email = ?, ui_layout = ? WHERE id = ?')->execute([post('display_name'), $email, $lay, $u['id']]);
     $new = (string)($_POST['new'] ?? '');
     if ($new !== '' || (string)($_POST['current'] ?? '') !== '') {

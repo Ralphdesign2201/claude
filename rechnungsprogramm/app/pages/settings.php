@@ -6,7 +6,7 @@ const SETTING_FIELDS = ['company', 'owner', 'street', 'zip', 'city', 'phone', 'e
 function settings_index(): void {
     $s = []; foreach (SETTING_FIELDS as $f) $s[$f] = setting($f);
     $s['offer_prefix'] = setting('offer_prefix', 'AN-'); $s['delivery_prefix'] = setting('delivery_prefix', 'LS-');
-    $s['small_business'] = setting('small_business'); $s['ui_layout'] = setting('ui_layout', 'top');
+    $s['small_business'] = setting('small_business'); $s['ui_layout'] = setting('ui_layout', is_saas() ? '' : 'top');
     $s['zugferd'] = setting('zugferd', '1');
     $s['mail_mode'] = setting('mail_mode', 'mail'); $s['smtp_secure'] = setting('smtp_secure', 'tls'); $s['smtp_port'] = setting('smtp_port', '587');
     $s['mail_copy'] = setting('mail_copy', '1'); $s['has_smtp_pass'] = setting('smtp_pass') !== '';
@@ -26,7 +26,7 @@ function settings_save(): void {
         if ($f === 'smtp_secure' && !in_array($v, ['tls', 'ssl', 'none'], true)) $v = 'tls';
         set_setting($f, $v);
     }
-    set_setting('ui_layout', post('ui_layout') === 'side' ? 'side' : 'top');
+    if (!layout_locked()) set_setting('ui_layout', in_array(post('ui_layout'), ['top', 'side'], true) ? post('ui_layout') : (is_saas() ? '' : 'top'));
     set_setting('small_business', isset($_POST['small_business']) ? '1' : '0');
     if (post('smtp_pass') !== '') set_setting('smtp_pass', post('smtp_pass'));
     if (isset($_POST['clear_smtp_pass'])) set_setting('smtp_pass', '');

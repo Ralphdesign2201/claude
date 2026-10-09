@@ -15,4 +15,8 @@ return [
         'Neu: wählbare Ansicht – obere Menüleiste oder Seitenleiste mit allen Modulen (Standard unter Einstellungen, persönlich unter Mein Konto)',
         'Neues Recht „Leistungen & Artikel“ in den Rollen (bestehende Rollen übernehmen automatisch die Stufe von „Rechnungen“)',
     ]],
+    '1.2' => ['date' => '2026-10-10', 'notes' => [
+        'Neu: Der Superadmin legt fest, ob die Kunden-Konten mit oberer Menüleiste oder mit Seitenleiste arbeiten – als Vorgabe oder verbindlich für alle',
+        'Neu: Der Superadmin-Bereich selbst kann ebenfalls mit Seitenleiste dargestellt werden',
+    ]],
 ];

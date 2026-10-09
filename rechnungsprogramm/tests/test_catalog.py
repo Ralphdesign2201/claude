@@ -75,6 +75,8 @@ def run(t, inst, admin):
     admin.post('profile_save', {'display_name': 'Chef', 'ui_layout': ''}, page='profile')
     err = inst.errlog(); t.check('Fatal' not in err and 'Warning' not in err and 'Notice' not in err and 'Deprecated' not in err, 'PHP-Fehlerlog sauber:\n' + err[-800:])
 
+CUR = re.search(r"APP_VERSION = '([^']+)'", open(ROOT + '/app/version.php').read()).group(1)
+
 def upgrade(t, kind='single'):
     import sqlite3
     """Echte Aktualisierung: die ausgelieferte Version 1.0 wird installiert und mit update-1.1.rgu auf 1.1 gebracht."""
@@ -85,7 +87,7 @@ def upgrade(t, kind='single'):
     d = tempfile.mkdtemp(); zipfile.ZipFile(old).extractall(d); root = d + '/HandwerkRechnung'; os.makedirs(root + '/storage', exist_ok=True)
     p = subprocess.Popen(['php', '-S', f'127.0.0.1:{port}', '-t', root], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=dict(os.environ, PHP_CLI_SERVER_WORKERS='4')); time.sleep(1)
     try:
-        c = Client(f'http://127.0.0.1:{port}'); pkg = open(ROOT + '/updates/update-1.1.rgu', 'rb').read()
+        c = Client(f'http://127.0.0.1:{port}'); pkg = open(ROOT + '/updates/update-' + CUR + '.rgu', 'rb').read()
         if kind == 'single':
             tok = re.search(r'name="t" value="([^"]+)"', c.req(path='/install.php').text).group(1)
             c.req(path='/install.php', data={'t': tok, 'company': 'Alt GmbH', 'username': 'admin', 'password': PW, 'password2': PW, 'driver': 'sqlite'})
@@ -94,8 +96,8 @@ def upgrade(t, kind='single'):
             a.post('role_save', {'id': 0, 'name': 'Eigene Rolle', 'perm[invoices]': 'w', 'perm[customers]': 'r'}, page='role_edit')
             t.check('Version 1.0' in a.req('updates').text, 'Ausgangsstand ist 1.0'); t.eq(a.req('catalog').code in (302, 404), True, 'Katalog gibt es in 1.0 noch nicht')
             r = a.post('update_upload', {}, page='updates', files={'file': ('u.rgu', pkg)}); tk = re.search(r'token=([0-9a-f]{32})', r.loc); t.check(bool(tk), 'Update 1.1 akzeptiert')
-            prev = a.req('updates', {'token': tk.group(1)}).text; t.check('Version 1.1' in prev and 'Leistungen' in prev and '<h3>Version 1.0' not in prev, 'Vorschau zeigt nur 1.1')
-            r = a.post('update_install', {'token': tk.group(1)}, page='updates'); a.req('update_finish'); t.check("'1.1'" in open(root + '/app/version.php').read(), 'Version 1.1 installiert')
+            prev = a.req('updates', {'token': tk.group(1)}).text; t.check('Version 1.1' in prev and 'Leistungen' in prev and '<h3>Version 1.0' not in prev, 'Vorschau zeigt nur neue Versionen')
+            r = a.post('update_install', {'token': tk.group(1)}, page='updates'); a.req('update_finish'); t.check(f"'{CUR}'" in open(root + '/app/version.php').read(), 'neue Version installiert')
             a2 = Client(f'http://127.0.0.1:{port}'); a2.post('login', {'username': 'admin', 'password': PW}, page='login')
             t.eq(a2.req('catalog').code, 200, 'Katalog nach Update vorhanden'); t.check('Altkunde AG' in a2.req('customers').text and 'RE-2026-0001' in a2.req('invoices').text, 'alte Daten unverändert')
             a2.post('catalog_save', {'id': 0, 'kind': 'service', 'name': 'Nach Update', 'price': '5'}, page='catalog_edit'); t.check('Nach Update' in a2.req('catalog').text, 'Neuer Katalog funktioniert')
@@ -119,7 +121,7 @@ def upgrade(t, kind='single'):
             sa_c = Client(f'http://127.0.0.1:{port}'); r = sa_c.post('sa_login', {'username': 'superadmin', 'password': sa.SAPW}, page='sa_login'); t.eq(r.route(), 'sa_twofa', 'Superadmin 2FA-Einrichtung')
             sa_c.post('sa_twofa', {'action': 'start'}, page='sa_profile'); secret = re.search(r'<code class="copy">([A-Z2-7 ]+)</code>', sa_c.req('sa_twofa').text).group(1).replace(' ', ''); sa_c.post('sa_twofa', {'action': 'confirm', 'code': totp(secret)}, page='sa_profile')
             r = sa_c.post('sa_update_upload', {}, page='sa_profile', files={'file': ('u.rgu', pkg)}); tk = re.search(r'token=([0-9a-f]{32})', r.loc); t.check(bool(tk), 'Superadmin: Update 1.1 akzeptiert')
-            r = sa_c.post('sa_update_install', {'token': tk.group(1)}, page='sa_profile'); r2 = sa_c.req('sa_update_finish'); t.check("'1.1'" in open(root + '/app/version.php').read(), 'Version 1.1 installiert')
+            r = sa_c.post('sa_update_install', {'token': tk.group(1)}, page='sa_profile'); r2 = sa_c.req('sa_update_finish'); t.check(f"'{CUR}'" in open(root + '/app/version.php').read(), 'neue Version installiert')
             con = sqlite3.connect(root + '/storage/tenants/alt-tenant/rechnung.sqlite'); cols1 = [r[1] for r in con.execute('pragma table_info(users)')]; tabs = [r[0] for r in con.execute("select name from sqlite_master where type='table'")]; con.close()
             t.check('ui_layout' in cols1 and 'catalog_items' in tabs, 'Mandanten-Datenbank wurde automatisch migriert'); 
             tn2 = Client(f'http://127.0.0.1:{port}'); tn2.post('login', {'tenant': 'alt-tenant', 'username': 'alt@example.de', 'password': 'Mandant-Pass-2026'}, page='login'); t.eq(tn2.req('catalog').code, 200, 'Mandant nutzt neuen Katalog')

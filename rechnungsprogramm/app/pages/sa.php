@@ -259,6 +259,9 @@ function sa_settings_save(): void {
         set_csetting($f, $v);
     }
     foreach (SA_SECRET_FIELDS as $f) if (isset($_POST['clear_' . $f])) set_csetting($f, '');
+    set_csetting('tenant_layout', ($_POST['tenant_layout'] ?? '') === 'side' ? 'side' : 'top');
+    set_csetting('tenant_layout_lock', isset($_POST['tenant_layout_lock']) ? '1' : '0');
+    set_csetting('sa_layout', ($_POST['sa_layout'] ?? '') === 'side' ? 'side' : 'top');
     set_csetting('signup_open', isset($_POST['signup_open']) ? '1' : '0');
     set_csetting('sa_require_2fa', isset($_POST['sa_require_2fa']) ? '1' : '0');
     if (($d = (int)($_POST['default_plan_id'] ?? 0)) && cq1('SELECT id FROM plans WHERE id = ?', [$d])) set_csetting('default_plan_id', (string)$d);

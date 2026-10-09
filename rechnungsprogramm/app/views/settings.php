@@ -3,7 +3,9 @@
 <form method="post" action="<?= e(url('settings_save')) ?>" enctype="multipart/form-data" class="card">
 <?= csrf_field() ?>
 <h2>Darstellung</h2>
-<div class="grid"><label class="span2">Standard-Ansicht für alle Benutzer<select name="ui_layout"><option value="top"<?= $s['ui_layout'] !== 'side' ? ' selected' : '' ?>>Obere Menüleiste (kompakt)</option><option value="side"<?= $s['ui_layout'] === 'side' ? ' selected' : '' ?>>Seitenleiste mit allen Modulen</option></select><small class="muted">Jeder Benutzer kann sie unter „Mein Konto“ für sich ändern.</small></label></div>
+<?php if (layout_locked()): ?><p class="muted">Die Ansicht (<?= platform_layout() === 'side' ? 'Seitenleiste' : 'obere Menüleiste' ?>) wird vom Anbieter für alle Konten vorgegeben.</p><?php else: ?>
+<div class="grid"><label class="span2">Standard-Ansicht für alle Benutzer<select name="ui_layout"><?php if (is_saas()): ?><option value=""<?= $s['ui_layout'] === '' ? ' selected' : '' ?>>Vorgabe des Anbieters (<?= platform_layout() === 'side' ? 'Seitenleiste' : 'obere Leiste' ?>)</option><?php endif; ?><option value="top"<?= $s['ui_layout'] === 'top' ? ' selected' : '' ?>>Obere Menüleiste (kompakt)</option><option value="side"<?= $s['ui_layout'] === 'side' ? ' selected' : '' ?>>Seitenleiste mit allen Modulen</option></select><small class="muted">Jeder Benutzer kann sie unter „Mein Konto“ für sich ändern.</small></label></div>
+<?php endif; ?>
 <h2>Firmendaten</h2>
 <div class="grid">
 <label class="span2">Firma<input name="company" value="<?= e($s['company']) ?>"></label>

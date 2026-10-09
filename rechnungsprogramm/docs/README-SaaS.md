@@ -31,3 +31,6 @@ Siehe `SECURITY.md`.
 ## Neu in 1.1
 - **Leistungen & Artikel**: Menü *Leistungen & Artikel* (Katalog, CSV-Import/-Export). In Angeboten, Rechnungen und Lieferscheinen über das Suchfeld „Leistung/Artikel aus Katalog“ übernehmen.
 - **Ansicht**: Einstellungen → Darstellung bzw. Profil → Ansicht: obere Leiste oder Seitenleiste.
+
+## Neu in 1.2
+- **Ansicht festlegen**: Superadmin → Einstellungen → *Ansicht*: Menü der Kunden-Konten (obere Leiste oder Seitenleiste), optional verbindlich für alle Kunden, sowie das Menü des Superadmin-Bereichs.

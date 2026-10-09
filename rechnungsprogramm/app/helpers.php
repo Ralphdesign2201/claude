@@ -173,10 +173,18 @@ function offer_status_label(string $s, bool $expired = false): string {
 
 // ---- Navigation und Darstellung ----
 /** Aktive Oberfläche: eigene Wahl des Benutzers, sonst Standard des Betriebs ('top' = obere Leiste, 'side' = Seitenleiste). */
+function layout_locked(): bool { return is_saas() && csetting('tenant_layout_lock', '0') === '1'; }
+/** Plattform-Vorgabe für Mandanten (SaaS), sonst "top". */
+function platform_layout(): string { return is_saas() && csetting('tenant_layout', 'top') === 'side' ? 'side' : 'top'; }
+/** Standard ohne eigene Benutzerwahl. */
+function ui_layout_default(): string { $v = setting('ui_layout', ''); return in_array($v, ['top', 'side'], true) ? $v : platform_layout(); }
 function ui_layout(): string {
+    if (layout_locked()) return platform_layout();
     $u = current_user();
     $own = (string)($u['ui_layout'] ?? '');
-    $v = in_array($own, ['top', 'side'], true) ? $own : setting('ui_layout', 'top');
+    if (in_array($own, ['top', 'side'], true)) return $own;
+    $v = setting('ui_layout', '');
+    if (!in_array($v, ['top', 'side'], true)) $v = platform_layout();
     return $v === 'side' ? 'side' : 'top';
 }
 

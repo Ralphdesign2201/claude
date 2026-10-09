@@ -61,7 +61,7 @@ def updates(t):
     shutil.rmtree(os.path.join(root, 'tools', 'releases'), ignore_errors=True); os.makedirs(os.path.join(root, 'tools', 'releases'))
     def setver(v, note, mod=None):
         vf = os.path.join(root, 'app', 'version.php'); s = open(vf).read(); s = re.sub(r"const APP_VERSION = '[^']+';", f"const APP_VERSION = '{v}';", s); open(vf, 'w').write(s)
-        cl = os.path.join(root, 'tools', 'changelog.php'); s = open(cl).read(); s = s.replace('];\n', f"    '{v}' => ['date' => '2026-11-01', 'notes' => ['{note}']],\n];\n") if f"'{v}'" not in s else s; open(cl, 'w').write(s)
+        cl = os.path.join(root, 'tools', 'changelog.php'); s = open(cl).read(); s = re.sub(r"\n    '" + re.escape(v) + r"' => \[.*?\n    \]\],", '', s, flags=re.S); k = s.rindex('];'); s = s[:k] + f"    '{v}' => ['date' => '2026-11-01', 'notes' => ['{note}']],\n" + s[k:]; open(cl, 'w').write(s)
         if mod: mod()
     setver('1.0', 'x'); p10 = build(root, '1.0')
     ef = os.path.join(root, 'app', 'views', 'error.php'); orig_err = open(ef).read()
