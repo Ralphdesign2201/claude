@@ -34,3 +34,6 @@ Siehe `SECURITY.md`.
 
 ## Neu in 1.2
 - **Ansicht festlegen**: Superadmin → Einstellungen → *Ansicht*: Menü der Kunden-Konten (obere Leiste oder Seitenleiste), optional verbindlich für alle Kunden, sowie das Menü des Superadmin-Bereichs.
+
+## Neu in 1.3
+- **Superadmin-Login über die normale Anmeldeseite**: Firmen-ID leer lassen, Benutzername und Passwort des Superadmins eingeben. Die Adresse `index.php?r=sa_login` funktioniert weiterhin.

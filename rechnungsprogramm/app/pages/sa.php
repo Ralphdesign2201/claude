@@ -12,22 +12,24 @@ function sa_complete_login(array $u) {
     redirect('sa_dashboard');
 }
 
+/** Prüft Superadmin-Zugangsdaten. Leitet bei Erfolg weiter (nie zurück), gibt sonst den Fehlertext zurück. */
+function sa_try_login(string $username, string $password): string {
+    if (rate_count('sa_login', 900) >= 8) return 'Zu viele Anmeldeversuche. Bitte in einigen Minuten erneut versuchen.';
+    $u = cq1('SELECT * FROM superadmins WHERE LOWER(username) = LOWER(?) AND active = 1', [$username]);
+    $ok = password_verify($password, $u['password_hash'] ?? '$2y$10$usesomesillystringforsaltthatnoonewillguess12345678901234567');
+    if ($u && account_locked($u)) { rate_hit('sa_login', 1000, 900); usleep(300000); return 'Benutzername oder Passwort falsch (oder Konto kurz gesperrt).'; }
+    if ($u && $ok) {
+        if ((int)$u['totp_enabled'] === 1) { $_SESSION['p2'] = ['type' => 'sa', 'id' => (int)$u['id'], 't' => time()]; redirect('sa_login_2fa'); }
+        sa_complete_login($u);
+    }
+    rate_hit('sa_login', 1000, 900); if ($u) account_fail(cdb(), 'superadmins', $u); audit('sa_login_failed', 'Fehlgeschlagen', substr($username, 0, 60), true); usleep(400000);
+    return 'Benutzername oder Passwort falsch (oder Konto kurz gesperrt).';
+}
+
 function sa_login(): void {
     if (sa_user()) redirect('sa_dashboard');
     $err = '';
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        csrf_check();
-        if (rate_count('sa_login', 900) >= 8) $err = 'Zu viele Anmeldeversuche. Bitte in einigen Minuten erneut versuchen.';
-        else {
-            $u = cq1('SELECT * FROM superadmins WHERE LOWER(username) = LOWER(?) AND active = 1', [post('username')]);
-            $ok = password_verify((string)($_POST['password'] ?? ''), $u['password_hash'] ?? '$2y$10$usesomesillystringforsaltthatnoonewillguess12345678901234567');
-            if ($u && account_locked($u)) { rate_hit('sa_login', 1000, 900); usleep(300000); $err = 'Benutzername oder Passwort falsch (oder Konto kurz gesperrt).'; }
-            elseif ($u && $ok) {
-                if ((int)$u['totp_enabled'] === 1) { $_SESSION['p2'] = ['type' => 'sa', 'id' => (int)$u['id'], 't' => time()]; redirect('sa_login_2fa'); }
-                sa_complete_login($u);
-            } else { rate_hit('sa_login', 1000, 900); if ($u) account_fail(cdb(), 'superadmins', $u); audit('sa_login_failed', 'Fehlgeschlagen', substr(post('username'), 0, 60), true); usleep(400000); $err = 'Benutzername oder Passwort falsch (oder Konto kurz gesperrt).'; }
-        }
-    }
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') { csrf_check(); $err = sa_try_login(post('username'), (string)($_POST['password'] ?? '')); }
     render('sa_login', ['err' => $err, 'user' => post('username')], 'Superadmin');
 }
 

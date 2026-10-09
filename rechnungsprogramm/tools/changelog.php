@@ -19,4 +19,7 @@ return [
         'Neu: Der Superadmin legt fest, ob die Kunden-Konten mit oberer Menüleiste oder mit Seitenleiste arbeiten – als Vorgabe oder verbindlich für alle',
         'Neu: Der Superadmin-Bereich selbst kann ebenfalls mit Seitenleiste dargestellt werden',
     ]],
+    '1.3' => ['date' => '2026-10-10', 'notes' => [
+        'Neu: Der Superadmin kann sich über die normale Anmeldeseite anmelden – Firmen-ID einfach leer lassen (inklusive Zwei-Faktor-Abfrage und Anmeldeschutz)',
+    ]],
 ];

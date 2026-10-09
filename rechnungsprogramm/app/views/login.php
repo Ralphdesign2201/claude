@@ -3,7 +3,7 @@
 <?php if ($err): ?><div class="msg err"><?= e($err) ?></div><?php endif; ?>
 <form method="post" action="<?= e(url('login')) ?>">
 <?= csrf_field() ?>
-<?php if ($saas && !$hostTenant): ?><label>Firmen-ID<input name="tenant" value="<?= e($tenantInput) ?>" required autocapitalize="none" autocomplete="organization" placeholder="z. B. mueller-sanitaer"></label><?php endif; ?>
+<?php if ($saas && !$hostTenant): ?><label>Firmen-ID<input name="tenant" value="<?= e($tenantInput) ?>" autocapitalize="none" autocomplete="organization" placeholder="z. B. mueller-sanitaer"><small class="muted">Kunden: Firmen-ID eingeben. Plattform-Administratoren lassen das Feld leer.</small></label><?php endif; ?>
 <label>Benutzername<input name="username" value="<?= e($user) ?>" required <?= ($saas && !$hostTenant && $tenantInput === '') ? '' : 'autofocus' ?> autocomplete="username"></label>
 <label>Passwort<input type="password" name="password" required autocomplete="current-password"></label>
 <button class="btn primary wide">Anmelden</button>

@@ -21,11 +21,17 @@ function auth_login(): void {
     $saas = is_saas();
     $hostTenant = $saas ? tenant_from_host() : null;
     if ($saas && !empty($_SESSION['tenant']) && is_string($_SESSION['tenant'])) { try { tenant_use($_SESSION['tenant']); } catch (Throwable $e) { unset($_SESSION['tenant']); } }
+    if ($saas && sa_user() && empty($_SESSION['impersonating']) && tenant_slug() === null) redirect('sa_dashboard');
     if ((!$saas || tenant_slug() !== null) && logged_in()) redirect('dashboard');
     $err = ''; $tenantInput = $saas ? ($hostTenant ?? strtolower(post('tenant', (string)($_GET['t'] ?? ($_COOKIE['rg_tenant'] ?? ''))))) : '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         csrf_check();
         $tenantRow = null;
+        if ($saas && !$hostTenant && $tenantInput === '') { // ohne Firmen-ID: Plattform-Anmeldung (Superadmin)
+            require_once APP_ROOT . '/pages/sa.php';
+            $err = sa_try_login(post('username'), (string)($_POST['password'] ?? ''));
+            render('login', ['err' => $err, 'user' => post('username'), 'saas' => $saas, 'hostTenant' => $hostTenant, 'tenantInput' => $tenantInput], 'Anmelden'); return;
+        }
         if ($saas) {
             $tenantRow = preg_match('/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/', $tenantInput) ? tenant_row($tenantInput) : null;
             tenant_use($tenantRow ? $tenantInput : null);

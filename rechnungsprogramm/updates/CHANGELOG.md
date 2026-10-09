@@ -1,6 +1,9 @@
 # Änderungsprotokoll
 
-Aktuelle Update-Datei: `update-1.2.rgu` (kumulativ ab Version 1.0).
+Aktuelle Update-Datei: `update-1.3.rgu` (kumulativ ab Version 1.0).
+
+## Version 1.3 (2026-10-10)
+- Neu: Der Superadmin kann sich über die normale Anmeldeseite anmelden – Firmen-ID einfach leer lassen (inklusive Zwei-Faktor-Abfrage und Anmeldeschutz)
 
 ## Version 1.2 (2026-10-10)
 - Neu: Der Superadmin legt fest, ob die Kunden-Konten mit oberer Menüleiste oder mit Seitenleiste arbeiten – als Vorgabe oder verbindlich für alle
