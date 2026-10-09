@@ -62,7 +62,7 @@ function invoices_edit(): void {
             'service_date' => '', 'subject' => '', 'intro' => setting('default_intro'), 'notes' => '', 'status' => 'open'];
         $items = [['description' => '', 'quantity' => 1, 'unit' => 'Std.', 'unit_price' => 0, 'vat_rate' => setting('small_business') === '1' ? 0 : 19]];
     }
-    render('invoice_form', ['inv' => $inv, 'items' => $items, 'customers' => $customers, 'small' => $id ? (bool)$inv['small_business'] : setting('small_business') === '1'], $id ? 'Rechnung bearbeiten' : 'Neue Rechnung');
+    render('invoice_form', ['inv' => $inv, 'items' => $items, 'catalog' => catalog_active(), 'customers' => $customers, 'small' => $id ? (bool)$inv['small_business'] : setting('small_business') === '1'], $id ? 'Rechnung bearbeiten' : 'Neue Rechnung');
 }
 
 function invoices_save(): void {

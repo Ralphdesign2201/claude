@@ -1,6 +1,12 @@
 # Änderungsprotokoll
 
-Aktuelle Update-Datei: `update-1.0.rgu` (kumulativ ab Version 1.0).
+Aktuelle Update-Datei: `update-1.1.rgu` (kumulativ ab Version 1.0).
+
+## Version 1.1 (2026-10-09)
+- Neu: Leistungen & Artikel (Katalog) für Handwerker – mit Nummer, Einheit, Preis, USt, Einkaufspreis/Marge, CSV-Import und -Export
+- Neu: Leistungen und Artikel lassen sich per Suche direkt in Rechnungen, Angebote und Lieferscheine einfügen
+- Neu: wählbare Ansicht – obere Menüleiste oder Seitenleiste mit allen Modulen (Standard unter Einstellungen, persönlich unter Mein Konto)
+- Neues Recht „Leistungen & Artikel“ in den Rollen (bestehende Rollen übernehmen automatisch die Stufe von „Rechnungen“)
 
 ## Version 1.0 (2026-10-08)
 - Erstveröffentlichung: Kunden, Angebote, Rechnungen, Lieferscheine, Mahnwesen

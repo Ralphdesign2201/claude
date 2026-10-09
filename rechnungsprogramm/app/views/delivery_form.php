@@ -9,6 +9,7 @@
 <label class="span2">Einleitung<textarea name="intro" rows="2"><?= e($d['intro']) ?></textarea></label>
 </div>
 <h2>Positionen</h2>
+<?php $withPrice = false; require __DIR__ . '/_catalog_picker.php'; ?>
 <div class="tablewrap"><table class="items" id="items"><thead><tr><th>Beschreibung</th><th>Menge</th><th>Einheit</th><th></th></tr></thead><tbody>
 <?php foreach ($items as $it): ?><tr class="item"><td><textarea name="description[]" rows="1"><?= e($it['description']) ?></textarea></td>
 <td><input name="quantity[]" class="num qty" inputmode="decimal" value="<?= e(qty_fmt((float)$it['quantity'])) ?>"></td>

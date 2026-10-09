@@ -8,6 +8,15 @@ declare(strict_types=1);
  */
 function app_migrations(): array {
     return [
+        // 1.1: neues Recht „Leistungen & Artikel“ – vorhandene Rollen übernehmen die Stufe von „Rechnungen“
+        '1.1-catalog-permission' => function (PDO $pdo): void {
+            foreach ($pdo->query('SELECT id, permissions, is_system FROM roles')->fetchAll() as $r) {
+                if ((int)$r['is_system'] === 1) continue;
+                $p = json_decode((string)$r['permissions'], true) ?: [];
+                if (array_key_exists('catalog', $p)) continue;
+                if (!empty($p['invoices'])) { $p['catalog'] = $p['invoices']; $pdo->prepare('UPDATE roles SET permissions = ? WHERE id = ?')->execute([json_encode($p), $r['id']]); }
+            }
+        },
     ];
 }
 

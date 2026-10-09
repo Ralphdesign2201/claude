@@ -2,6 +2,8 @@
 <div class="head"><h1>Einstellungen</h1></div>
 <form method="post" action="<?= e(url('settings_save')) ?>" enctype="multipart/form-data" class="card">
 <?= csrf_field() ?>
+<h2>Darstellung</h2>
+<div class="grid"><label class="span2">Standard-Ansicht für alle Benutzer<select name="ui_layout"><option value="top"<?= $s['ui_layout'] !== 'side' ? ' selected' : '' ?>>Obere Menüleiste (kompakt)</option><option value="side"<?= $s['ui_layout'] === 'side' ? ' selected' : '' ?>>Seitenleiste mit allen Modulen</option></select><small class="muted">Jeder Benutzer kann sie unter „Mein Konto“ für sich ändern.</small></label></div>
 <h2>Firmendaten</h2>
 <div class="grid">
 <label class="span2">Firma<input name="company" value="<?= e($s['company']) ?>"></label>

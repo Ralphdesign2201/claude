@@ -40,7 +40,7 @@ function delivery_edit(): void {
             }
         }
     }
-    render('delivery_form', ['d' => $d, 'items' => $items, 'customers' => $customers, 'invoiceId' => (int)($_GET['from_invoice'] ?? 0)], $id ? 'Lieferschein bearbeiten' : 'Neuer Lieferschein');
+    render('delivery_form', ['d' => $d, 'items' => $items, 'catalog' => catalog_active(), 'customers' => $customers, 'invoiceId' => (int)($_GET['from_invoice'] ?? 0)], $id ? 'Lieferschein bearbeiten' : 'Neuer Lieferschein');
 }
 
 function delivery_save(): void {

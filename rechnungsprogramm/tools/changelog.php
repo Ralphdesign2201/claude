@@ -9,4 +9,10 @@ return [
         'Einzelinstallation (install.php) und SaaS-Betrieb mit Superadmin (superinstall.php), Zahlung per Kreditkarte (Stripe) und PayPal',
         'Sicherheit: Zwei-Faktor-Anmeldung, Passwort-Reset, Konto-Sperre, verschlüsselte Zugangsdaten, Sicherheitsprotokoll, Rate-Limits, strikte CSP',
     ]],
+    '1.1' => ['date' => '2026-10-09', 'notes' => [
+        'Neu: Leistungen & Artikel (Katalog) für Handwerker – mit Nummer, Einheit, Preis, USt, Einkaufspreis/Marge, CSV-Import und -Export',
+        'Neu: Leistungen und Artikel lassen sich per Suche direkt in Rechnungen, Angebote und Lieferscheine einfügen',
+        'Neu: wählbare Ansicht – obere Menüleiste oder Seitenleiste mit allen Modulen (Standard unter Einstellungen, persönlich unter Mein Konto)',
+        'Neues Recht „Leistungen & Artikel“ in den Rollen (bestehende Rollen übernehmen automatisch die Stufe von „Rechnungen“)',
+    ]],
 ];

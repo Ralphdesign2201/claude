@@ -81,6 +81,11 @@ function parse_decimal(string $s): float {
     $s = str_replace(',', '.', $s);
     return is_numeric($s) ? (float)$s : 0.0;
 }
+/** Ist das eine gültige Geldangabe (1.234,56 / 1234.56 / 12 €)? Leer zählt als gültig (= 0). */
+function money_valid(string $s): bool {
+    $s = trim(str_replace(['€', ' ', "\xc2\xa0"], '', $s));
+    return $s === '' || (bool)preg_match('/^\d{1,3}(\.\d{3})*(,\d{1,4})?$|^\d+([.,]\d{1,4})?$/', $s);
+}
 function parse_cents(string $s): int { return (int)round(parse_decimal($s) * 100); }
 
 function money(int $cents): string { return number_format($cents / 100, 2, ',', '.') . ' €'; }
@@ -165,3 +170,43 @@ function offer_status_label(string $s, bool $expired = false): string {
     if ($s === 'open') return $expired ? 'Abgelaufen' : 'Offen';
     return ['accepted' => 'Angenommen', 'declined' => 'Abgelehnt'][$s] ?? $s;
 }
+
+// ---- Navigation und Darstellung ----
+/** Aktive Oberfläche: eigene Wahl des Benutzers, sonst Standard des Betriebs ('top' = obere Leiste, 'side' = Seitenleiste). */
+function ui_layout(): string {
+    $u = current_user();
+    $own = (string)($u['ui_layout'] ?? '');
+    $v = in_array($own, ['top', 'side'], true) ? $own : setting('ui_layout', 'top');
+    return $v === 'side' ? 'side' : 'top';
+}
+
+/** Menügruppen für Kopf- und Seitenleiste (nur, was der Benutzer sehen darf). @return array<int,array{0:string,1:array}> */
+function nav_groups(): array {
+    $tn = is_saas() ? current_tenant() : null; $u = current_user();
+    $g = [
+        ['', [['dashboard', 'Übersicht', true, ['dashboard']]]],
+        ['Verkauf', [['offers', 'Angebote', can('offers'), ['offer']], ['invoices', 'Rechnungen', can('invoices'), ['invoice', 'reminder']], ['deliveries', 'Lieferscheine', can('deliveries'), ['deliver']]]],
+        ['Stammdaten', [['customers', 'Kunden', can('customers'), ['customer']], ['catalog', 'Leistungen & Artikel', can('catalog'), ['catalog']]]],
+        ['Auswertung', [['datev', 'Export', can('export'), ['datev']]]],
+        ['Verwaltung', [
+            ['settings', 'Einstellungen', can('settings'), ['settings']],
+            ['backups', 'Datenbank & Backups', can('system'), ['backups', 'backup']],
+            ['updates', 'Updates', can('system') && !is_saas(), ['update']],
+            ['users', 'Benutzer', can('users'), ['user']],
+            ['roles', 'Rollen', can('users'), ['role']],
+            ['audit', 'Protokoll', can('users'), ['audit']],
+            ['billing', 'Abo & Zahlung', $tn && (int)($u['is_system'] ?? 0) === 1, ['billing']],
+        ]],
+    ];
+    foreach ($g as &$grp) $grp[1] = array_values(array_filter($grp[1], fn($i) => $i[2]));
+    unset($grp);
+    return array_values(array_filter($g, fn($grp) => $grp[1] !== []));
+}
+function nav_active(string $cur, array $prefixes): bool { foreach ($prefixes as $p) if (str_starts_with($cur, $p)) return true; return false; }
+
+/** Aktive Katalogeinträge für die Auswahl in Rechnungen, Angeboten und Lieferscheinen. */
+function catalog_active(): array {
+    if (!can('catalog')) return [];
+    return db()->query("SELECT * FROM catalog_items WHERE active = 1 ORDER BY kind, LOWER(name) LIMIT 2000")->fetchAll();
+}
+

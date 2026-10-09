@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /** Module für die Rechtevergabe: Schlüssel => Bezeichnung. Stufen je Rolle: '' (kein Zugriff), 'r' (lesen), 'w' (lesen und ändern). */
 const MODULES = [
-    'customers' => 'Kunden', 'invoices' => 'Rechnungen & Mahnungen', 'offers' => 'Angebote', 'deliveries' => 'Lieferscheine',
+    'customers' => 'Kunden', 'catalog' => 'Leistungen & Artikel', 'invoices' => 'Rechnungen & Mahnungen', 'offers' => 'Angebote', 'deliveries' => 'Lieferscheine',
     'mail' => 'E-Mail-Versand', 'export' => 'Export (DATEV, CSV)', 'settings' => 'Firmendaten & Einstellungen',
     'users' => 'Benutzer & Rollen', 'system' => 'Datenbank & Backups',
 ];
@@ -15,7 +15,7 @@ function seed_roles(PDO $pdo): int {
     $mk('Administrator', role_all_write(), 1);
     $office = role_all_write(); $office['settings'] = 'r'; $office['users'] = ''; $office['system'] = '';
     $mk('Büro', $office, 0);
-    $mk('Lesezugriff', ['customers' => 'r', 'invoices' => 'r', 'offers' => 'r', 'deliveries' => 'r'], 0);
+    $mk('Lesezugriff', ['customers' => 'r', 'catalog' => 'r', 'invoices' => 'r', 'offers' => 'r', 'deliveries' => 'r'], 0);
     return (int)$pdo->query("SELECT id FROM roles WHERE is_system = 1 ORDER BY id LIMIT 1")->fetchColumn();
 }
 

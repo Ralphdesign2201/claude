@@ -26,3 +26,8 @@ Voraussetzungen: PHP ≥ 8.0 mit `pdo_sqlite`, `mbstring`, `curl`, `openssl`, `s
 
 ## Sicherheit
 Siehe `SECURITY.md`.
+
+
+## Neu in 1.1
+- **Leistungen & Artikel**: Menü *Leistungen & Artikel* (Katalog, CSV-Import/-Export). In Angeboten, Rechnungen und Lieferscheinen über das Suchfeld „Leistung/Artikel aus Katalog“ übernehmen.
+- **Ansicht**: Einstellungen → Darstellung bzw. Profil → Ansicht: obere Leiste oder Seitenleiste.

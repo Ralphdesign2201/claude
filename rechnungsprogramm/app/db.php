@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const SCHEMA_VERSION = '4';
+const SCHEMA_VERSION = '5';
 
 /**
  * Statement, das nach fetch()/fetchColumn() den Cursor schließt. Verhindert, dass ein halb gelesenes SELECT unter SQLite
@@ -96,7 +96,8 @@ function db_schema(): array {
         'roles' => ['cols' => ['id' => 'pk', 'name' => 'str:60!', 'permissions' => 'str:2000', 'is_system' => 'int']],
         'users' => ['cols' => ['id' => 'pk', 'username' => 'str:60!', 'display_name' => 'str:120', 'email' => 'str:190', 'password_hash' => 'str:255',
             'role_id' => 'int>roles:RESTRICT', 'active' => 'int', 'created_at' => 'ts', 'last_login' => 'ts?',
-            'totp_secret' => 'str:255', 'totp_enabled' => 'int', 'totp_last' => 'int', 'recovery_codes' => 'str:1000', 'failed_logins' => 'int', 'locked_until' => 'ts?']],
+            'totp_secret' => 'str:255', 'totp_enabled' => 'int', 'totp_last' => 'int', 'recovery_codes' => 'str:1000', 'failed_logins' => 'int', 'locked_until' => 'ts?', 'ui_layout' => 'str:8']],
+        'catalog_items' => ['cols' => ['id' => 'pk', 'kind' => 'str:10=service', 'number' => 'str:60', 'name' => 'str:190', 'description' => 'str:1000', 'unit' => 'str:30', 'price_cents' => 'int', 'cost_cents' => 'int', 'vat_rate' => 'real', 'active' => 'int', 'created_at' => 'ts'], 'index' => [['kind', 'name']]],
         'customers' => ['cols' => ['id' => 'pk', 'company' => 'str:190', 'contact_person' => 'str:190', 'firstname' => 'str:120', 'lastname' => 'str:120', 'street' => 'str:190',
             'zip' => 'str:20', 'city' => 'str:120', 'phone' => 'str:60', 'email' => 'str:190', 'leitweg_id' => 'str:60', 'notes' => $txt, 'created_at' => 'ts']],
         'invoices' => ['cols' => ['id' => 'pk', 'invoice_number' => 'str:50!', 'customer_id' => 'int>customers:RESTRICT', 'customer_address' => $addr,
@@ -125,44 +126,62 @@ function db_schema(): array {
 /** Tabellen in einer Reihenfolge, in der Eltern vor Kindern stehen. */
 function db_tables(): array { return array_keys(db_schema()); }
 
+/** Spaltendefinition für CREATE/ALTER aus der Kurzschreibweise des Schemas. @return array [sql, foreignKeyClauseOrNull, isPk, isUnique] */
+function schema_col_sql(string $table, array $def, string $name, bool $my): array {
+    $type = $def['cols'][$name]; $null = false; $ref = null;
+    if (str_contains($type, '>')) { [$type, $ref] = explode('>', $type, 2); }
+    if (str_ends_with($type, '?')) { $null = true; $type = rtrim($type, '?'); }
+    $unique = false; if (str_ends_with($type, '!')) { $unique = true; $type = rtrim($type, '!'); }
+    $isPk = ($type === 'pk') || (($def['pk'] ?? '') === $name);
+    $fk = null;
+    if ($type === 'pk') return [$my ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT', null, true, false];
+    if (str_starts_with($type, 'str:')) { $def0 = ''; if (str_contains($type, '=')) { [$type, $def0] = explode('=', $type, 2); } $n = (int)substr($type, 4); $t = $my ? "VARCHAR($n)" : 'TEXT'; $d = " NOT NULL DEFAULT '" . $def0 . "'"; }
+    elseif ($type === 'int') { $t = $my ? 'BIGINT' : 'INTEGER'; $d = ' NOT NULL DEFAULT 0'; }
+    elseif ($type === 'real') { $t = $my ? 'DOUBLE' : 'REAL'; $d = ' NOT NULL DEFAULT 0'; }
+    elseif ($type === 'date') { $t = $my ? 'VARCHAR(10)' : 'TEXT'; $d = ' NOT NULL'; }
+    elseif ($type === 'ts') { $t = $my ? 'DATETIME' : 'TEXT'; $d = ' NOT NULL DEFAULT CURRENT_TIMESTAMP'; }
+    else throw new LogicException("Typ $type");
+    if ($name === 'status' && !str_contains($def['cols']['status'], '=')) $d = " NOT NULL DEFAULT 'open'";
+    if ($null) $d = ' NULL';
+    if ($ref !== null && $my && $type === 'int') $t = 'INT'; // gleicher Typ wie Primärschlüssel
+    $sql = $t . $d . ($unique ? ' UNIQUE' : '') . ($isPk ? ' PRIMARY KEY' : '');
+    if ($ref !== null) {
+        [$rt, $act] = explode(':', $ref);
+        if ($my) $fk = "FOREIGN KEY ($name) REFERENCES $rt(id) ON DELETE $act"; else $sql .= " REFERENCES $rt(id) ON DELETE $act";
+    }
+    return [$sql, $fk, $isPk, $unique];
+}
+
+function db_existing_columns(PDO $pdo, string $table): array {
+    if (db_driver($pdo) === 'mysql') { $st = $pdo->prepare('SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?'); $st->execute([$table]); return array_map('strtolower', $st->fetchAll(PDO::FETCH_COLUMN)); }
+    return array_map(fn($r) => strtolower($r['name']), $pdo->query("PRAGMA table_info($table)")->fetchAll());
+}
+
 function migrate(PDO $pdo, ?array $schema = null, ?string $version = null): void {
     $my = db_driver($pdo) === 'mysql';
     foreach ($schema ?? db_schema() as $table => $def) {
         $cols = []; $fks = []; $idx = [];
-        foreach ($def['cols'] as $name => $type) {
-            $null = false; $ref = null;
-            if (str_contains($type, '>')) { [$type, $ref] = explode('>', $type, 2); }
-            if (str_ends_with($type, '?')) { $null = true; $type = rtrim($type, '?'); }
-            $unique = false; if (str_ends_with($type, '!')) { $unique = true; $type = rtrim($type, '!'); }
-            $isPk = ($type === 'pk') || (($def['pk'] ?? '') === $name);
-            if ($type === 'pk') $sql = $my ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
-            else {
-                if (str_starts_with($type, 'str:')) { $def0 = ''; if (str_contains($type, '=')) { [$type, $def0] = explode('=', $type, 2); } $n = (int)substr($type, 4); $t = $my ? "VARCHAR($n)" : 'TEXT'; $d = " NOT NULL DEFAULT '" . $def0 . "'"; }
-                elseif ($type === 'int') { $t = $my ? 'BIGINT' : 'INTEGER'; $d = ' NOT NULL DEFAULT 0'; }
-                elseif ($type === 'real') { $t = $my ? 'DOUBLE' : 'REAL'; $d = ' NOT NULL DEFAULT 0'; }
-                elseif ($type === 'date') { $t = $my ? 'VARCHAR(10)' : 'TEXT'; $d = ' NOT NULL'; }
-                elseif ($type === 'ts') { $t = $my ? 'DATETIME' : 'TEXT'; $d = ' NOT NULL DEFAULT CURRENT_TIMESTAMP'; }
-                else throw new LogicException("Typ $type");
-                if ($name === 'status' && isset($def['cols']['status']) && !str_contains($def['cols']['status'], '=')) $d = " NOT NULL DEFAULT 'open'";
-                if ($null) $d = ' NULL';
-                if ($ref !== null && $my && $type === 'int') $t = 'INT'; // gleicher Typ wie Primärschlüssel
-                $sql = $t . $d . ($unique ? ' UNIQUE' : '') . ($isPk ? ' PRIMARY KEY' : '');
-                if ($ref !== null) {
-                    [$rt, $act] = explode(':', $ref);
-                    if ($my) $fks[] = "FOREIGN KEY ($name) REFERENCES $rt(id) ON DELETE $act";
-                    else $sql .= " REFERENCES $rt(id) ON DELETE $act";
-                }
-            }
-            $cols[] = "$name $sql";
+        foreach (array_keys($def['cols']) as $name) {
+            [$sql, $fk] = schema_col_sql($table, $def, $name, $my);
+            $cols[] = "$name $sql"; if ($fk) $fks[] = $fk;
         }
         if ($table === 'plans') $cols[] = "CHECK (interval_unit IN ('month','year'))";
         if ($table === 'invoices') $cols[] = "CHECK (status IN ('open','paid','cancelled'))";
         if ($table === 'offers') $cols[] = "CHECK (status IN ('open','accepted','declined'))";
         if ($table === 'reminders') $cols[] = 'CHECK (level BETWEEN 1 AND 3)';
+        if ($table === 'catalog_items') $cols[] = "CHECK (kind IN ('service','article'))";
         foreach ($def['index'] ?? [] as $i) $idx[] = $i;
         foreach (['customer_id', 'invoice_id', 'offer_id', 'note_id', 'role_id', 'user_id', 'sa_id', 'tenant_id'] as $fk) if (isset($def['cols'][$fk]) && !in_array([$fk], $idx, true)) $idx[] = [$fk];
         $ddl = "CREATE TABLE IF NOT EXISTS $table (\n  " . implode(",\n  ", array_merge($cols, $my ? $fks : [])) . "\n)" . ($my ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' : '');
         $pdo->exec($ddl);
+        // Neue Spalten in bereits vorhandenen Tabellen nachziehen (Updates)
+        $have = db_existing_columns($pdo, $table);
+        foreach (array_keys($def['cols']) as $name) {
+            if (in_array(strtolower($name), $have, true)) continue;
+            [$sql, $fk, $isPk, $uniq] = schema_col_sql($table, $def, $name, $my);
+            if ($isPk || $uniq || str_contains($sql, 'CURRENT_TIMESTAMP') || str_contains($sql, 'REFERENCES')) throw new LogicException("Spalte $table.$name kann nicht nachträglich ergänzt werden – bitte eine Migration schreiben.");
+            $pdo->exec("ALTER TABLE $table ADD COLUMN $name $sql");
+        }
         if (!$my) foreach ($idx as $i) $pdo->exec('CREATE INDEX IF NOT EXISTS idx_' . $table . '_' . implode('_', $i) . " ON $table(" . implode(', ', $i) . ')');
     }
     if ($my) { // Zusatzindizes (MySQL hat kein IF NOT EXISTS für Indizes)

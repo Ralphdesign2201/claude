@@ -18,3 +18,8 @@ installiert wird nur, was Ihnen noch fehlt. Vorher entstehen automatisch eine Da
 
 ## Sicherheit
 Siehe `SECURITY.md` (Maßnahmen und Checkliste).
+
+
+## Neu in 1.1
+- **Leistungen & Artikel**: Menü *Leistungen & Artikel* (Katalog, CSV-Import/-Export). In Angeboten, Rechnungen und Lieferscheinen über das Suchfeld „Leistung/Artikel aus Katalog“ übernehmen.
+- **Ansicht**: Einstellungen → Darstellung bzw. Profil → Ansicht: obere Leiste oder Seitenleiste.

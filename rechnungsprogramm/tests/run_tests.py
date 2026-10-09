@@ -2,7 +2,7 @@ import sys, os, time
 sys.path.insert(0, os.path.dirname(__file__))
 from harness import *
 from tlib import T, guard
-import test_single, test_single2, test_extra, test_saas
+import test_single, test_single2, test_extra, test_saas, test_catalog
 
 def main(which):
     t = T(); insts = []
@@ -17,7 +17,11 @@ def main(which):
                 nonlocal admin
                 admin = test_single.run(t, inst)
             guard(t, part1)
-            if admin: guard(t, test_single2.run, t, inst, admin, smtp)
+            def part2():
+                nonlocal admin
+                admin = test_single2.run(t, inst, admin, smtp)
+            if admin: guard(t, part2)
+            if admin: guard(t, test_catalog.run, t, inst, admin)
             smtp.stop()
             err = inst.errlog(); t.check('Fatal' not in err and 'Warning' not in err and 'Notice' not in err and 'Deprecated' not in err, 'PHP-Fehlerlog frei von Fatal/Warning/Notice/Deprecated:\n' + err[-1500:])
     finally:
@@ -27,6 +31,8 @@ def main(which):
         try: guard(t, test_saas.run, t, inst, smtp, prov)
         finally: inst.stop(); smtp.stop(); prov.stop()
     if 'dbswitch' in which: guard(t, test_extra.dbswitch, t)
+    if 'upgrade' in which:
+        guard(t, test_catalog.upgrade, t, 'single'); guard(t, test_catalog.upgrade, t, 'saas')
     if 'update' in which: guard(t, test_extra.updates, t)
     return t.summary()
 if __name__ == '__main__': sys.exit(main(sys.argv[1:] or ['single']))

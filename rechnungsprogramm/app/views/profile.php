@@ -3,6 +3,8 @@
 <?= csrf_field() ?>
 <p class="muted">Angemeldet als <strong><?= e($u['username']) ?></strong> · Rolle: <?= e($u['role_name']) ?></p>
 <div class="grid"><label>Anzeigename<input name="display_name" value="<?= e($u['display_name']) ?>"></label><label>E-Mail<input type="email" name="email" value="<?= e($u['email']) ?>"></label></div>
+<h2>Ansicht</h2>
+<label>Meine Menü-Ansicht<select name="ui_layout"><option value=""<?= ($u['ui_layout'] ?? '') === '' ? ' selected' : '' ?>>Standard des Betriebs (<?= setting('ui_layout', 'top') === 'side' ? 'Seitenleiste' : 'obere Leiste' ?>)</option><option value="top"<?= ($u['ui_layout'] ?? '') === 'top' ? ' selected' : '' ?>>Obere Menüleiste</option><option value="side"<?= ($u['ui_layout'] ?? '') === 'side' ? ' selected' : '' ?>>Seitenleiste mit allen Modulen</option></select></label>
 <h2>Passwort ändern</h2>
 <div class="grid">
 <label class="span2">Aktuelles Passwort<input type="password" name="current" autocomplete="current-password"></label>

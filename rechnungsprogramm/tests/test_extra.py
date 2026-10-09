@@ -51,6 +51,9 @@ def upload_install(a, pkg, expect_ok=True):
     r = a.post('update_upload', {}, page='updates', files={'file': ('u.rgu', pkg)})
     return r
 
+def as10(I):
+    vf = I.dir + '/app/version.php'; s = open(vf).read(); open(vf, 'w').write(re.sub(r"const APP_VERSION = '[^']+';", "const APP_VERSION = '1.0';", s)); return I
+
 def updates(t):
     t.sec('Update-System')
     B = Instance(8199, 'build'); B.stop() if B.proc else None
@@ -60,7 +63,7 @@ def updates(t):
         vf = os.path.join(root, 'app', 'version.php'); s = open(vf).read(); s = re.sub(r"const APP_VERSION = '[^']+';", f"const APP_VERSION = '{v}';", s); open(vf, 'w').write(s)
         cl = os.path.join(root, 'tools', 'changelog.php'); s = open(cl).read(); s = s.replace('];\n', f"    '{v}' => ['date' => '2026-11-01', 'notes' => ['{note}']],\n];\n") if f"'{v}'" not in s else s; open(cl, 'w').write(s)
         if mod: mod()
-    p10 = build(root, '1.0')
+    setver('1.0', 'x'); p10 = build(root, '1.0')
     ef = os.path.join(root, 'app', 'views', 'error.php'); orig_err = open(ef).read()
     def m11(): open(ef, 'a').write('\n<!-- v1.1 -->'); open(os.path.join(root, 'app', 'views', 'obsolete.php'), 'w').write('<?php // alt ?>')
     setver('1.1', 'Neue Funktion A', m11); p11 = build(root, '1.1')
@@ -70,7 +73,7 @@ def updates(t):
     pl = json.loads(json.loads(gzip.decompress(p12))['payload']); t.eq([s['version'] for s in pl['steps']], ['1.0', '1.1', '1.2'], 'Paket 1.2 enthält alle Schritte seit 1.0')
     t.check('app/extra_v12.php' in pl['blobs'] and 'app/views/obsolete.php' not in pl['blobs'], 'Blobs: neue Datei enthalten, gelöschte nicht')
     # Instanz mit Version 1.0
-    X = Instance(8115, 'upd'); X.start()
+    X = as10(Instance(8115, 'upd')); X.start()
     try:
         install(X); a, _ = login(X); t.check('Version 1.0' in a.req('updates').text, 'Updates-Seite zeigt Version 1.0')
         for name, pkg, why in [('kaputt', b'garbage', 'Müll'), ('leer', gzip.compress(b'{}'), 'JSON ohne Signatur')]:
@@ -109,7 +112,7 @@ def updates(t):
         t.check(a.req('dashboard').code == 200, 'Programm läuft nach Update'); err = X.errlog(); t.check('Fatal' not in err, 'Fehlerlog nach Update sauber:\n' + err[-400:])
     finally: X.stop()
     # Etappenweises Update (1.0 → 1.1 → 1.2)
-    Y = Instance(8116, 'upd2'); Y.start()
+    Y = as10(Instance(8116, 'upd2')); Y.start()
     try:
         install(Y); a, _ = login(Y); r = upload_install(a, p11); tok = re.search(r'token=([0-9a-f]{32})', r.loc).group(1); a.post('update_install', {'token': tok}, page='updates'); a.req('update_finish')
         t.check("'1.1'" in open(Y.dir + '/app/version.php').read(), 'Etappe 1.1 installiert'); t.check(os.path.exists(Y.dir + '/app/views/obsolete.php'), 'Datei aus 1.1 vorhanden')
@@ -118,7 +121,7 @@ def updates(t):
         v, _ = (None, None)
     finally: Y.stop()
     # Nicht-Admin darf keine Updates
-    Z = Instance(8117, 'upd3'); Z.start()
+    Z = as10(Instance(8117, 'upd3')); Z.start()
     try:
         install(Z); a, _ = login(Z); a.post('user_save', {'id': 0, 'username': 'office', 'role_id': 2, 'password': 'Office-Pass-77', 'active': 1}, page='user_edit'); o, _ = login(Z, 'office', 'Office-Pass-77')
         t.eq(o.req('updates').code, 403, 'Büro-Rolle: Update-Seite gesperrt'); r = o.post('update_upload', {}, page='profile', files={'file': ('u.rgu', p11)}); t.check(not glob.glob(Z.dir + '/storage/update_pending/*'), 'Büro-Rolle kann kein Update hochladen')

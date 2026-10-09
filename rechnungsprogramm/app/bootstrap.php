@@ -26,6 +26,7 @@ start_session();
 
 $routes = [
     'login' => ['auth', 'login'], 'login_2fa' => ['auth', 'login_2fa'], 'logout' => ['auth', 'logout'], 'forgot' => ['auth', 'forgot'], 'reset' => ['auth', 'reset'],
+    'catalog' => ['catalog', 'index'], 'catalog_edit' => ['catalog', 'edit'], 'catalog_save' => ['catalog', 'save'], 'catalog_delete' => ['catalog', 'delete'], 'catalog_import' => ['catalog', 'import'], 'catalog_export' => ['catalog', 'export'],
     'audit' => ['users', 'audit'], 'twofa' => ['users', 'twofa'],
     'updates' => ['updates', 'index'], 'update_upload' => ['updates', 'upload'], 'update_install' => ['updates', 'install'], 'update_finish' => ['updates', 'finish'],
     'dashboard' => ['dashboard', 'index'],
@@ -50,6 +51,7 @@ $routes = [
 // Rechte je Route: [Modul, Stufe]; '*' = jeder angemeldete Benutzer
 $perms = [
     'updates' => ['system', 'w'], 'update_upload' => ['system', 'w'], 'update_install' => ['system', 'w'], 'update_finish' => ['system', 'w'],
+    'catalog' => ['catalog', 'r'], 'catalog_export' => ['catalog', 'r'], 'catalog_edit' => ['catalog', 'w'], 'catalog_save' => ['catalog', 'w'], 'catalog_delete' => ['catalog', 'w'], 'catalog_import' => ['catalog', 'w'],
     'dashboard' => '*', 'logo' => '*', 'twofa' => '*', 'audit' => ['users', 'r'], 'profile' => '*', 'profile_save' => '*', 'logout' => '*',
     'customers' => ['customers', 'r'], 'customer_edit' => ['customers', 'r'], 'customer_save' => ['customers', 'w'], 'customer_delete' => ['customers', 'w'],
     'invoices' => ['invoices', 'r'], 'invoice_new' => ['invoices', 'w'], 'invoice_edit' => ['invoices', 'w'], 'invoice_save' => ['invoices', 'w'], 'invoice_show' => ['invoices', 'r'],

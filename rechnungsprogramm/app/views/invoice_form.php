@@ -14,6 +14,7 @@
 <label class="span2">Einleitung<textarea name="intro" rows="2"><?= e($inv['intro']) ?></textarea></label>
 </div>
 <h2>Positionen</h2>
+<?php $withPrice = true; require __DIR__ . '/_catalog_picker.php'; ?>
 <div class="tablewrap"><table class="items" id="items"><thead><tr><th>Beschreibung</th><th>Menge</th><th>Einheit</th><th>Einzelpreis (netto)</th><?php if (!$small): ?><th>USt %</th><?php endif; ?><th class="r">Netto</th><th></th></tr></thead><tbody>
 <?php foreach ($items as $it): ?>
 <tr class="item">

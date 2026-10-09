@@ -38,7 +38,7 @@ function offers_edit(): void {
               'subject' => '', 'intro' => '', 'notes' => '', 'status' => 'open', 'small_business' => setting('small_business') === '1' ? 1 : 0];
         $items = [['description' => '', 'quantity' => 1, 'unit' => 'Std.', 'unit_price' => 0, 'vat_rate' => setting('small_business') === '1' ? 0 : 19]];
     }
-    render('offer_form', ['o' => $o, 'items' => $items, 'customers' => $customers, 'small' => (bool)$o['small_business']], $id ? 'Angebot bearbeiten' : 'Neues Angebot');
+    render('offer_form', ['o' => $o, 'items' => $items, 'catalog' => catalog_active(), 'customers' => $customers, 'small' => (bool)$o['small_business']], $id ? 'Angebot bearbeiten' : 'Neues Angebot');
 }
 
 function offers_save(): void {

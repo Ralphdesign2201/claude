@@ -29,6 +29,13 @@
     });
   }
 
+  // Seitenleiste (mobil) ein-/ausblenden
+  var burger = document.getElementById('burger');
+  if (burger) {
+    burger.addEventListener('click', function () { document.body.classList.toggle('nav-open'); });
+    document.addEventListener('click', function (e) { if (document.body.classList.contains('nav-open') && !e.target.closest('#sidebar') && e.target !== burger) document.body.classList.remove('nav-open'); });
+  }
+
   var form = document.getElementById('invform') || document.getElementById('delform');
   if (!form) return;
   var body = document.querySelector('#items tbody');
@@ -68,6 +75,35 @@
       if (body.querySelectorAll('tr.item').length > 1) { e.target.closest('tr').remove(); recalc(); }
     }
   });
+  function addCatalogRow(opt) {
+    var rows = body.querySelectorAll('tr.item'), last = rows[rows.length - 1];
+    var emptyLast = last && last.querySelector('textarea').value.trim() === '' && (!hasPrice || num(last.querySelector('.price').value) === 0);
+    if (!emptyLast) { document.getElementById('addrow').click(); rows = body.querySelectorAll('tr.item'); last = rows[rows.length - 1]; }
+    var d = opt.getAttribute('data-desc');
+    var ta = last.querySelector('textarea'); ta.value = opt.getAttribute('data-name') + (d ? '\n' + d : ''); grow(ta);
+    last.querySelector('.qty').value = '1'; last.querySelector('.unit').value = opt.getAttribute('data-unit') || '';
+    if (hasPrice) {
+      last.querySelector('.price').value = opt.getAttribute('data-price');
+      var v = last.querySelector('.vat'); if (v) {
+        var want = small ? '0' : opt.getAttribute('data-vat'), has = false;
+        for (var i = 0; i < v.options.length; i++) if (v.options[i].value === want) has = true;
+        if (!has) { var o = document.createElement('option'); o.value = want; o.textContent = want; v.appendChild(o); }
+        v.value = want;
+      }
+    }
+    recalc();
+  }
+  var cs = document.getElementById('catsearch'), cl = document.getElementById('catlist');
+  function pick() {
+    if (!cs || !cl) return;
+    var v = cs.value, opts = cl.querySelectorAll('option');
+    for (var i = 0; i < opts.length; i++) if (opts[i].value === v) { addCatalogRow(opts[i]); cs.value = ''; cs.focus(); return; }
+  }
+  if (cs) {
+    cs.addEventListener('change', pick);
+    cs.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pick(); } });
+    var ca = document.getElementById('catadd'); if (ca) ca.addEventListener('click', pick);
+  }
   document.getElementById('addrow').addEventListener('click', function () {
     var rows = body.querySelectorAll('tr.item'), tr = rows[rows.length - 1].cloneNode(true);
     tr.querySelectorAll('textarea').forEach(function (t) { t.value = ''; t.style.height = ''; });
